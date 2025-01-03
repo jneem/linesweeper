@@ -883,10 +883,6 @@ impl<F: Float> SweepLine<'_, F> {
                 // The best possible position is the true segment-starting position.
                 // (This could change if we want to be more sophisticated at joining contours.)
                 segments[entry.seg].start.x.clone()
-            } else if max_so_far >= min_x {
-                // The best possible position is snapping to the neighbor that we
-                // just positioned.
-                max_so_far.clone()
             } else {
                 segments[entry.seg].at_y(&self.state.y)
             };
@@ -916,9 +912,6 @@ impl<F: Float> SweepLine<'_, F> {
             let preferred_x = if min_x <= ev.x0 && ev.x0 <= max_x {
                 // Try snapping to the previous position if possible.
                 ev.x0.clone()
-            } else if max_so_far >= min_x {
-                // Try snapping to the neighbor we just positioned.
-                max_so_far.clone()
             } else {
                 segments[entry.seg].at_y(&self.state.y)
             };
