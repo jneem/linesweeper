@@ -15,7 +15,6 @@ use crate::{
     geom::Segment,
     num::Float,
     segments::{SegIdx, Segments},
-    sweep::{SweepEvent, SweepEventKind},
 };
 
 #[derive(Clone, Copy, Debug, serde::Serialize)]
@@ -80,9 +79,51 @@ impl FromIterator<SegIdx> for SegmentOrder {
     }
 }
 
+#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
+pub struct IntersectionEvent<F: Float> {
+    pub y: F,
+    /// This segment used to be to the left, and after the intersection it will be to the right.
+    ///
+    /// In our sweep line intersection, this segment might have already been moved to the right by
+    /// some other constraints. That's ok.
+    pub left: SegIdx,
+    /// This segment used to be to the right, and after the intersection it will be to the left.
+    pub right: SegIdx,
+}
+
+#[derive(Debug)]
+pub struct SliceGuard<'a, T> {
+    vec: &'a mut Vec<T>,
+    start: usize,
+}
+
+impl<T> std::ops::Deref for SliceGuard<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.vec[self.start..]
+    }
+}
+
+impl<T> std::ops::DerefMut for SliceGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.vec[self.start..]
+    }
+}
+
+impl<T> Drop for SliceGuard<'_, T> {
+    fn drop(&mut self) {
+        self.vec.truncate(self.start)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct EventQueue<F: Float> {
-    inner: std::collections::BTreeSet<SweepEvent<F>>,
+    /// This includes horizontal segments.
+    enter: Vec<(F, SegIdx)>,
+    /// This does not include horizontal segments.
+    exit: Vec<(F, SegIdx)>,
+    intersection: std::collections::BTreeSet<IntersectionEvent<F>>,
 }
 
 impl<F: Float> EventQueue<F> {
@@ -91,60 +132,69 @@ impl<F: Float> EventQueue<F> {
     ///
     /// The returned event queue will not contain any intersection events.
     pub fn from_segments(segments: &Segments<F>) -> Self {
-        let mut inner = std::collections::BTreeSet::new();
+        let mut enter = Vec::with_capacity(segments.len());
+        let mut exit = Vec::with_capacity(segments.len());
+        let intersection = BTreeSet::new();
 
         for seg in segments.indices() {
-            if segments[seg].is_horizontal() {
-                inner.insert(SweepEvent {
-                    y: segments[seg].start.y.clone(),
-                    kind: SweepEventKind::Horizontal(seg),
-                });
-            } else {
-                let (a, b) = SweepEvent::from_segment(seg, segments);
-                inner.insert(a);
-                inner.insert(b);
-            }
+            enter.push((segments[seg].start.y.clone(), seg));
+            exit.push((segments[seg].end.y.clone(), seg));
         }
 
-        Self { inner }
+        enter.sort_by(|x, y| x.cmp(y).reverse());
+        exit.sort_by(|x, y| x.cmp(y).reverse());
+
+        Self {
+            enter,
+            exit,
+            intersection,
+        }
     }
 
-    pub fn push(&mut self, ev: SweepEvent<F>) {
-        self.inner.insert(ev);
-    }
-
-    pub fn pop(&mut self) -> Option<SweepEvent<F>> {
-        self.inner.pop_first()
+    pub fn push(&mut self, ev: IntersectionEvent<F>) {
+        self.intersection.insert(ev);
     }
 
     pub fn next_y(&self) -> Option<&F> {
-        self.inner.first().map(|ev| &ev.y)
+        let enter_y = self.enter.last().map(|(y, _)| y);
+        let exit_y = self.exit.last().map(|(y, _)| y);
+        let int_y = self.intersection.first().map(|i| &i.y);
+
+        [enter_y, exit_y, int_y].into_iter().flatten().min()
     }
 
-    fn next_kind(&self) -> Option<&SweepEventKind> {
-        self.inner.first().map(|ev| &ev.kind)
+    pub fn entrances_at_y(&mut self, y: &F) -> SliceGuard<(F, SegIdx)> {
+        let start = self
+            .enter
+            .iter()
+            .rposition(|(enter_y, _)| enter_y > y)
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        SliceGuard {
+            vec: &mut self.enter,
+            start,
+        }
     }
 
-    pub fn next_is_stage_1(&self, y: &F) -> bool {
-        self.next_y() == Some(y)
-            && self.next_kind().is_some_and(|kind| match kind {
-                SweepEventKind::Enter(_) | SweepEventKind::Horizontal(_) => true,
-                SweepEventKind::Intersection { .. } | SweepEventKind::Exit(_) => false,
-            })
+    pub fn exits_at_y(&mut self, y: &F) -> SliceGuard<(F, SegIdx)> {
+        let start = self
+            .exit
+            .iter()
+            .rposition(|(exit_y, _)| exit_y > y)
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        SliceGuard {
+            vec: &mut self.exit,
+            start,
+        }
     }
 
-    pub fn next_is_stage_2(&self, y: &F) -> bool {
-        self.next_y() == Some(y)
-            && self.next_kind().is_some_and(|kind| match kind {
-                SweepEventKind::Exit(_) => true,
-                SweepEventKind::Enter(_)
-                | SweepEventKind::Horizontal(_)
-                | SweepEventKind::Intersection { .. } => false,
-            })
-    }
-
-    pub fn next_is_at(&self, y: &F) -> bool {
-        self.next_y() == Some(y)
+    pub fn next_intersection_at_y(&mut self, y: &F) -> Option<IntersectionEvent<F>> {
+        if self.intersection.first().map(|i| &i.y) == Some(y) {
+            self.intersection.pop_first()
+        } else {
+            None
+        }
     }
 }
 
@@ -200,20 +250,29 @@ impl<F: Float> Sweeper<F> {
         self.check_invariants();
 
         // Process all the enter events at this y.
-        while self.events.next_is_stage_1(&y) {
-            self.step();
-            self.check_invariants();
+        {
+            // TODO: avoid the to_owned
+            let enters = self.events.entrances_at_y(&y).to_owned();
+            for (enter_y, idx) in enters {
+                debug_assert_eq!(enter_y, y);
+                self.handle_enter(idx);
+                self.check_invariants();
+            }
         }
 
         // Process all the exit events.
-        while self.events.next_is_stage_2(&y) {
-            self.step();
-            self.check_invariants();
+        {
+            let exits = self.events.exits_at_y(&y).to_owned();
+            for (exit_y, idx) in exits {
+                debug_assert_eq!(exit_y, y);
+                self.handle_exit(idx);
+                self.check_invariants();
+            }
         }
 
         // Process all the intersection events at this y.
-        while self.events.next_is_at(&y) {
-            self.step();
+        while let Some(intersection) = self.events.next_intersection_at_y(&y) {
+            self.handle_intersection(intersection.left, intersection.right);
             self.check_invariants();
         }
 
@@ -262,11 +321,11 @@ impl<F: Float> Sweeper<F> {
             height_bound = height_bound.min(other.end.y.clone());
 
             if let Some(int_y) = seg.crossing_y(other, &self.eps) {
-                self.events.push(SweepEvent::intersection(
-                    self.line.seg(start_idx),
-                    self.line.seg(j),
-                    int_y.clone().max(y.clone()),
-                ));
+                self.events.push(IntersectionEvent {
+                    y: int_y.clone().max(y.clone()),
+                    left: self.line.seg(start_idx),
+                    right: self.line.seg(j),
+                });
                 height_bound = int_y.min(height_bound);
             }
 
@@ -296,11 +355,11 @@ impl<F: Float> Sweeper<F> {
             let other = &self.segments[self.line.seg(j)];
             height_bound = height_bound.min(other.end.y.clone());
             if let Some(int_y) = other.crossing_y(seg, &self.eps) {
-                self.events.push(SweepEvent::intersection(
-                    self.line.seg(j),
-                    self.line.seg(start_idx),
-                    int_y.clone().max(self.y.clone()),
-                ));
+                self.events.push(IntersectionEvent {
+                    left: self.line.seg(j),
+                    right: self.line.seg(start_idx),
+                    y: int_y.clone().max(self.y.clone()),
+                });
                 height_bound = int_y.min(height_bound);
             }
 
@@ -330,104 +389,80 @@ impl<F: Float> Sweeper<F> {
         self.intersection_scan_left(pos);
     }
 
-    /// Consume a single event from the event queue and process it.
-    fn step(&mut self) {
-        let Some(ev) = self.events.pop() else {
-            return;
-        };
+    fn handle_enter(&mut self, seg_idx: SegIdx) {
+        let new_seg = &self.segments[seg_idx];
+        let pos = self
+            .line
+            .insertion_idx(&self.y, &self.segments, new_seg, &self.eps);
+        let mut entry = SegmentOrderEntry::from(seg_idx);
+        entry.enter = true;
+        entry.exit = new_seg.is_horizontal();
+        self.insert(pos, entry);
 
-        assert!(self.y == ev.y);
-        match ev.kind {
-            SweepEventKind::Enter(seg_idx) => {
-                let new_seg = &self.segments[seg_idx];
-                let pos = self
-                    .line
-                    .insertion_idx(&self.y, &self.segments, new_seg, &self.eps);
-                let mut entry = SegmentOrderEntry::from(seg_idx);
-                entry.enter = true;
-                self.insert(pos, entry);
-
-                // TODO: see if we can make this not quadratic
-                for other_pos in &mut self.segs_needing_positions {
-                    if *other_pos >= pos {
-                        *other_pos += 1;
-                    }
-                }
-                self.segs_needing_positions.push(pos);
+        // TODO: see if we can make this not quadratic
+        for other_pos in &mut self.segs_needing_positions {
+            if *other_pos >= pos {
+                *other_pos += 1;
             }
-            SweepEventKind::Exit(seg_idx) => {
-                let pos = self
-                    .line
-                    .position(seg_idx)
-                    .expect("exit for a segment we don't have");
-                // It's important that this goes before `scan_for_removal`, so that
-                // the scan doesn't get confused by the segment that should be marked
-                // for exit.
-                self.line.segs[pos].exit = true;
-                self.scan_for_removal(pos);
-                self.segs_needing_positions.push(pos);
-            }
-            SweepEventKind::Intersection { left, right } => {
-                let left_idx = self.line.position(left).unwrap();
-                let right_idx = self.line.position(right).unwrap();
-                if left_idx < right_idx {
-                    self.segs_needing_positions.extend(left_idx..=right_idx);
-                    for (i, entry) in self.line.segs[left_idx..=right_idx].iter_mut().enumerate() {
-                        if entry.old_idx.is_none() {
-                            entry.old_idx = Some(left_idx + i);
-                        }
-                    }
+        }
+        self.segs_needing_positions.push(pos);
+    }
 
-                    let left_seg = &self.segments[left];
-                    let eps = &self.eps;
-                    let y = &self.y;
+    // TODO: explain somewhere why this doesn't actually remove the segment
+    // yet
+    fn handle_exit(&mut self, seg_idx: SegIdx) {
+        let pos = self
+            .line
+            .position(seg_idx)
+            .expect("exit for a segment we don't have");
+        // It's important that this goes before `scan_for_removal`, so that
+        // the scan doesn't get confused by the segment that should be marked
+        // for exit.
+        self.line.segs[pos].exit = true;
+        self.scan_for_removal(pos);
+        self.segs_needing_positions.push(pos);
+    }
 
-                    // We're going to put `left_seg` after `right_seg` in the
-                    // sweep line, and while doing so we need to "push" along
-                    // all segments that are strictly bigger than `left_seg`
-                    // (slight false positives are allowed; no false negatives).
-                    let mut to_move = vec![(left_idx, self.line.segs[left_idx])];
-                    let threshold = eps.clone() / F::from_f32(-4.0);
-                    for j in (left_idx + 1)..right_idx {
-                        let seg = &self.segments[self.line.seg(j)];
-                        if seg.lower(y, eps) - left_seg.upper(y, eps) > threshold {
-                            to_move.push((j, self.line.segs[j]));
-                        }
-                    }
-
-                    // Remove them in reverse to make indexing easier.
-                    for &(j, _) in to_move.iter().rev() {
-                        self.line.segs.remove(j);
-                        self.scan_for_removal(j);
-                    }
-
-                    // We want to insert them at what was previously `right_idx + 1`, but the
-                    // index changed because of the removal.
-                    let insertion_pos = right_idx + 1 - to_move.len();
-
-                    for &(_, seg) in to_move.iter().rev() {
-                        self.insert(insertion_pos, seg);
-                    }
+    fn handle_intersection(&mut self, left: SegIdx, right: SegIdx) {
+        let left_idx = self.line.position(left).unwrap();
+        let right_idx = self.line.position(right).unwrap();
+        if left_idx < right_idx {
+            self.segs_needing_positions.extend(left_idx..=right_idx);
+            for (i, entry) in self.line.segs[left_idx..=right_idx].iter_mut().enumerate() {
+                if entry.old_idx.is_none() {
+                    entry.old_idx = Some(left_idx + i);
                 }
             }
-            SweepEventKind::Horizontal(seg_idx) => {
-                let new_seg = &self.segments[seg_idx];
-                let pos = self
-                    .line
-                    .insertion_idx(&self.y, &self.segments, new_seg, &self.eps);
-                let mut entry = SegmentOrderEntry::from(seg_idx);
-                entry.enter = true;
-                entry.exit = true;
-                self.insert(pos, entry);
 
-                // TODO: see if we can make this not quadratic
-                for other_pos in &mut self.segs_needing_positions {
-                    if *other_pos >= pos {
-                        *other_pos += 1;
-                    }
+            let left_seg = &self.segments[left];
+            let eps = &self.eps;
+            let y = &self.y;
+
+            // We're going to put `left_seg` after `right_seg` in the
+            // sweep line, and while doing so we need to "push" along
+            // all segments that are strictly bigger than `left_seg`
+            // (slight false positives are allowed; no false negatives).
+            let mut to_move = vec![(left_idx, self.line.segs[left_idx])];
+            let threshold = eps.clone() / F::from_f32(-4.0);
+            for j in (left_idx + 1)..right_idx {
+                let seg = &self.segments[self.line.seg(j)];
+                if seg.lower(y, eps) - left_seg.upper(y, eps) > threshold {
+                    to_move.push((j, self.line.segs[j]));
                 }
+            }
 
-                self.segs_needing_positions.push(pos);
+            // Remove them in reverse to make indexing easier.
+            for &(j, _) in to_move.iter().rev() {
+                self.line.segs.remove(j);
+                self.scan_for_removal(j);
+            }
+
+            // We want to insert them at what was previously `right_idx + 1`, but the
+            // index changed because of the removal.
+            let insertion_pos = right_idx + 1 - to_move.len();
+
+            for &(_, seg) in to_move.iter().rev() {
+                self.insert(insertion_pos, seg);
             }
         }
     }
@@ -1492,7 +1527,7 @@ mod tests {
         sweep(&segs, &eps, |_, _| {});
     }
 
-    #[derive(serde::Serialize)]
+    #[derive(serde::Serialize, Debug)]
     struct Output {
         order: SegmentOrder,
         changed: Vec<(usize, usize)>,
