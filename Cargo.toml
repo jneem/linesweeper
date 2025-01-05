@@ -19,6 +19,7 @@ serde = { version = "1.0.216", features = ["derive"] }
 anyhow = "1.0.80"
 assert_matches = "1.5.0"
 clap = { version = "4.5.1", features = ["derive"] }
+criterion = "0.5.1"
 insta = { version = "1.41.1", features = ["serde", "ron"] }
 kurbo = "0.11.1"
 proptest = "1.4.0"
@@ -27,3 +28,7 @@ usvg = { version = "0.44.0", default-features = false }
 
 [profile.dev.package."*"]
 opt-level = 2
+
+[[bench]]
+name = "linebender_logo"
+harness = false
