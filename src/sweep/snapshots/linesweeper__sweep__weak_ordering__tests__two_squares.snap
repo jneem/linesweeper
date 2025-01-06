@@ -7,18 +7,55 @@ expression: "snapshot_outputs(segs, 0.1)"
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
-          seg: SegIdx(5),
+          seg: SegIdx(7),
           exit: false,
           enter: true,
           needs_position: true,
           old_idx: Some(0),
         ),
         SegmentOrderEntry(
-          seg: SegIdx(4),
+          seg: SegIdx(5),
           exit: false,
           enter: true,
           needs_position: true,
           old_idx: Some(1),
+        ),
+        SegmentOrderEntry(
+          seg: SegIdx(4),
+          exit: true,
+          enter: true,
+          needs_position: true,
+          old_idx: Some(2),
+        ),
+      ],
+    ),
+    changed: [
+      (0, 3),
+    ],
+  ),
+  Output(
+    order: SegmentOrder(
+      segs: [
+        SegmentOrderEntry(
+          seg: SegIdx(7),
+          exit: false,
+          enter: false,
+          needs_position: false,
+          old_idx: None,
+        ),
+        SegmentOrderEntry(
+          seg: SegIdx(3),
+          exit: false,
+          enter: true,
+          needs_position: true,
+          old_idx: Some(1),
+        ),
+        SegmentOrderEntry(
+          seg: SegIdx(5),
+          exit: false,
+          enter: false,
+          needs_position: true,
+          old_idx: Some(2),
         ),
         SegmentOrderEntry(
           seg: SegIdx(1),
@@ -28,100 +65,55 @@ expression: "snapshot_outputs(segs, 0.1)"
           old_idx: Some(3),
         ),
         SegmentOrderEntry(
-          seg: SegIdx(2),
-          exit: false,
-          enter: true,
-          needs_position: true,
-          old_idx: Some(2),
-        ),
-      ],
-    ),
-    changed: [
-      (0, 4),
-    ],
-  ),
-  Output(
-    order: SegmentOrder(
-      segs: [
-        SegmentOrderEntry(
           seg: SegIdx(0),
-          exit: false,
-          enter: true,
-          needs_position: true,
-          old_idx: Some(0),
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(5),
           exit: true,
-          enter: false,
-          needs_position: true,
-          old_idx: Some(1),
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(4),
-          exit: false,
-          enter: false,
-          needs_position: false,
-          old_idx: None,
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(1),
-          exit: false,
-          enter: false,
-          needs_position: false,
-          old_idx: None,
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(3),
-          exit: false,
           enter: true,
           needs_position: true,
           old_idx: Some(4),
         ),
-        SegmentOrderEntry(
-          seg: SegIdx(2),
-          exit: true,
-          enter: false,
-          needs_position: true,
-          old_idx: Some(5),
-        ),
       ],
     ),
     changed: [
-      (0, 2),
-      (4, 6),
+      (1, 5),
     ],
   ),
   Output(
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
-          seg: SegIdx(0),
+          seg: SegIdx(7),
           exit: true,
           enter: false,
           needs_position: true,
           old_idx: Some(0),
         ),
         SegmentOrderEntry(
-          seg: SegIdx(4),
+          seg: SegIdx(3),
           exit: false,
           enter: false,
           needs_position: true,
           old_idx: Some(1),
         ),
         SegmentOrderEntry(
-          seg: SegIdx(1),
+          seg: SegIdx(6),
           exit: true,
-          enter: false,
+          enter: true,
           needs_position: true,
           old_idx: Some(2),
         ),
         SegmentOrderEntry(
-          seg: SegIdx(3),
-          exit: false,
+          seg: SegIdx(5),
+          exit: true,
           enter: false,
           needs_position: true,
           old_idx: Some(3),
+        ),
+        SegmentOrderEntry(
+          seg: SegIdx(1),
+          exit: false,
+          enter: false,
+          needs_position: false,
+          old_idx: None,
         ),
       ],
     ),
@@ -133,23 +125,30 @@ expression: "snapshot_outputs(segs, 0.1)"
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
-          seg: SegIdx(4),
+          seg: SegIdx(3),
           exit: true,
           enter: false,
           needs_position: true,
           old_idx: Some(0),
         ),
         SegmentOrderEntry(
-          seg: SegIdx(3),
+          seg: SegIdx(2),
+          exit: true,
+          enter: true,
+          needs_position: true,
+          old_idx: Some(1),
+        ),
+        SegmentOrderEntry(
+          seg: SegIdx(1),
           exit: true,
           enter: false,
           needs_position: true,
-          old_idx: Some(1),
+          old_idx: Some(2),
         ),
       ],
     ),
     changed: [
-      (0, 2),
+      (0, 3),
     ],
   ),
 ]

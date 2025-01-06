@@ -59,7 +59,7 @@ Topology(
           shape_b: 0,
         ),
         clockwise: WindingNumber(
-          shape_a: 0,
+          shape_a: -2,
           shape_b: 0,
         ),
       ),

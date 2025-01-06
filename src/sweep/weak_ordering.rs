@@ -91,6 +91,7 @@ pub struct IntersectionEvent<F: Float> {
     pub right: SegIdx,
 }
 
+// This is probably too clever, and we should just use ranges.
 #[derive(Debug)]
 pub struct SliceGuard<'a, T> {
     vec: &'a mut Vec<T>,
@@ -105,12 +106,6 @@ impl<T> std::ops::Deref for SliceGuard<'_, T> {
     }
 }
 
-impl<T> std::ops::DerefMut for SliceGuard<'_, T> {
-    fn deref_mut(&mut self) -> &mut [T] {
-        &mut self.vec[self.start..]
-    }
-}
-
 impl<T> Drop for SliceGuard<'_, T> {
     fn drop(&mut self) {
         self.vec.truncate(self.start)
@@ -120,6 +115,8 @@ impl<T> Drop for SliceGuard<'_, T> {
 #[derive(Clone, Debug)]
 pub struct EventQueue<F: Float> {
     /// This includes horizontal segments.
+    /// TODO: this would be better stored in Segments, since that's a better
+    /// division of mutable vs immutable state.
     enter: Vec<(F, SegIdx)>,
     /// This does not include horizontal segments.
     exit: Vec<(F, SegIdx)>,
@@ -141,7 +138,15 @@ impl<F: Float> EventQueue<F> {
             exit.push((segments[seg].end.y.clone(), seg));
         }
 
-        enter.sort_by(|x, y| x.cmp(y).reverse());
+        // We sort the enter segments by reversed y position (so that we can consume them
+        // in chunks from the end of the vector), and then by horizontal start position so
+        // that they're fairly likely to get inserted in the sweep-line in order (which makes
+        // the indexing fix-ups faster).
+        enter.sort_by(|(y1, seg1), (y2, seg2)| {
+            y1.cmp(y2)
+                .reverse()
+                .then_with(|| segments[*seg1].at_y(y1).cmp(&segments[*seg2].at_y(y1)))
+        });
         exit.sort_by(|x, y| x.cmp(y).reverse());
 
         Self {
@@ -399,13 +404,28 @@ impl<F: Float> Sweeper<F> {
         entry.exit = new_seg.is_horizontal();
         self.insert(pos, entry);
 
-        // TODO: see if we can make this not quadratic
-        for other_pos in &mut self.segs_needing_positions {
+        // Fix up the index of any other segments that we got inserted before
+        // (at this point, segs_needing_positions only contains newly-inserted
+        // segments, and it's sorted increasing).
+        //
+        // We sorted all the to-be-inserted segments by horizontal position
+        // before inserting them, so we expect these two loops to be short most
+        // of the time.
+        for other_pos in self.segs_needing_positions.iter_mut().rev() {
             if *other_pos >= pos {
                 *other_pos += 1;
+            } else {
+                break;
             }
         }
-        self.segs_needing_positions.push(pos);
+        let insert_pos = self
+            .segs_needing_positions
+            .iter()
+            .rposition(|p| *p < pos)
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        self.segs_needing_positions.insert(insert_pos, pos);
+        debug_assert!(self.segs_needing_positions.is_sorted());
     }
 
     // TODO: explain somewhere why this doesn't actually remove the segment
@@ -469,15 +489,6 @@ impl<F: Float> Sweeper<F> {
 
     #[cfg(feature = "slow-asserts")]
     fn check_invariants(&self) {
-        for ev in &self.events.inner {
-            assert!(
-                ev.y >= self.y,
-                "at y={:?}, event {:?} occurred in the past",
-                &self.y,
-                &ev
-            );
-        }
-
         for &seg_entry in &self.line.segs {
             let seg_idx = seg_entry.seg;
             let seg = &self.segments[seg_idx];
@@ -520,17 +531,16 @@ impl<F: Float> Sweeper<F> {
                                 .position(idx)
                                 .is_some_and(|pos| i <= pos && pos <= j)
                         };
-                        let has_witness = self.events.inner.iter().any(|ev| {
-                            let is_between = match &ev.kind {
-                                SweepEventKind::Enter(_) | SweepEventKind::Horizontal(_) => false,
-                                SweepEventKind::Intersection { left, right } => {
-                                    is_between(*left) && is_between(*right)
-                                }
-                                SweepEventKind::Exit(seg_idx) => is_between(*seg_idx),
-                            };
+                        let has_exit_witness = self.line.segs[i..=j].iter().any(|seg_entry| {
+                            self.segments[seg_entry.seg].end.y.to_exact() <= y_int
+                        });
+
+                        let has_intersection_witness = self.events.intersection.iter().any(|ev| {
+                            let is_between = is_between(ev.left) && is_between(ev.right);
                             let before_y = ev.y.to_exact() <= y_int;
                             is_between && before_y
                         });
+                        let has_witness = has_exit_witness || has_intersection_witness;
                         assert!(
                             has_witness,
                             "segments {:?} and {:?} cross at {:?}, but there is no witness",
@@ -571,40 +581,78 @@ impl<F: Float> Sweeper<F> {
             // segments in a changed interval must have `old_idx` set.
             self.line.segs[idx].set_old_idx_if_unset(idx);
 
-            // unwrap: segs_needing_positions should all be in the line.
-            let mut start_idx = idx;
             self.line.segs[idx].needs_position = true;
             let seg_idx = self.line.segs[idx].seg;
-            let mut seg_min = segments[seg_idx].lower(y, eps);
-
-            for i in (0..idx).rev() {
-                let prev_seg_idx = self.line.seg(i);
-                let prev_seg = &segments[prev_seg_idx];
-                if seg_min - prev_seg.upper(y, eps) > slack {
-                    break;
-                } else {
-                    seg_min = prev_seg.lower(y, eps);
-                    self.line.segs[i].needs_position = true;
-                    self.line.segs[i].set_old_idx_if_unset(i);
-                    start_idx = i;
-                }
-            }
-
+            let mut start_idx = idx;
             let mut end_idx = idx + 1;
+            let mut seg_min = segments[seg_idx].lower(y, eps);
             let mut seg_max = segments[seg_idx].upper(y, eps);
-            for i in (idx + 1)..self.line.segs.len() {
-                let next_seg_idx = self.line.seg(i);
-                let next_seg = &segments[next_seg_idx];
-                if next_seg.lower(y, eps) - seg_max > slack {
-                    break;
-                } else {
-                    seg_max = next_seg.upper(y, eps);
-                    self.line.segs[i].needs_position = true;
-                    self.line.segs[i].set_old_idx_if_unset(i);
-                    end_idx = i + 1;
+
+            // This looks a little hairy, but the idea is simple: we want to
+            // look backwards and forwards in the sweep line until we find a
+            // "gap" below us and a "gap" above us. Everything between the two
+            // gaps goes in the "changed interval."
+            //
+            // This is complicated by the fact that things are not strictly
+            // ordered, so when we're scanning forwards in the sweep line
+            // we might find a segment that affects the backwards gap, or vice
+            // versa. So what we do is we scan backwards for a gap and then scan
+            // forwards for a gap, and either scan is allowed to invalidate the
+            // other one's gap in which case we loop around again until both
+            // scans are happy. Termination is guaranteed because a scan needs
+            // to make progress in order to invalidate the other scan.
+            let mut lower_gap = false;
+            let mut upper_gap = false;
+            while !lower_gap || !upper_gap {
+                if !lower_gap {
+                    for i in (0..start_idx).rev() {
+                        let prev_seg_idx = self.line.seg(i);
+                        let prev_seg = &segments[prev_seg_idx];
+                        if seg_min.clone() - prev_seg.upper(y, eps) > slack {
+                            lower_gap = true;
+                            break;
+                        } else {
+                            seg_min = prev_seg.lower(y, eps);
+                            if prev_seg.upper(y, eps) > seg_max {
+                                seg_max = prev_seg.upper(y, eps);
+                                upper_gap = false;
+                            }
+                            self.line.segs[i].needs_position = true;
+                            self.line.segs[i].set_old_idx_if_unset(i);
+                            start_idx = i;
+                        }
+                    }
                 }
+
+                if !upper_gap {
+                    // clippy thinks that the `end_idx = i + 1` line is attempting
+                    // to modify the loop bounds, but in fact we're updating `end_idx`
+                    // for the next trip through the outer loop.
+                    #[allow(clippy::mut_range_bound)]
+                    for i in end_idx..self.line.segs.len() {
+                        let next_seg_idx = self.line.seg(i);
+                        let next_seg = &segments[next_seg_idx];
+                        if next_seg.lower(y, eps) - &seg_max > slack {
+                            upper_gap = true;
+                            break;
+                        } else {
+                            seg_max = next_seg.upper(y, eps);
+                            if next_seg.lower(y, eps) < seg_min {
+                                seg_min = next_seg.lower(y, eps);
+                                lower_gap = false;
+                            }
+                            self.line.segs[i].needs_position = true;
+                            self.line.segs[i].set_old_idx_if_unset(i);
+
+                            end_idx = i + 1;
+                        }
+                    }
+                }
+
+                lower_gap = lower_gap || start_idx == 0;
+                upper_gap = upper_gap || end_idx == self.line.segs.len();
             }
-            self.changed_intervals.push((start_idx, end_idx))
+            self.changed_intervals.push((start_idx, end_idx));
         }
         self.changed_intervals.sort();
         self.changed_intervals.dedup();
@@ -1577,6 +1625,16 @@ mod tests {
         for poly in perturbed_polylines {
             segs.add_cycle(poly);
         }
+        insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.1));
+    }
+
+    #[test]
+    fn two_squares() {
+        let a = vec![p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)];
+        let b = vec![p(-0.5, -0.5), p(0.5, -0.5), p(0.5, 0.5), p(-0.5, 0.5)];
+        let mut segs = Segments::<NotNan<f64>>::default();
+        segs.add_cycle(a);
+        segs.add_cycle(b);
         insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.1));
     }
 
