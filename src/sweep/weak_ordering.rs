@@ -22,7 +22,7 @@ pub(crate) struct SegmentOrderEntry {
     seg: SegIdx,
     exit: bool,
     enter: bool,
-    // This is filled out during `compute_changed_segments`. Before that
+    // This is filled out during `compute_changed_intervals`. Before that
     // happens, segments are marked for needing positions by putting them in the
     // `segs_needing_positions` list.
     needs_position: bool,
@@ -571,6 +571,8 @@ impl<F: Float> Sweeper<F> {
         let segments = &self.segments;
         let slack = eps.clone() / F::from_f32(4.0);
 
+        // TODO: the handling of horizontal segments adds a bunch of extra cases. Maybe
+        // doing them separately would simplify things?
         for &idx in &self.segs_needing_positions {
             if self.line.segs[idx].needs_position {
                 continue;
@@ -587,70 +589,59 @@ impl<F: Float> Sweeper<F> {
             let mut end_idx = idx + 1;
             let mut seg_min = segments[seg_idx].lower(y, eps);
             let mut seg_max = segments[seg_idx].upper(y, eps);
+            let mut horiz_start = if segments[seg_idx].is_horizontal() {
+                Some(seg_min.clone())
+            } else {
+                None
+            };
 
-            // This looks a little hairy, but the idea is simple: we want to
-            // look backwards and forwards in the sweep line until we find a
-            // "gap" below us and a "gap" above us. Everything between the two
-            // gaps goes in the "changed interval."
-            //
-            // This is complicated by the fact that things are not strictly
-            // ordered, so when we're scanning forwards in the sweep line
-            // we might find a segment that affects the backwards gap, or vice
-            // versa. So what we do is we scan backwards for a gap and then scan
-            // forwards for a gap, and either scan is allowed to invalidate the
-            // other one's gap in which case we loop around again until both
-            // scans are happy. Termination is guaranteed because a scan needs
-            // to make progress in order to invalidate the other scan.
-            let mut lower_gap = false;
-            let mut upper_gap = false;
-            while !lower_gap || !upper_gap {
-                if !lower_gap {
-                    for i in (0..start_idx).rev() {
-                        let prev_seg_idx = self.line.seg(i);
-                        let prev_seg = &segments[prev_seg_idx];
-                        if seg_min.clone() - prev_seg.upper(y, eps) > slack {
-                            lower_gap = true;
-                            break;
-                        } else {
-                            seg_min = prev_seg.lower(y, eps);
-                            if prev_seg.upper(y, eps) > seg_max {
-                                seg_max = prev_seg.upper(y, eps);
-                                upper_gap = false;
-                            }
-                            self.line.segs[i].needs_position = true;
-                            self.line.segs[i].set_old_idx_if_unset(i);
-                            start_idx = i;
-                        }
-                    }
+            for i in (idx + 1)..self.line.segs.len() {
+                let next_seg_idx = self.line.seg(i);
+                let next_seg = &segments[next_seg_idx];
+                if next_seg.lower(y, eps) - &seg_max > slack {
+                    break;
+                } else {
+                    seg_max = next_seg.upper(y, eps);
+                    self.line.segs[i].needs_position = true;
+                    self.line.segs[i].set_old_idx_if_unset(i);
+
+                    end_idx = i + 1;
+                }
+                // TODO: add a test that fails if this block isn't here.
+                if next_seg.is_horizontal() {
+                    horiz_start = match horiz_start {
+                        Some(h) => Some(h.min(next_seg.start.x.clone())),
+                        None => Some(next_seg.start.x.clone()),
+                    };
+                }
+            }
+
+            if let Some(h) = &horiz_start {
+                if h < &seg_min {
+                    seg_min = h.clone();
+                }
+            }
+
+            for i in (0..start_idx).rev() {
+                let prev_seg_idx = self.line.seg(i);
+                let prev_seg = &segments[prev_seg_idx];
+                if seg_min.clone() - prev_seg.upper(y, eps) > slack {
+                    break;
+                } else {
+                    seg_min = prev_seg.lower(y, eps);
+                    self.line.segs[i].needs_position = true;
+                    self.line.segs[i].set_old_idx_if_unset(i);
+                    start_idx = i;
                 }
 
-                if !upper_gap {
-                    // clippy thinks that the `end_idx = i + 1` line is attempting
-                    // to modify the loop bounds, but in fact we're updating `end_idx`
-                    // for the next trip through the outer loop.
-                    #[allow(clippy::mut_range_bound)]
-                    for i in end_idx..self.line.segs.len() {
-                        let next_seg_idx = self.line.seg(i);
-                        let next_seg = &segments[next_seg_idx];
-                        if next_seg.lower(y, eps) - &seg_max > slack {
-                            upper_gap = true;
-                            break;
-                        } else {
-                            seg_max = next_seg.upper(y, eps);
-                            if next_seg.lower(y, eps) < seg_min {
-                                seg_min = next_seg.lower(y, eps);
-                                lower_gap = false;
-                            }
-                            self.line.segs[i].needs_position = true;
-                            self.line.segs[i].set_old_idx_if_unset(i);
-
-                            end_idx = i + 1;
-                        }
+                // Horizontal segments are special; they get inserted in the sweep-line
+                // at their ending position and we need to remember that they span all
+                // the way to their starting position.
+                if let Some(h) = &horiz_start {
+                    if h < &seg_min {
+                        seg_min = h.clone();
                     }
                 }
-
-                lower_gap = lower_gap || start_idx == 0;
-                upper_gap = upper_gap || end_idx == self.line.segs.len();
             }
             self.changed_intervals.push((start_idx, end_idx));
         }
@@ -774,6 +765,7 @@ impl SegmentOrder {
     ) -> usize {
         // Checks if `other` is smaller than `seg` with no false negatives: if `other` is actually smaller than `seg`
         // it will definitely return true.
+        // TODO: double-check this. I think we actually want "no false positives"
         let maybe_strictly_smaller = |other: &SegmentOrderEntry| -> bool {
             let other = &segments[other.seg];
             // `at_y` is guaranteed to have accuracy eps/8, and in order to have a strict segment inequality there
