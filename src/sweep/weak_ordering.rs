@@ -1480,7 +1480,9 @@ mod tests {
             let y: NotNan<f64> = at.try_into().unwrap();
             let y0: NotNan<f64> = 0.0.try_into().unwrap();
             let y1: NotNan<f64> = 1.0.try_into().unwrap();
-            let segs = mk_segs(xs);
+            let mut xs: Vec<_> = xs.to_owned();
+            xs.push(new);
+            let segs = mk_segs(&xs);
 
             let x0: NotNan<f64> = new.0.try_into().unwrap();
             let x1: NotNan<f64> = new.1.try_into().unwrap();
@@ -1489,8 +1491,13 @@ mod tests {
                 end: Point::new(x1, y1),
             };
 
-            let line: SegmentOrder = (0..xs.len()).map(SegIdx).collect();
-            line.insertion_idx(&y, &segs, &new, &eps)
+            let mut line: SegmentOrder = (0..(xs.len() - 1)).map(SegIdx).collect();
+            let idx = line.insertion_idx(&y, &segs, &new, &eps);
+
+            assert!(line.find_invalid_order(&y, &segs, &eps).is_none());
+            line.segs.insert(idx, SegIdx(xs.len() - 1).into());
+            assert!(line.find_invalid_order(&y, &segs, &eps).is_none());
+            idx
         }
 
         let eps = 1.0 / 128.0;
@@ -1528,6 +1535,8 @@ mod tests {
             ),
             4
         );
+
+        insert(&[(2.0, 2.0), (-100.0, 100.0)], (1.0, 1.0), 0.5, 0.25);
     }
 
     #[test]
