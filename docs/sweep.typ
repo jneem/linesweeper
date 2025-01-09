@@ -591,6 +591,42 @@ We'd like to avoid subdividing every segment at every important height. This bas
 involves detecting which segments need to be divided and ignoring the rest. It's implemented
 but not yet written up (TODO).
 
+== A more detailed insertion algorithm
+
+It took me a few tries to get the approximate insertion algorithm working, so
+I figured it was worth writing up a few more details. First of all, a slight
+tweak of @lem-insert-preserving-order shows that there is a position $i$ such
+that $alpha^j_- (y) <= beta(y)$ for all $j <= i$ and $alpha^j_+ (y) >= beta(y)$
+for all $j > i$. We will look for this $i$, but with some slight slack in our
+arithmetic. The slack will be small enough to guarantee we find a position that
+satisfies the weaker properties of @lem-insert-preserving-order.
+
+First, we consider a predicate $p(j)$ that returns `false` whenever $alpha^j_+
+(y) > beta(y)$. We put no conditions on the values of $j$ for which $p(j)$
+returns `true`; a tighter predicate will give a more efficient algorithm, but
+doesn't affect correctness. Let $i_-$ be such that $p(i_-) = #true$ and $p(i_-
++ 1) = #false$ (where we allow $i_- = -1$, and handle the boundary cases by
+declaring that $p(-1) = #true$ and $p(m+1) = #false)$. Note that $i_-$ can be
+found with a binary search.
+
+The definition of $p$ ensures that $alpha^(i_-)_+(y) <= beta(y)$. Under the
+assumption that $(alpha^1, ..., alpha^m)$ is weakly ordered, it follows that
+for every $j <= i_-$, $alpha^j_-(y) <= beta(y)$. That is, the $i$ that we are
+looking for is larger than or equal to $i_-$.
+
+The next step is a linear scan up from $i_-$. Let $q(j)$ be a predicate
+that returns `true` whenever $alpha^j_- (y) < beta^j (y)$ and `false` whenever
+$alpha^j_- (y) > beta^j_+ (y)$. Take $i >= i_-$ to be the index just before $q$
+first returns false; we will insert $beta$ after $alpha^i$.
+
+Let's check that this insertion position is valid: for every $j <= i$ we have
+either $j <= i_-$ or $i_- < j <= i$. In the first case, we already observed
+that $alpha^j_-(y) <= beta(y)$; in the second case, $q(j)$ returned `true` and
+so $alpha^j_-(y) <= beta^j^+ (y)$. In either case, $alpha^j prec.tilde beta$.
+On the other hand, $q(i+i)$ being `false` implies that $alpha^(i+1)_- (y) >=
+beta(y)$. This implies that for all $j >= i+1$, $alpha^j_+ (y) >= beta(y)$ and
+so $alpha^j succ.tilde_y beta$.
+
 = Accuracy analysis
 
 We're going to implement some algorithms in floating point. Suppose $p$ is the number of mantissa bits

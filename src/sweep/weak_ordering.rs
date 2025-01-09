@@ -2,10 +2,6 @@
 //!
 //! This algorithm is documented in `docs/sweep.typ`.
 
-// TODO:
-// - investigate better insertion heuristics: if there are a bunch of insertions at the same point, we
-//   currently put them in some arbitrary order and then later have to process a bunch of intersections
-
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
@@ -763,33 +759,40 @@ impl SegmentOrder {
         seg: &Segment<F>,
         eps: &F,
     ) -> usize {
-        // Checks if `other` is smaller than `seg` with no false negatives: if `other` is actually smaller than `seg`
-        // it will definitely return true.
-        // TODO: double-check this. I think we actually want "no false positives"
-        let maybe_strictly_smaller = |other: &SegmentOrderEntry| -> bool {
+        let seg_y = seg.at_y(y);
+        // Horizontal evaluation is accurate to within eps / 8, so if we want to compare
+        // two different horizontal coordinates, we need a slack of eps / 4.
+        let slack = eps.clone() / F::from_f32(4.0);
+
+        // A predicate that tests `other.upper(y) <= seg(y)` with no false positives.
+        // This is called `p` in the write-up.
+        let lower_pred = |other: &SegmentOrderEntry| -> bool {
             let other = &segments[other.seg];
-            // `at_y` is guaranteed to have accuracy eps/8, and in order to have a strict segment inequality there
-            // needs to be a difference of at least 2*eps (more, if there's a slope).
-            other.at_y(y) < seg.at_y(y)
+            // This is `other.upper(y, eps) < seg_y - slack`, but rearranged for better accuracy.
+            seg_y.clone() - other.upper(y, eps) > slack
         };
 
-        // The rust stdlib docs say that we're not allowed to do this, because our array isn't sorted
-        // with respect to `maybe_strictly_smaller`. But for now at least, their implementation does a
-        // normal binary search and so it's guaranteed to return an index where `maybe_strictly_smaller`
-        // fails but the index before it succeeds.
-        let search_start = self.segs.partition_point(maybe_strictly_smaller);
+        // The rust stdlib docs say that we're not allowed to do this, because
+        // our array isn't sorted with respect to `maybe_strictly_smaller`.
+        // But for now at least, their implementation does a normal
+        // binary search and so it's guaranteed to return an index where
+        // `maybe_strictly_smaller` fails but the index before it succeeds.
+        //
+        // `search_start` is `i_- + 1` in the write-up; it's the first index
+        // where the predicate returns false.
+        let search_start = self.segs.partition_point(lower_pred);
         let mut idx = search_start;
+        // A predicate that tests `other.lower(y) <= seg(y)`, with no false negatives (and
+        // also some guarantees for the false positives). This is called `q` in the write-up.
+        let upper_pred = |other: &SegmentOrderEntry| -> bool {
+            let other = &segments[other.seg];
+            // This is `other.lower(y, eps) < seg(y) + slack`, but rearranged for accuracy
+            other.lower(y, eps) - &seg_y < slack
+        };
         for i in search_start..self.segs.len() {
-            if maybe_strictly_smaller(&self.segs[i]) {
+            if upper_pred(&self.segs[i]) {
                 idx = i + 1;
-            }
-
-            // Once we've found a segment whose lower bound is definitely bigger than seg's, there's no need
-            // to look further.
-            let other = &segments[self.seg(i)];
-            // `lower` is accurate to within eps/8, so if this test succeeds then other's lower bound is
-            // definitely bigger.
-            if other.lower(y, eps) - seg.lower(y, eps) >= eps.clone() / F::from_f32(4.0) {
+            } else {
                 break;
             }
         }
