@@ -322,6 +322,7 @@ impl<F: Float> Sweeper<F> {
             height_bound = height_bound.min(other.end.y.clone());
 
             if let Some(int_y) = seg.crossing_y(other, &self.eps) {
+                let int_y = int_y.max(y.clone());
                 self.events.push(IntersectionEvent {
                     y: int_y.clone().max(y.clone()),
                     left: self.line.seg(start_idx),
@@ -356,6 +357,7 @@ impl<F: Float> Sweeper<F> {
             let other = &self.segments[self.line.seg(j)];
             height_bound = height_bound.min(other.end.y.clone());
             if let Some(int_y) = other.crossing_y(seg, &self.eps) {
+                let int_y = int_y.max(y.clone());
                 self.events.push(IntersectionEvent {
                     left: self.line.seg(j),
                     right: self.line.seg(start_idx),

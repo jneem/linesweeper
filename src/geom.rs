@@ -102,7 +102,10 @@ impl<F: Float> Segment<F> {
     ///
     /// Panics if `y` is outside the `y` range of this segment.
     pub fn at_y(&self, y: &F) -> F {
-        debug_assert!((&self.start.y..=&self.end.y).contains(&y));
+        debug_assert!(
+            (&self.start.y..=&self.end.y).contains(&y),
+            "segment {self:?}, y={y:?}"
+        );
 
         if self.start.y == self.end.y {
             self.end.x.clone()
