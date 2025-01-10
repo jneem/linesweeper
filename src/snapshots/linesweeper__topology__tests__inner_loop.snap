@@ -496,10 +496,6 @@ expression: "(top, contours)"
     Contour(
       points: [
         Point(
-          y: -2.0,
-          x: -2.0,
-        ),
-        Point(
           y: 2.0,
           x: -2.0,
         ),
@@ -514,6 +510,10 @@ expression: "(top, contours)"
         Point(
           y: -2.0,
           x: 2.0,
+        ),
+        Point(
+          y: -2.0,
+          x: -2.0,
         ),
       ],
       parent: None,
@@ -544,16 +544,16 @@ expression: "(top, contours)"
     Contour(
       points: [
         Point(
-          y: 0.0,
-          x: -0.1,
-        ),
-        Point(
           y: 2.0,
           x: 0.0,
         ),
         Point(
           y: 0.0,
           x: 0.1,
+        ),
+        Point(
+          y: 0.0,
+          x: -0.1,
         ),
       ],
       parent: Some(ContourIdx(1)),

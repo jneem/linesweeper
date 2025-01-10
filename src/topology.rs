@@ -123,10 +123,38 @@ impl std::fmt::Debug for HalfOutputSegIdx {
 }
 
 /// A vector indexed by half-output segments.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Hash, PartialEq, Eq, serde::Serialize)]
 struct HalfOutputSegVec<T> {
     start: Vec<T>,
     end: Vec<T>,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for HalfOutputSegVec<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        struct Entry<'a, T> {
+            idx: usize,
+            start: &'a T,
+            end: &'a T,
+        }
+
+        impl<T: std::fmt::Debug> std::fmt::Debug for Entry<'_, T> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(
+                    f,
+                    "{idx:4}: {start:?} -> {end:?}",
+                    idx = self.idx,
+                    start = self.start,
+                    end = self.end
+                )
+            }
+        }
+
+        let mut list = f.debug_list();
+        for (idx, (start, end)) in self.start.iter().zip(&self.end).enumerate() {
+            list.entry(&Entry { idx, start, end });
+        }
+        list.finish()
+    }
 }
 
 impl<T> Default for HalfOutputSegVec<T> {
@@ -701,6 +729,9 @@ impl<F: Float> Topology<F> {
             } else {
                 (idx.second_half(), idx.first_half())
             };
+            // `segs` collects the endpoint of each segment as we walk along it.
+            // "endpoint" here means "as we walk the contour;" it could be either a first_half
+            // or a second_half as far as `HalfOutputSegIdx` is concerned.
             let mut segs = Vec::new();
             last_visit.insert(self.point[start].clone(), 0);
 
@@ -719,10 +750,10 @@ impl<F: Float> Topology<F> {
                     nbr = self.point_neighbors[nbr].clockwise;
                 }
 
+                segs.push(next);
                 if nbr == start {
                     break;
                 }
-                segs.push(next);
 
                 let p = self.point[nbr].clone();
                 if let Some(seg_idx) = last_visit.get(&p) {
@@ -756,13 +787,11 @@ impl<F: Float> Topology<F> {
 
                 next = nbr.other_half();
             }
-            let mut points = Vec::with_capacity(segs.len() + 1);
-            points.push(self.point[start].clone());
-            points.extend(segs.iter().map(|s| self.point[*s].clone()));
             for &seg in &segs {
                 seg_contour[seg.idx.0] = Some(contour_idx);
             }
-            ret.contours[contour_idx.0].points = points;
+            ret.contours[contour_idx.0].points =
+                segs.iter().map(|s| self.point[*s].clone()).collect();
         }
 
         ret

@@ -7,10 +7,6 @@ Contours(
     Contour(
       points: [
         Point(
-          y: 0.0,
-          x: 0.0,
-        ),
-        Point(
           y: 0.5,
           x: 0.0,
         ),
@@ -21,6 +17,10 @@ Contours(
         Point(
           y: 0.0,
           x: 0.5,
+        ),
+        Point(
+          y: 0.0,
+          x: 0.0,
         ),
       ],
       parent: None,
