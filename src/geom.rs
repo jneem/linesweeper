@@ -242,6 +242,22 @@ impl<F: Float> Segment<F> {
         }
     }
 
+    /// The lower envelope of this segment at the given height.
+    ///
+    /// In the write-up this was called `alpha^-_(y,epsilon)`.
+    pub fn lower_with_scaled_eps(&self, y: &F, eps: &F, scaled_eps: &F) -> F {
+        let min_x = self.end.x.clone().min(self.start.x.clone());
+
+        if self.is_horizontal() {
+            // Special case for horizontal lines, because their
+            // `at_y` function returns the larger x position, and
+            // we want the smaller one here.
+            self.start.x.clone() - eps
+        } else {
+            (self.at_y(y) - scaled_eps).max(min_x - eps)
+        }
+    }
+
     /// The upper envelope of this segment at the given height.
     ///
     /// In the write-up this was called `alpha^+_(y,epsilon)`.
@@ -249,6 +265,15 @@ impl<F: Float> Segment<F> {
         let max_x = self.end.x.clone().max(self.start.x.clone());
 
         (self.at_y(y) + self.scaled_eps(eps)).min(max_x + eps)
+    }
+
+    /// The upper envelope of this segment at the given height.
+    ///
+    /// In the write-up this was called `alpha^+_(y,epsilon)`.
+    pub fn upper_with_scaled_eps(&self, y: &F, eps: &F, scaled_eps: &F) -> F {
+        let max_x = self.end.x.clone().max(self.start.x.clone());
+
+        (self.at_y(y) + scaled_eps).min(max_x + eps)
     }
 }
 

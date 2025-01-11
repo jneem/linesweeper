@@ -339,8 +339,10 @@ impl<F: Float> Sweeper<F> {
             // at the two interval endpoints.
             let y1 = &height_bound;
             let threshold = self.eps.clone() / F::from_f32(4.0);
-            if threshold <= other.lower(y, &self.eps) - seg.at_y(y)
-                && threshold <= other.lower(y1, &self.eps) - seg.at_y(y1)
+            let scaled_eps = other.scaled_eps(&self.eps);
+            if threshold <= other.lower_with_scaled_eps(y, &self.eps, &scaled_eps) - seg.at_y(y)
+                && threshold
+                    <= other.lower_with_scaled_eps(y1, &self.eps, &scaled_eps) - seg.at_y(y1)
             {
                 break;
             }
@@ -376,9 +378,11 @@ impl<F: Float> Sweeper<F> {
             // bound on the whole interesting `y` interval. Since they're lines, it's enough to check
             // at the two interval endpoints.
             let y1 = &height_bound;
+            let scaled_eps = other.scaled_eps(&self.eps);
             let threshold = self.eps.clone() / F::from_f32(4.0);
-            if seg.at_y(y) - other.upper(y, &self.eps) > threshold
-                && seg.at_y(y1) - other.upper(y1, &self.eps) > threshold
+            if seg.at_y(y) - other.upper_with_scaled_eps(y, &self.eps, &scaled_eps) > threshold
+                && seg.at_y(y1) - other.upper_with_scaled_eps(y1, &self.eps, &scaled_eps)
+                    > threshold
             {
                 break;
             }

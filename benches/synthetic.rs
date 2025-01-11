@@ -45,16 +45,16 @@ fn just_the_sweep(c: &mut Criterion) {
         segs.add_cycle(c);
     }
 
-    // c.bench_function("just the sweep", |b| {
-    //     b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
-    // });
     c.bench_function("just the sweep", |b| {
-        b.iter(|| {
-            for _ in 0..10_000 {
-                linesweeper::sweep::sweep(&segs, &eps, |_, _| {})
-            }
-        })
+        b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
     });
+    // c.bench_function("just the sweep", |b| {
+    //     b.iter(|| {
+    //         for _ in 0..10_000 {
+    //             linesweeper::sweep::sweep(&segs, &eps, |_, _| {})
+    //         }
+    //     })
+    // });
 }
 
 fn build_topology(c: &mut Criterion) {
