@@ -195,10 +195,7 @@ impl<F: Float> Segment<F> {
 
     /// Convert this segment to an exact segment using rational arithmetic.
     pub fn to_exact(&self) -> Segment<Rational> {
-        Segment {
-            start: self.start.to_exact(),
-            end: self.end.to_exact(),
-        }
+        Segment::new(self.start.to_exact(), self.end.to_exact())
     }
 
     /// Returns true if this segment is exactly horizontal.
@@ -310,12 +307,9 @@ pub(crate) mod tests {
             (Point::reasonable(), Point::reasonable())
                 .prop_map(|(start, end)| {
                     if start <= end {
-                        Segment { start, end }
+                        Segment::new(start, end)
                     } else {
-                        Segment {
-                            start: end,
-                            end: start,
-                        }
+                        Segment::new(end, start)
                     }
                 })
                 .boxed()
@@ -378,6 +372,7 @@ pub(crate) mod tests {
             if s0.start.y > s1.end.y || s1.start.y > s0.end.y {
                 return Ok(());
             }
+            let eps = NotNan::try_from(2e6f32 * (-19.0f32).exp2()).unwrap();
             let t0 = s0.to_exact();
             let t1 = s1.to_exact();
             if t0.is_horizontal() || t1.is_horizontal() {
@@ -400,7 +395,6 @@ pub(crate) mod tests {
                 return Ok(());
             }
 
-            let eps = NotNan::try_from(2e6f32 * (-19.0f32).exp2()).unwrap();
             let y = s0.crossing_y(&s1, &eps).unwrap().to_exact();
             let x0 = t0.at_y(&y);
             let x1 = t1.at_y(&y);

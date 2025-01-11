@@ -308,6 +308,9 @@ impl<F: Float> Sweeper<F> {
     fn intersection_scan_right(&mut self, start_idx: usize) {
         let seg = &self.segments[self.line.seg(start_idx)];
         let y = &self.y;
+        if seg.is_horizontal() {
+            return;
+        }
 
         // We're allowed to take a potentially-smaller height bound by taking
         // into account the current queue. A larger height bound is still ok,
@@ -347,6 +350,9 @@ impl<F: Float> Sweeper<F> {
     fn intersection_scan_left(&mut self, start_idx: usize) {
         let seg = &self.segments[self.line.seg(start_idx)];
         let y = &self.y;
+        if seg.is_horizontal() {
+            return;
+        }
 
         let mut height_bound = seg.end.y.clone();
 

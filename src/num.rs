@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 use malachite::Rational;
 use ordered_float::NotNan;
+use ordered_float::OrderedFloat;
 
 /// A trait for abstracting over the properties we need from numerical types.
 ///
@@ -86,6 +87,42 @@ impl Float for NotNan<f64> {
 
     fn abs(self) -> Self {
         self.into_inner().abs().try_into().unwrap()
+    }
+
+    fn is_subnormal(&self) -> bool {
+        self.into_inner().is_subnormal()
+    }
+}
+
+impl Float for OrderedFloat<f64> {
+    fn from_f32(x: f32) -> Self {
+        OrderedFloat::from(f64::from(x))
+    }
+
+    fn to_exact(&self) -> Rational {
+        self.into_inner().try_into().unwrap()
+    }
+
+    fn abs(self) -> Self {
+        self.into_inner().abs().into()
+    }
+
+    fn is_subnormal(&self) -> bool {
+        self.into_inner().is_subnormal()
+    }
+}
+
+impl Float for OrderedFloat<f32> {
+    fn from_f32(x: f32) -> Self {
+        OrderedFloat::from(x)
+    }
+
+    fn to_exact(&self) -> Rational {
+        self.into_inner().try_into().unwrap()
+    }
+
+    fn abs(self) -> Self {
+        self.into_inner().abs().into()
     }
 
     fn is_subnormal(&self) -> bool {

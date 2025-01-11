@@ -1,18 +1,18 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ordered_float::NotNan;
+use ordered_float::OrderedFloat;
 
 use linesweeper::{
     boolean_op, topology::Topology, BooleanOp, FillRule, Float as _, Point, Segments,
 };
 
-type Float = NotNan<f64>;
+type Float = OrderedFloat<f64>;
 type Contours = Vec<Vec<Point<Float>>>;
 
 fn cubes((x0, y0): (f64, f64), size: f64, offset: f64, count: usize) -> Contours {
     let mut ret = Vec::new();
-    let x0 = NotNan::try_from(x0).unwrap();
-    let y0 = NotNan::try_from(y0).unwrap();
-    let size = NotNan::try_from(size).unwrap();
+    let x0 = OrderedFloat::from(x0);
+    let y0 = OrderedFloat::from(y0);
+    let size = OrderedFloat::from(size);
     for i in 0..count {
         let x = x0 + Float::from_f32(i as f32) * offset;
         for j in 0..count {
@@ -39,21 +39,28 @@ fn checkerboard(n: usize) -> (Contours, Contours) {
 fn just_the_sweep(c: &mut Criterion) {
     let (contours_even, contours_odd) = checkerboard(10);
 
-    let eps = NotNan::try_from(0.01f64).unwrap();
+    let eps = OrderedFloat::from(0.01f64);
     let mut segs = Segments::default();
     for c in contours_even.into_iter().chain(contours_odd) {
         segs.add_cycle(c);
     }
 
+    // c.bench_function("just the sweep", |b| {
+    //     b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
+    // });
     c.bench_function("just the sweep", |b| {
-        b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
+        b.iter(|| {
+            for _ in 0..10_000 {
+                linesweeper::sweep::sweep(&segs, &eps, |_, _| {})
+            }
+        })
     });
 }
 
 fn build_topology(c: &mut Criterion) {
     let (contours_even, contours_odd) = checkerboard(10);
 
-    let eps = NotNan::try_from(0.01f64).unwrap();
+    let eps = OrderedFloat::from(0.01f64);
     c.bench_function("build topology", |b| {
         b.iter(|| {
             black_box(Topology::new(
