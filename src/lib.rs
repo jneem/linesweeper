@@ -99,7 +99,6 @@ pub fn boolean_op(
             .map(|ps| ps.iter().map(|p| Point::try_from(*p).ok().unwrap())),
         &eps,
     );
-    dbg!(&top);
 
     let inside = |windings: WindingNumber| {
         let inside_one = |winding| match fill_rule {
