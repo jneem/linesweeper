@@ -1071,16 +1071,8 @@ mod tests {
                 let q0 = top.point[j.first_half()].clone();
                 let q1 = top.point[j.second_half()].clone();
 
-                let s = Segment {
-                    start: p0.clone().min(p1.clone()),
-                    end: p1.max(p0),
-                }
-                .to_exact();
-                let t = Segment {
-                    start: q0.clone().min(q1.clone()),
-                    end: q1.max(q0),
-                }
-                .to_exact();
+                let s = Segment::new(p0.clone().min(p1.clone()), p1.max(p0)).to_exact();
+                let t = Segment::new(q0.clone().min(q1.clone()), q1.max(q0)).to_exact();
 
                 if s.end.y >= t.start.y && t.end.y >= s.start.y {
                     if let Some(y) = s.exact_intersection_y(&t) {

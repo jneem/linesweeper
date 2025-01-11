@@ -680,53 +680,6 @@ impl Segment<Rational> {
     }
 }
 
-impl<F: Float> Segment<F> {
-    // Scale eps based on the slope of this line.
-    //
-    // The write-up used 1/(cos theta) for scaling. Here we use
-    // the smaller (and therefore stricter) max(1, 1/|slope|) scaling,
-    // because it's possible to compute exactly when doing rational
-    // arithmetic.
-    fn scaled_eps(&self, eps: &F) -> F {
-        assert!(self.start.y <= self.end.y);
-        if self.start.y == self.end.y {
-            // See `scaled_eps_bound`
-            return eps.clone();
-        }
-
-        let dx = (self.end.x.clone() - &self.start.x).abs();
-        let dy = self.end.y.clone() - &self.start.y;
-
-        if dx <= dy {
-            eps.clone()
-        } else {
-            (dx * eps) / dy
-        }
-    }
-
-    /// The lower envelope of this segment at the given height.
-    ///
-    /// In the write-up this was called `alpha^-_(y,epsilon)`.
-    fn lower(&self, y: &F, eps: &F) -> F {
-        let min_x = self.end.x.clone().min(self.start.x.clone());
-
-        if self.is_horizontal() {
-            // Special case for horizontal lines, because their
-            // `at_y` function returns the larger x position, and
-            // we want the smaller one here.
-            self.start.x.clone() - eps
-        } else {
-            (self.at_y(y) - self.scaled_eps(eps)).max(min_x - eps)
-        }
-    }
-
-    fn upper(&self, y: &F, eps: &F) -> F {
-        let max_x = self.end.x.clone().max(self.start.x.clone());
-
-        (self.at_y(y) + self.scaled_eps(eps)).min(max_x + eps)
-    }
-}
-
 impl SegmentOrder {
     /// If the ordering invariants fail, returns a pair of indices witnessing that failure.
     /// Used in tests, and when enabling slow-asserts
@@ -1491,10 +1444,7 @@ mod tests {
 
             let x0: NotNan<f64> = new.0.try_into().unwrap();
             let x1: NotNan<f64> = new.1.try_into().unwrap();
-            let new = Segment {
-                start: Point::new(x0, y0),
-                end: Point::new(x1, y1),
-            };
+            let new = Segment::new(Point::new(x0, y0), Point::new(x1, y1));
 
             let mut line: SegmentOrder = (0..(xs.len() - 1)).map(SegIdx).collect();
             let idx = line.insertion_idx(&y, &segs, &new, &eps);

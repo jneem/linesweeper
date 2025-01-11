@@ -133,10 +133,7 @@ impl<F: Float> Segments<F> {
 
         for (p, q) in pairs(&ps) {
             let (a, b, orient) = if p < q { (p, q, true) } else { (q, p, false) };
-            self.segs.push(Segment {
-                start: a.clone(),
-                end: b.clone(),
-            });
+            self.segs.push(Segment::new(a.clone(), b.clone()));
             self.orientation.push(orient);
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
@@ -162,10 +159,7 @@ impl<F: Float> Segments<F> {
 
         for (p, q) in cyclic_pairs(&ps) {
             let (a, b, orient) = if p < q { (p, q, true) } else { (q, p, false) };
-            self.segs.push(Segment {
-                start: a.clone(),
-                end: b.clone(),
-            });
+            self.segs.push(Segment::new(a.clone(), b.clone()));
             self.orientation.push(orient);
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));

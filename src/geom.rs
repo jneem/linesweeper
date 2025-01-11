@@ -94,6 +94,13 @@ impl<F: Float> std::fmt::Debug for Segment<F> {
 }
 
 impl<F: Float> Segment<F> {
+    /// Create a new segment.
+    ///
+    /// `start` must be less than `end`.
+    pub fn new(start: Point<F>, end: Point<F>) -> Self {
+        Self { start, end }
+    }
+
     /// Our `x` coordinate at the given `y` coordinate.
     ///
     /// Horizontal segments will return their largest `x` coordinate.
@@ -197,6 +204,54 @@ impl<F: Float> Segment<F> {
     /// Returns true if this segment is exactly horizontal.
     pub fn is_horizontal(&self) -> bool {
         self.start.y == self.end.y
+    }
+
+    /// Scale eps based on the slope of this line.
+    ///
+    /// The write-up used 1/(cos theta) for scaling. Here we use
+    /// the smaller (and therefore stricter) max(1, 1/|slope|) scaling,
+    /// because it's possible to compute exactly when doing rational
+    /// arithmetic.
+    pub fn scaled_eps(&self, eps: &F) -> F {
+        assert!(self.start.y <= self.end.y);
+        if self.start.y == self.end.y {
+            // See `scaled_eps_bound`
+            return eps.clone();
+        }
+
+        let dx = (self.end.x.clone() - &self.start.x).abs();
+        let dy = self.end.y.clone() - &self.start.y;
+
+        if dx <= dy {
+            eps.clone()
+        } else {
+            (dx * eps) / dy
+        }
+    }
+
+    /// The lower envelope of this segment at the given height.
+    ///
+    /// In the write-up this was called `alpha^-_(y,epsilon)`.
+    pub fn lower(&self, y: &F, eps: &F) -> F {
+        let min_x = self.end.x.clone().min(self.start.x.clone());
+
+        if self.is_horizontal() {
+            // Special case for horizontal lines, because their
+            // `at_y` function returns the larger x position, and
+            // we want the smaller one here.
+            self.start.x.clone() - eps
+        } else {
+            (self.at_y(y) - self.scaled_eps(eps)).max(min_x - eps)
+        }
+    }
+
+    /// The upper envelope of this segment at the given height.
+    ///
+    /// In the write-up this was called `alpha^+_(y,epsilon)`.
+    pub fn upper(&self, y: &F, eps: &F) -> F {
+        let max_x = self.end.x.clone().max(self.start.x.clone());
+
+        (self.at_y(y) + self.scaled_eps(eps)).min(max_x + eps)
     }
 }
 

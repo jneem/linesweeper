@@ -34,6 +34,9 @@ pub trait Float:
 
     /// The absolute value.
     fn abs(self) -> Self;
+
+    /// Is this a subnormal number?
+    fn is_subnormal(&self) -> bool;
 }
 
 impl Float for Rational {
@@ -47,6 +50,10 @@ impl Float for Rational {
 
     fn abs(self) -> Self {
         <Rational as malachite::num::arithmetic::traits::Abs>::abs(self)
+    }
+
+    fn is_subnormal(&self) -> bool {
+        false
     }
 }
 
@@ -62,6 +69,10 @@ impl Float for NotNan<f32> {
     fn abs(self) -> Self {
         self.into_inner().abs().try_into().unwrap()
     }
+
+    fn is_subnormal(&self) -> bool {
+        self.into_inner().is_subnormal()
+    }
 }
 
 impl Float for NotNan<f64> {
@@ -75,6 +86,10 @@ impl Float for NotNan<f64> {
 
     fn abs(self) -> Self {
         self.into_inner().abs().try_into().unwrap()
+    }
+
+    fn is_subnormal(&self) -> bool {
+        self.into_inner().is_subnormal()
     }
 }
 

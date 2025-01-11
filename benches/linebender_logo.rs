@@ -84,7 +84,7 @@ fn just_the_sweep(c: &mut Criterion) {
         segs.add_cycle(c);
     }
 
-    c.bench_function("just the sweep", |b| {
+    c.bench_function("logo: just the sweep", |b| {
         b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
     });
 }
@@ -98,7 +98,7 @@ fn build_topology(c: &mut Criterion) {
 
     const EMPTY: [[Point<NotNan<f64>>; 0]; 0] = [];
 
-    c.bench_function("build topology", |b| {
+    c.bench_function("logo: build topology", |b| {
         b.iter(|| black_box(Topology::new(contours.clone(), EMPTY, &eps)));
     });
 }
