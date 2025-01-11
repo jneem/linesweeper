@@ -6,6 +6,135 @@ use malachite::Rational;
 use ordered_float::NotNan;
 use ordered_float::OrderedFloat;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CheapOrderedFloat(f64);
+
+impl std::ops::Add<CheapOrderedFloat> for CheapOrderedFloat {
+    type Output = Self;
+
+    fn add(self, rhs: CheapOrderedFloat) -> Self::Output {
+        CheapOrderedFloat(self.0 + rhs.0)
+    }
+}
+
+impl<'a> std::ops::Add<&'a CheapOrderedFloat> for CheapOrderedFloat {
+    type Output = Self;
+
+    fn add(self, rhs: &'a CheapOrderedFloat) -> Self::Output {
+        CheapOrderedFloat(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Sub<CheapOrderedFloat> for CheapOrderedFloat {
+    type Output = Self;
+
+    fn sub(self, rhs: CheapOrderedFloat) -> Self::Output {
+        CheapOrderedFloat(self.0 - rhs.0)
+    }
+}
+
+impl<'a> std::ops::Sub<&'a CheapOrderedFloat> for CheapOrderedFloat {
+    type Output = Self;
+
+    fn sub(self, rhs: &'a CheapOrderedFloat) -> Self::Output {
+        CheapOrderedFloat(self.0 - rhs.0)
+    }
+}
+
+impl std::ops::Mul<CheapOrderedFloat> for CheapOrderedFloat {
+    type Output = Self;
+
+    fn mul(self, rhs: CheapOrderedFloat) -> Self::Output {
+        CheapOrderedFloat(self.0 * rhs.0)
+    }
+}
+
+impl<'a> std::ops::Mul<&'a CheapOrderedFloat> for CheapOrderedFloat {
+    type Output = Self;
+
+    fn mul(self, rhs: &'a CheapOrderedFloat) -> Self::Output {
+        CheapOrderedFloat(self.0 * rhs.0)
+    }
+}
+
+impl std::ops::Div<CheapOrderedFloat> for CheapOrderedFloat {
+    type Output = Self;
+
+    fn div(self, rhs: CheapOrderedFloat) -> Self::Output {
+        CheapOrderedFloat(self.0 / rhs.0)
+    }
+}
+
+impl<'a> std::ops::Div<&'a CheapOrderedFloat> for CheapOrderedFloat {
+    type Output = Self;
+
+    fn div(self, rhs: &'a CheapOrderedFloat) -> Self::Output {
+        CheapOrderedFloat(self.0 / rhs.0)
+    }
+}
+
+impl std::ops::Neg for CheapOrderedFloat {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        CheapOrderedFloat(-self.0)
+    }
+}
+
+impl Hash for CheapOrderedFloat {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state)
+    }
+}
+
+impl CheapOrderedFloat {
+    pub fn into_inner(self) -> f64 {
+        self.0
+    }
+}
+
+// Now comes the fishy stuff.
+impl Eq for CheapOrderedFloat {}
+
+impl PartialOrd for CheapOrderedFloat {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CheapOrderedFloat {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.partial_cmp(&other.0).unwrap()
+    }
+}
+
+impl Float for CheapOrderedFloat {
+    fn from_f32(x: f32) -> Self {
+        Self(x.into())
+    }
+
+    fn to_exact(&self) -> Rational {
+        self.0.try_into().unwrap()
+    }
+
+    #[inline(always)]
+    fn abs(self) -> Self {
+        CheapOrderedFloat(self.0.abs())
+    }
+
+    fn is_subnormal(&self) -> bool {
+        self.0.is_subnormal()
+    }
+}
+
+impl From<f64> for CheapOrderedFloat {
+    fn from(value: f64) -> Self {
+        CheapOrderedFloat(value)
+    }
+}
+
 /// A trait for abstracting over the properties we need from numerical types.
 ///
 /// This is implemented for `NotNan<f64>`, `NotNan<f32>`, and `malachite::Rational`.

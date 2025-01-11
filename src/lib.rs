@@ -8,7 +8,7 @@ pub mod sweep;
 pub mod topology;
 
 pub use geom::{Point, Segment};
-pub use num::Float;
+pub use num::{CheapOrderedFloat, Float};
 pub use segments::{SegIdx, Segments};
 
 use ordered_float::NotNan;
