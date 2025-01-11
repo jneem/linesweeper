@@ -14,23 +14,25 @@ expression: "snapshot_outputs(segs, 0.1)"
           old_idx: Some(0),
         ),
         SegmentOrderEntry(
-          seg: SegIdx(4),
-          exit: true,
-          enter: true,
-          needs_position: true,
-          old_idx: Some(1),
-        ),
-        SegmentOrderEntry(
           seg: SegIdx(5),
           exit: false,
           enter: true,
           needs_position: true,
-          old_idx: Some(2),
+          old_idx: Some(1),
         ),
       ],
     ),
     changed: [
-      (0, 3),
+      ChangedInterval(
+        segs: Range(
+          start: 0,
+          end: 2,
+        ),
+        horizontals: Some(Range(
+          start: 0,
+          end: 1,
+        )),
+      ),
     ],
   ),
   Output(
@@ -54,27 +56,29 @@ expression: "snapshot_outputs(segs, 0.1)"
           seg: SegIdx(5),
           exit: false,
           enter: false,
-          needs_position: true,
+          needs_position: false,
           old_idx: Some(2),
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(0),
-          exit: true,
-          enter: true,
-          needs_position: true,
-          old_idx: Some(3),
         ),
         SegmentOrderEntry(
           seg: SegIdx(1),
           exit: false,
           enter: true,
           needs_position: true,
-          old_idx: Some(4),
+          old_idx: Some(3),
         ),
       ],
     ),
     changed: [
-      (1, 5),
+      ChangedInterval(
+        segs: Range(
+          start: 1,
+          end: 4,
+        ),
+        horizontals: Some(Range(
+          start: 0,
+          end: 1,
+        )),
+      ),
     ],
   ),
   Output(
@@ -91,7 +95,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           seg: SegIdx(3),
           exit: false,
           enter: false,
-          needs_position: true,
+          needs_position: false,
           old_idx: Some(1),
         ),
         SegmentOrderEntry(
@@ -100,13 +104,6 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           needs_position: true,
           old_idx: Some(2),
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(6),
-          exit: true,
-          enter: true,
-          needs_position: true,
-          old_idx: Some(3),
         ),
         SegmentOrderEntry(
           seg: SegIdx(1),
@@ -118,7 +115,16 @@ expression: "snapshot_outputs(segs, 0.1)"
       ],
     ),
     changed: [
-      (0, 4),
+      ChangedInterval(
+        segs: Range(
+          start: 0,
+          end: 3,
+        ),
+        horizontals: Some(Range(
+          start: 0,
+          end: 1,
+        )),
+      ),
     ],
   ),
   Output(
@@ -138,17 +144,19 @@ expression: "snapshot_outputs(segs, 0.1)"
           needs_position: true,
           old_idx: Some(1),
         ),
-        SegmentOrderEntry(
-          seg: SegIdx(2),
-          exit: true,
-          enter: true,
-          needs_position: true,
-          old_idx: Some(2),
-        ),
       ],
     ),
     changed: [
-      (0, 3),
+      ChangedInterval(
+        segs: Range(
+          start: 0,
+          end: 2,
+        ),
+        horizontals: Some(Range(
+          start: 0,
+          end: 1,
+        )),
+      ),
     ],
   ),
 ]

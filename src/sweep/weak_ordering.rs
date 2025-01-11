@@ -131,7 +131,9 @@ impl<F: Float> EventQueue<F> {
 
         for seg in segments.indices() {
             enter.push((segments[seg].start.y.clone(), seg));
-            exit.push((segments[seg].end.y.clone(), seg));
+            if !segments[seg].is_horizontal() {
+                exit.push((segments[seg].end.y.clone(), seg));
+            }
         }
 
         // We sort the enter segments by reversed y position (so that we can consume them
@@ -209,6 +211,8 @@ pub struct Sweeper<F: Float> {
     // TODO: maybe borrow Segments?
     pub(crate) segments: Segments<F>,
 
+    horizontals: Vec<SegIdx>,
+
     // The collection of segments that we know need to be given explicit
     // positions in the current sweep line.
     //
@@ -221,7 +225,7 @@ pub struct Sweeper<F: Float> {
     // it's fast to find them. It means that we need to do some fixing-up if indices after
     // inserting all the new segments.
     pub(crate) segs_needing_positions: Vec<usize>,
-    changed_intervals: Vec<(usize, usize)>,
+    changed_intervals: Vec<ChangedInterval>,
 }
 
 impl<F: Float> Sweeper<F> {
@@ -237,6 +241,7 @@ impl<F: Float> Sweeper<F> {
             segments: segments.clone(),
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
+            horizontals: Vec::new(),
         }
     }
 
@@ -289,8 +294,8 @@ impl<F: Float> Sweeper<F> {
         // Reset the state flags for all segments. All segments with non-trivial state flags should
         // belong to the changed intervals. This needs to go before we remove the exiting segments,
         // because that messes up the indices.
-        for (start, end) in self.changed_intervals.drain(..) {
-            for seg in &mut self.line.segs[start..end] {
+        for r in self.changed_intervals.drain(..) {
+            for seg in &mut self.line.segs[r.segs] {
                 seg.reset_state();
             }
         }
@@ -303,14 +308,12 @@ impl<F: Float> Sweeper<F> {
         }
         self.y = y;
         self.segs_needing_positions.clear();
+        self.horizontals.clear();
     }
 
     fn intersection_scan_right(&mut self, start_idx: usize) {
         let seg = &self.segments[self.line.seg(start_idx)];
         let y = &self.y;
-        if seg.is_horizontal() {
-            return;
-        }
 
         // We're allowed to take a potentially-smaller height bound by taking
         // into account the current queue. A larger height bound is still ok,
@@ -352,9 +355,6 @@ impl<F: Float> Sweeper<F> {
     fn intersection_scan_left(&mut self, start_idx: usize) {
         let seg = &self.segments[self.line.seg(start_idx)];
         let y = &self.y;
-        if seg.is_horizontal() {
-            return;
-        }
 
         let mut height_bound = seg.end.y.clone();
 
@@ -404,12 +404,18 @@ impl<F: Float> Sweeper<F> {
 
     fn handle_enter(&mut self, seg_idx: SegIdx) {
         let new_seg = &self.segments[seg_idx];
+
+        if new_seg.is_horizontal() {
+            self.horizontals.push(seg_idx);
+            return;
+        }
+
         let pos = self
             .line
             .insertion_idx(&self.y, &self.segments, new_seg, &self.eps);
         let mut entry = SegmentOrderEntry::from(seg_idx);
         entry.enter = true;
-        entry.exit = new_seg.is_horizontal();
+        entry.exit = false;
         self.insert(pos, entry);
 
         // Fix up the index of any other segments that we got inserted before
@@ -563,6 +569,41 @@ impl<F: Float> Sweeper<F> {
     #[cfg(not(feature = "slow-asserts"))]
     fn check_invariants(&self) {}
 
+    fn compute_horizontal_changed_intervals(&mut self) {
+        self.horizontals
+            .sort_by_key(|seg_idx| self.segments[*seg_idx].start.x.clone());
+
+        for (idx, &seg_idx) in self.horizontals.iter().enumerate() {
+            let seg = &self.segments[seg_idx];
+
+            // Find the index of some segment that might overlap with this
+            // horizontal segment, but the index before definitely doesn't.
+            let start_idx = self.line.segs.partition_point(|other_entry| {
+                let other_seg = &self.segments[other_entry.seg];
+                seg.start.x > other_seg.upper(&self.y, &self.eps)
+            });
+
+            let mut end_idx = start_idx;
+            for j in start_idx..self.line.segs.len() {
+                let other_entry = &mut self.line.segs[j];
+                let other_seg = &self.segments[other_entry.seg];
+                if other_seg.lower(&self.y, &self.eps) <= seg.end.x {
+                    // Ensure that every segment in the changed interval has `old_idx` set;
+                    // see also `compute_changed_intervals`.
+                    self.line.segs[j].set_old_idx_if_unset(j);
+                    end_idx = j + 1;
+                } else {
+                    break;
+                }
+            }
+            let changed = ChangedInterval {
+                segs: start_idx..end_idx,
+                horizontals: Some(idx..(idx + 1)),
+            };
+            self.changed_intervals.push(changed);
+        }
+    }
+
     /// Updates our internal `changed_intervals` state based on the segments marked
     /// as needing positions.
     ///
@@ -570,6 +611,8 @@ impl<F: Float> Sweeper<F> {
     /// physically nearby segments, and then we deduplicate and merge those ranges.
     fn compute_changed_intervals(&mut self) {
         debug_assert!(self.changed_intervals.is_empty());
+        self.compute_horizontal_changed_intervals();
+
         let y = &self.y;
 
         // We compare horizontal positions to decide when to stop iterating. Those positions
@@ -579,8 +622,6 @@ impl<F: Float> Sweeper<F> {
         let segments = &self.segments;
         let slack = eps.clone() / F::from_f32(4.0);
 
-        // TODO: the handling of horizontal segments adds a bunch of extra cases. Maybe
-        // doing them separately would simplify things?
         for &idx in &self.segs_needing_positions {
             if self.line.segs[idx].needs_position {
                 continue;
@@ -597,11 +638,6 @@ impl<F: Float> Sweeper<F> {
             let mut end_idx = idx + 1;
             let mut seg_min = segments[seg_idx].lower(y, eps);
             let mut seg_max = segments[seg_idx].upper(y, eps);
-            let mut horiz_start = if segments[seg_idx].is_horizontal() {
-                Some(seg_min.clone())
-            } else {
-                None
-            };
 
             for i in (idx + 1)..self.line.segs.len() {
                 let next_seg_idx = self.line.seg(i);
@@ -615,19 +651,6 @@ impl<F: Float> Sweeper<F> {
 
                     end_idx = i + 1;
                 }
-                // TODO: add a test that fails if this block isn't here.
-                if next_seg.is_horizontal() {
-                    horiz_start = match horiz_start {
-                        Some(h) => Some(h.min(next_seg.start.x.clone())),
-                        None => Some(next_seg.start.x.clone()),
-                    };
-                }
-            }
-
-            if let Some(h) = &horiz_start {
-                if h < &seg_min {
-                    seg_min = h.clone();
-                }
             }
 
             for i in (0..start_idx).rev() {
@@ -639,28 +662,48 @@ impl<F: Float> Sweeper<F> {
                     seg_min = prev_seg.lower(y, eps);
                     self.line.segs[i].needs_position = true;
                     self.line.segs[i].set_old_idx_if_unset(i);
+
                     start_idx = i;
                 }
-
-                // Horizontal segments are special; they get inserted in the sweep-line
-                // at their ending position and we need to remember that they span all
-                // the way to their starting position.
-                if let Some(h) = &horiz_start {
-                    if h < &seg_min {
-                        seg_min = h.clone();
-                    }
-                }
             }
-            self.changed_intervals.push((start_idx, end_idx));
+            self.changed_intervals
+                .push(ChangedInterval::from_seg_interval(start_idx..end_idx));
         }
-        self.changed_intervals.sort();
-        self.changed_intervals.dedup();
+        self.changed_intervals.sort_by_key(|r| r.segs.start);
 
         // By merging adjacent intervals, we ensure that there is no horizontal segment
         // that spans two ranges. That's because horizontal segments mark everything they
         // cross as needing a position. Any collection of subranges that are crossed by
         // a horizontal segment are therefore adjacent and will be merged here.
         merge_adjacent(&mut self.changed_intervals);
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ChangedInterval {
+    // Indices into the sweep-line's segment array.
+    pub(crate) segs: std::ops::Range<usize>,
+    // Indices into the array of horizontal segments.
+    pub(crate) horizontals: Option<std::ops::Range<usize>>,
+}
+
+impl ChangedInterval {
+    fn merge(&mut self, other: &ChangedInterval) {
+        self.segs.end = self.segs.end.max(other.segs.end);
+        self.segs.start = self.segs.start.min(other.segs.start);
+
+        self.horizontals = match (self.horizontals.clone(), other.horizontals.clone()) {
+            (None, None) => None,
+            (None, Some(r)) | (Some(r), None) => Some(r),
+            (Some(a), Some(b)) => Some(a.start.min(b.start)..a.end.max(b.end)),
+        };
+    }
+
+    fn from_seg_interval(segs: std::ops::Range<usize>) -> Self {
+        Self {
+            segs,
+            horizontals: None,
+        }
     }
 }
 
@@ -771,8 +814,8 @@ impl SegmentOrder {
         self.segs.iter().position(|&x| x.seg == seg)
     }
 
-    fn range_order(&self, range: (usize, usize)) -> HashMap<SegIdx, usize> {
-        self.segs[range.0..range.1]
+    fn range_order(&self, range: std::ops::Range<usize>) -> HashMap<SegIdx, usize> {
+        self.segs[range]
             .iter()
             .enumerate()
             .map(|(idx, seg)| (seg.seg, idx))
@@ -860,7 +903,7 @@ impl<F: Float> SweepLine<'_, F> {
     /// This method returns a list of ranges (in increasing order, non-overlapping,
     /// and non-adjacent). Each of those ranges indexes a range of segments
     /// that need to be subdivided at the current sweep-line.
-    pub fn changed_intervals(&self) -> &[(usize, usize)] {
+    pub fn changed_intervals(&self) -> &[ChangedInterval] {
         &self.state.changed_intervals
     }
 
@@ -876,11 +919,11 @@ impl<F: Float> SweepLine<'_, F> {
     /// `s1`, `s77` in those positions then you'll get back the map `{ s42 -> 4, s1 -> 5, s77 -> 6 }`.
     pub fn range_orders(
         &self,
-        range: (usize, usize),
+        range: std::ops::Range<usize>,
     ) -> (HashMap<SegIdx, usize>, HashMap<SegIdx, usize>) {
         let mut old_order = HashMap::new();
-        for (i, entry) in self.state.line.segs[range.0..range.1].iter().enumerate() {
-            old_order.insert(entry.seg, entry.old_idx.unwrap_or(range.0 + i));
+        for (i, entry) in self.state.line.segs[range.clone()].iter().enumerate() {
+            old_order.insert(entry.seg, entry.old_idx.unwrap_or(range.start + i));
         }
         (old_order, self.state.line.range_order(range))
     }
@@ -891,17 +934,18 @@ impl<F: Float> SweepLine<'_, F> {
     /// The range must have come from [`SweepLine::changed_intervals`].
     pub fn events_in_range(
         &self,
-        range: (usize, usize),
+        range: &ChangedInterval,
         segments: &Segments<F>,
         eps: &F,
     ) -> OutputEventBatcher<F> {
-        let mut old_line = vec![SegmentOrderEntry::from(SegIdx(42)); range.1 - range.0];
-        for entry in &self.state.line.segs[range.0..range.1] {
-            old_line[entry.old_idx.unwrap() - range.0] = *entry;
+        let mut old_line =
+            vec![SegmentOrderEntry::from(SegIdx(42)); range.segs.end - range.segs.start];
+        for entry in &self.state.line.segs[range.segs.clone()] {
+            old_line[entry.old_idx.unwrap() - range.segs.start] = *entry;
         }
         let old_xs = horizontal_positions(&old_line, &self.state.y, segments, eps);
         let new_xs = horizontal_positions(
-            &self.state.line.segs[range.0..range.1],
+            &self.state.line.segs[range.segs.clone()],
             &self.state.y,
             segments,
             eps,
@@ -909,7 +953,7 @@ impl<F: Float> SweepLine<'_, F> {
 
         // The two positioning arrays should have the same segments, but possibly in a different
         // order. We build them up in the old-sweep-line order.
-        let mut events: Vec<OutputEvent<F>> = Vec::with_capacity(range.1 - range.0);
+        let mut events: Vec<OutputEvent<F>> = Vec::with_capacity(range.segs.end - range.segs.start);
         // It would be natural to set max_so_far to -infinity, but a generic F: Float doesn't
         // have -infinity.
         let mut max_so_far = old_xs
@@ -950,7 +994,7 @@ impl<F: Float> SweepLine<'_, F> {
                 min_x.clone() - F::from_f32(1.0)
             });
         for (entry, min_x, max_x) in new_xs {
-            let ev = &mut events[entry.old_idx.unwrap() - range.0];
+            let ev = &mut events[entry.old_idx.unwrap() - range.segs.start];
             debug_assert_eq!(ev.seg_idx, entry.seg);
             let preferred_x = if min_x <= ev.x0 && ev.x0 <= max_x {
                 // Try snapping to the previous position if possible.
@@ -979,6 +1023,19 @@ impl<F: Float> SweepLine<'_, F> {
                 ev.x1 = seg.end.x.clone();
             }
         }
+
+        if let Some(range) = &range.horizontals {
+            for &seg_idx in &self.state.horizontals[range.clone()] {
+                let seg = &self.state.segments[seg_idx];
+                events.push(OutputEvent {
+                    x0: seg.start.x.clone(),
+                    connected_above: false,
+                    x1: seg.end.x.clone(),
+                    connected_below: false,
+                    seg_idx,
+                });
+            }
+        }
         events.sort();
 
         OutputEventBatcher {
@@ -989,23 +1046,23 @@ impl<F: Float> SweepLine<'_, F> {
     }
 }
 
-/// Given a sorted list of disjoint, endpoint-exclusive intervals, merge adjacent ones.
+/// Given a list of intervals, sorted by starting point, merge the overlapping ones.
 ///
 /// For example, [1..2, 4..5, 5..6] is turned into [1..2, 4..6].
-fn merge_adjacent(intervals: &mut Vec<(usize, usize)>) {
+fn merge_adjacent(intervals: &mut Vec<ChangedInterval>) {
     if intervals.is_empty() {
         return;
     }
 
     let mut write_idx = 0;
     for read_idx in 1..intervals.len() {
-        let last_end = intervals[write_idx].1;
-        let cur = intervals[read_idx];
-        if last_end < cur.0 {
+        let last_end = intervals[write_idx].segs.end;
+        let cur = intervals[read_idx].clone();
+        if last_end < cur.segs.start {
             write_idx += 1;
             intervals[write_idx] = cur;
-        } else {
-            intervals[write_idx].1 = cur.1;
+        } else if last_end < cur.segs.end {
+            intervals[write_idx].merge(&cur);
         }
     }
     intervals.truncate(write_idx + 1);
@@ -1341,8 +1398,8 @@ pub fn sweep<F: Float, C: FnMut(F, OutputEvent<F>)>(
 ) {
     let mut state = Sweeper::new(segments, eps.clone());
     while let Some(line) = state.next_line() {
-        for &(start, end) in line.changed_intervals() {
-            let mut positions = line.events_in_range((start, end), segments, eps);
+        for range in line.changed_intervals() {
+            let mut positions = line.events_in_range(range, segments, eps);
             while let Some(events) = positions.events() {
                 for ev in events {
                     callback(line.state.y.clone(), ev);
@@ -1385,16 +1442,24 @@ mod tests {
 
     #[test]
     fn merge_adjacent() {
-        fn merge(v: impl IntoIterator<Item = (usize, usize)>) -> Vec<(usize, usize)> {
-            let mut v = v.into_iter().collect();
+        fn merge(
+            v: impl IntoIterator<Item = std::ops::Range<usize>>,
+        ) -> Vec<std::ops::Range<usize>> {
+            let mut v = v
+                .into_iter()
+                .map(|r| ChangedInterval::from_seg_interval(r))
+                .collect();
             super::merge_adjacent(&mut v);
-            v
+            v.into_iter().map(|ci| ci.segs).collect()
         }
 
-        assert_eq!(merge([(1, 2), (3, 4)]), vec![(1, 2), (3, 4)]);
-        assert_eq!(merge([(1, 2), (2, 4)]), vec![(1, 4)]);
-        assert_eq!(merge([(1, 2), (3, 4), (4, 5)]), vec![(1, 2), (3, 5)]);
-        assert_eq!(merge([]), vec![]);
+        assert_eq!(merge([1..2, 3..4]), vec![1..2, 3..4]);
+        assert_eq!(merge([1..2, 2..4]), vec![1..4]);
+        assert_eq!(merge([1..2, 3..4, 4..5]), vec![1..2, 3..5]);
+        assert_eq!(merge([1..2, 1..3, 4..5]), vec![1..3, 4..5]);
+        assert_eq!(merge([1..2, 1..4, 4..5]), vec![1..5]);
+        assert_eq!(merge([1..4, 1..2, 4..5]), vec![1..5]);
+        assert_eq!(merge([]), Vec::<std::ops::Range<_>>::new());
     }
 
     #[test]
@@ -1544,7 +1609,7 @@ mod tests {
     #[derive(serde::Serialize, Debug)]
     struct Output {
         order: SegmentOrder,
-        changed: Vec<(usize, usize)>,
+        changed: Vec<ChangedInterval>,
     }
     fn snapshot_outputs(segs: Segments<NotNan<f64>>, eps: f64) -> Vec<Output> {
         let mut outputs = Vec::new();
@@ -1552,7 +1617,7 @@ mod tests {
         while let Some(line) = sweeper.next_line() {
             outputs.push(Output {
                 order: line.state.line.clone(),
-                changed: line.changed_intervals().to_owned(),
+                changed: line.changed_intervals().iter().cloned().collect(),
             });
         }
         outputs

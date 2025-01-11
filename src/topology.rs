@@ -9,7 +9,7 @@ use crate::{
     geom::Point,
     num::Float,
     segments::{SegIdx, Segments},
-    sweep::{OutputEventBatcher, SweepLine, Sweeper},
+    sweep::{ChangedInterval, OutputEventBatcher, SweepLine, Sweeper},
 };
 
 /// We support boolean operations, so a "winding number" for us is two winding
@@ -444,16 +444,16 @@ impl<F: Float> Topology<F> {
         };
         let mut sweep_state = Sweeper::new(&segments, eps.clone());
         while let Some(line) = sweep_state.next_line() {
-            for &(start, end) in line.changed_intervals() {
-                let positions = line.events_in_range((start, end), &segments, eps);
-                let scan_left_seg = if start == 0 {
+            for range in line.changed_intervals() {
+                let positions = line.events_in_range(range, &segments, eps);
+                let scan_left_seg = if range.segs.start == 0 {
                     None
                 } else {
-                    let prev_seg = line.line_segment(start - 1);
+                    let prev_seg = line.line_segment(range.segs.start - 1);
                     debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
                     ret.open_segs[prev_seg.0].front().copied()
                 };
-                ret.update_from_positions(positions, &segments, line, (start, end), scan_left_seg);
+                ret.update_from_positions(positions, &segments, line, range, scan_left_seg);
             }
         }
         ret.merge_coincident();
@@ -465,14 +465,14 @@ impl<F: Float> Topology<F> {
         mut pos: OutputEventBatcher<F>,
         segments: &Segments<F>,
         lines: SweepLine<'_, F>,
-        range: (usize, usize),
+        range: &ChangedInterval,
         mut scan_left: Option<OutputSegIdx>,
     ) {
         let y = lines.y();
         let mut winding = scan_left
             .map(|idx| self.winding[idx].counter_clockwise)
             .unwrap_or_default();
-        let (old_order, new_order) = lines.range_orders(range);
+        let (old_order, new_order) = lines.range_orders(range.segs.clone());
         while let Some(next_x) = pos.x() {
             let p = Point::new(next_x.clone(), y.clone());
             // The first segment at our current point, in clockwise order.

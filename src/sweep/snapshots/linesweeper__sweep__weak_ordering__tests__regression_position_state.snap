@@ -37,7 +37,13 @@ expression: "snapshot_outputs(segs, 0.1)"
       ],
     ),
     changed: [
-      (0, 4),
+      ChangedInterval(
+        segs: Range(
+          start: 0,
+          end: 4,
+        ),
+        horizontals: None,
+      ),
     ],
   ),
   Output(
@@ -88,8 +94,20 @@ expression: "snapshot_outputs(segs, 0.1)"
       ],
     ),
     changed: [
-      (0, 2),
-      (4, 6),
+      ChangedInterval(
+        segs: Range(
+          start: 0,
+          end: 2,
+        ),
+        horizontals: None,
+      ),
+      ChangedInterval(
+        segs: Range(
+          start: 4,
+          end: 6,
+        ),
+        horizontals: None,
+      ),
     ],
   ),
   Output(
@@ -126,7 +144,13 @@ expression: "snapshot_outputs(segs, 0.1)"
       ],
     ),
     changed: [
-      (0, 4),
+      ChangedInterval(
+        segs: Range(
+          start: 0,
+          end: 4,
+        ),
+        horizontals: None,
+      ),
     ],
   ),
   Output(
@@ -149,7 +173,13 @@ expression: "snapshot_outputs(segs, 0.1)"
       ],
     ),
     changed: [
-      (0, 2),
+      ChangedInterval(
+        segs: Range(
+          start: 0,
+          end: 2,
+        ),
+        horizontals: None,
+      ),
     ],
   ),
 ]
