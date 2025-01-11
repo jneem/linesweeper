@@ -32,6 +32,7 @@
             cargo-insta
             cargo-flamegraph
             cargo-outdated
+            cargo-show-asm
             libclang
             libxkbcommon
             typst

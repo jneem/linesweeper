@@ -314,6 +314,7 @@ impl<F: Float> Sweeper<F> {
     fn intersection_scan_right(&mut self, start_idx: usize) {
         let seg = &self.segments[self.line.seg(start_idx)];
         let y = &self.y;
+        let two_eps = self.eps.clone() * F::from_f32(2.0);
 
         // We're allowed to take a potentially-smaller height bound by taking
         // into account the current queue. A larger height bound is still ok,
@@ -325,6 +326,9 @@ impl<F: Float> Sweeper<F> {
                 continue;
             }
             let other = &self.segments[self.line.seg(j)];
+            if seg.quick_left_of(other, &two_eps) {
+                break;
+            }
             height_bound = height_bound.min(other.end.y.clone());
 
             if let Some(int_y) = seg.crossing_y(other, &self.eps) {
@@ -355,6 +359,7 @@ impl<F: Float> Sweeper<F> {
     fn intersection_scan_left(&mut self, start_idx: usize) {
         let seg = &self.segments[self.line.seg(start_idx)];
         let y = &self.y;
+        let two_eps = self.eps.clone() * F::from_f32(2.0);
 
         let mut height_bound = seg.end.y.clone();
 
@@ -363,6 +368,9 @@ impl<F: Float> Sweeper<F> {
                 continue;
             }
             let other = &self.segments[self.line.seg(j)];
+            if other.quick_left_of(seg, &two_eps) {
+                break;
+            }
             height_bound = height_bound.min(other.end.y.clone());
             if let Some(int_y) = other.crossing_y(seg, &self.eps) {
                 let int_y = int_y.max(y.clone());
@@ -679,6 +687,7 @@ impl<F: Float> Sweeper<F> {
     }
 }
 
+/// Represents a sub-interval of the sweep-line where some subdivisions need to happen.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ChangedInterval {
     // Indices into the sweep-line's segment array.
@@ -1447,7 +1456,7 @@ mod tests {
         ) -> Vec<std::ops::Range<usize>> {
             let mut v = v
                 .into_iter()
-                .map(|r| ChangedInterval::from_seg_interval(r))
+                .map(ChangedInterval::from_seg_interval)
                 .collect();
             super::merge_adjacent(&mut v);
             v.into_iter().map(|ci| ci.segs).collect()
@@ -1617,7 +1626,7 @@ mod tests {
         while let Some(line) = sweeper.next_line() {
             outputs.push(Output {
                 order: line.state.line.clone(),
-                changed: line.changed_intervals().iter().cloned().collect(),
+                changed: line.changed_intervals().to_vec(),
             });
         }
         outputs

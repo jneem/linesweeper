@@ -275,6 +275,12 @@ impl<F: Float> Segment<F> {
 
         (self.at_y(y) + scaled_eps).min(max_x + eps)
     }
+
+    pub(crate) fn quick_left_of(&self, other: &Self, eps: &F) -> bool {
+        let my_max = (&self.start.x).max(&self.end.x);
+        let other_min = (&other.start.x).min(&other.end.x);
+        other_min.clone() - my_max > *eps
+    }
 }
 
 impl Segment<Rational> {
