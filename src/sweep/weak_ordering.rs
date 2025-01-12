@@ -203,13 +203,13 @@ impl<F: Float> EventQueue<F> {
 
 /// Encapsulates the state of the sweep-line algorithm and allows iterating over sweep lines.
 #[derive(Clone, Debug)]
-pub struct Sweeper<F: Float> {
+pub struct Sweeper<'a, F: Float> {
     pub(crate) y: F,
     pub(crate) eps: F,
     pub(crate) line: SegmentOrder,
     pub(crate) events: EventQueue<F>,
     // TODO: maybe borrow Segments?
-    pub(crate) segments: Segments<F>,
+    pub(crate) segments: &'a Segments<F>,
 
     horizontals: Vec<SegIdx>,
 
@@ -228,9 +228,9 @@ pub struct Sweeper<F: Float> {
     changed_intervals: Vec<ChangedInterval>,
 }
 
-impl<F: Float> Sweeper<F> {
+impl<'a, F: Float> Sweeper<'a, F> {
     /// Creates a new sweeper for a collection of segments, and with a given tolerance.
-    pub fn new(segments: &Segments<F>, eps: F) -> Self {
+    pub fn new(segments: &'a Segments<F>, eps: F) -> Self {
         let events = EventQueue::from_segments(segments);
 
         Sweeper {
@@ -238,7 +238,7 @@ impl<F: Float> Sweeper<F> {
             line: SegmentOrder::default(),
             y: events.next_y().unwrap().clone(),
             events,
-            segments: segments.clone(),
+            segments,
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
             horizontals: Vec::new(),
@@ -420,7 +420,7 @@ impl<F: Float> Sweeper<F> {
 
         let pos = self
             .line
-            .insertion_idx(&self.y, &self.segments, new_seg, &self.eps);
+            .insertion_idx(&self.y, self.segments, new_seg, &self.eps);
         let mut entry = SegmentOrderEntry::from(seg_idx);
         entry.enter = true;
         entry.exit = false;
@@ -885,7 +885,7 @@ fn horizontal_positions<'a, F: Float>(
 /// It will change.
 #[derive(Clone, Debug)]
 pub struct SweepLine<'a, F: Float> {
-    state: &'a Sweeper<F>,
+    state: &'a Sweeper<'a, F>,
 }
 
 impl<F: Float> Copy for SweepLine<'_, F> {}
