@@ -1,9 +1,10 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ordered_float::NotNan;
 
-use linesweeper::{topology::Topology, Point, Segments};
+use linesweeper::{
+    boolean_op, topology::Topology, BooleanOp, CheapOrderedFloat, FillRule, Point, Segments,
+};
 
-type Float = NotNan<f64>;
+type Float = CheapOrderedFloat;
 
 fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point<Float>>> {
     let mut ret = Vec::new();
@@ -41,12 +42,10 @@ fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point<Float>>> {
                             if !points.is_empty() {
                                 ret.push(points.split_off(0));
                             }
-                            points
-                                .push(Point::new(p.x.try_into().unwrap(), p.y.try_into().unwrap()));
+                            points.push(Point::new(p.x.into(), p.y.into()));
                         }
                         kurbo::PathEl::LineTo(p) => {
-                            points
-                                .push(Point::new(p.x.try_into().unwrap(), p.y.try_into().unwrap()));
+                            points.push(Point::new(p.x.into(), p.y.into()));
                         }
                         kurbo::PathEl::ClosePath => {
                             let p = points.first().cloned();
@@ -78,7 +77,7 @@ fn just_the_sweep(c: &mut Criterion) {
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
     let contours = svg_to_contours(&tree);
 
-    let eps = NotNan::try_from(0.01f64).unwrap();
+    let eps = CheapOrderedFloat::from(0.01f64);
     let mut segs = Segments::default();
     for c in contours {
         segs.add_cycle(c);
@@ -94,14 +93,66 @@ fn build_topology(c: &mut Criterion) {
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
     let contours = svg_to_contours(&tree);
 
-    let eps = NotNan::try_from(0.01f64).unwrap();
+    let eps = CheapOrderedFloat::from(0.01f64);
 
-    const EMPTY: [[Point<NotNan<f64>>; 0]; 0] = [];
+    const EMPTY: [[Point<Float>; 0]; 0] = [];
 
     c.bench_function("logo: build topology", |b| {
         b.iter(|| black_box(Topology::new(contours.clone(), EMPTY, &eps)));
     });
 }
 
-criterion_group!(benches, build_topology, just_the_sweep);
+fn xor(c: &mut Criterion) {
+    let input = include_str!("../examples/linebender.svg");
+    let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
+    let contours = svg_to_contours(&tree);
+
+    let to_floats = |contours: Vec<Vec<Point<CheapOrderedFloat>>>| -> Vec<Vec<_>> {
+        contours
+            .into_iter()
+            .map(|ps| {
+                ps.into_iter()
+                    .map(|p| (p.x.into_inner(), p.y.into_inner()))
+                    .collect()
+            })
+            .collect()
+    };
+
+    let contours = to_floats(contours);
+    let first_contour = vec![contours.first().unwrap().clone()];
+    let other_contours: Vec<_> = contours[1..].to_vec();
+
+    c.bench_function("logo: xor", |b| {
+        b.iter(|| {
+            black_box(boolean_op(
+                &first_contour,
+                &other_contours,
+                FillRule::EvenOdd,
+                BooleanOp::Xor,
+            ))
+        });
+    });
+
+    let to_float_arrays = |contours: Vec<Vec<(f64, f64)>>| -> Vec<Vec<_>> {
+        contours
+            .into_iter()
+            .map(|ps| ps.into_iter().map(|(x, y)| [x, y]).collect())
+            .collect()
+    };
+    let first_contour = to_float_arrays(first_contour);
+    let other_contours = to_float_arrays(other_contours);
+
+    c.bench_function("logo: xor i_overlay", |b| {
+        b.iter(|| {
+            use i_overlay::float::single::SingleFloatOverlay;
+            first_contour.overlay(
+                &other_contours,
+                i_overlay::core::overlay_rule::OverlayRule::Xor,
+                i_overlay::core::fill_rule::FillRule::EvenOdd,
+            );
+        });
+    });
+}
+
+criterion_group!(benches, build_topology, just_the_sweep, xor);
 criterion_main!(benches);

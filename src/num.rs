@@ -6,6 +6,13 @@ use malachite::Rational;
 use ordered_float::NotNan;
 use ordered_float::OrderedFloat;
 
+/// A wrapper for `f64` that implements `Ord`.
+///
+/// Unlike the more principled wrappers in the `ordered_float` crate, this
+/// one just panics when comparing NaNs -- it doesn't order them, nor does
+/// it guard against them on construction. This makes things substantially
+/// faster: I measured a 20% improvement to some benchmarks by switching
+/// from `OrderedFloat` to `CheapOrderedFloat`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CheapOrderedFloat(f64);
 
@@ -88,6 +95,7 @@ impl Hash for CheapOrderedFloat {
 }
 
 impl CheapOrderedFloat {
+    /// Retrieve the inner `f64`.
     pub fn into_inner(self) -> f64 {
         self.0
     }

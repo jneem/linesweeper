@@ -7,6 +7,9 @@ mod segments;
 pub mod sweep;
 pub mod topology;
 
+#[cfg(feature = "generators")]
+pub mod generators;
+
 pub use geom::{Point, Segment};
 pub use num::{CheapOrderedFloat, Float};
 pub use segments::{SegIdx, Segments};

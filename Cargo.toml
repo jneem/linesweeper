@@ -9,6 +9,8 @@ repository = "https://github.com/jneem/linesweeper"
 
 [features]
 slow-asserts = []
+generators = []
+default = []
 
 [dependencies]
 malachite = "0.4.5"
@@ -37,6 +39,7 @@ harness = false
 [[bench]]
 name = "synthetic"
 harness = false
+required-features = ["generators"]
 
 [[example]]
 name = "svg_util"
