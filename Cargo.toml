@@ -37,3 +37,7 @@ harness = false
 [[bench]]
 name = "synthetic"
 harness = false
+
+[[example]]
+name = "svg_util"
+crate-type = ["staticlib"]
