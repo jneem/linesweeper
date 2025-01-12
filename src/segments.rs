@@ -31,6 +31,13 @@ pub struct Segments<F: Float> {
     /// For each segment, stores true if the sweep-line order (small y to big y)
     /// is the same as the orientation in its original contour.
     orientation: Vec<bool>,
+
+    /// All the entrance heights, of segments, ordered by height.
+    /// This includes horizontal segments.
+    enter: Vec<(F, SegIdx)>,
+    /// All the exit heights of segments, ordered by height.
+    /// This does not include horizontal segments.
+    exit: Vec<(F, SegIdx)>,
 }
 
 impl<F: Float> Default for Segments<F> {
@@ -40,6 +47,8 @@ impl<F: Float> Default for Segments<F> {
             contour_prev: Default::default(),
             contour_next: Default::default(),
             orientation: Default::default(),
+            enter: Vec::new(),
+            exit: Vec::new(),
         }
     }
 }
@@ -146,6 +155,8 @@ impl<F: Float> Segments<F> {
         if let Some(last) = self.contour_next.last_mut() {
             *last = None;
         }
+
+        self.update_enter_exit(old_len);
     }
 
     /// Add a closed polyline to this arena.
@@ -172,6 +183,10 @@ impl<F: Float> Segments<F> {
         if let Some(last) = self.contour_next.last_mut() {
             *last = Some(SegIdx(old_len));
         }
+
+        // TODO: this makes it quadratic to add lots of cycles, because we're sorting enter/exit
+        // after each one.
+        self.update_enter_exit(old_len);
     }
 
     /// Construct a segment arena from a single closed polyline.
@@ -179,6 +194,41 @@ impl<F: Float> Segments<F> {
         let mut ret = Self::default();
         ret.add_cycle(ps);
         ret
+    }
+
+    fn update_enter_exit(&mut self, old_len: usize) {
+        for idx in old_len..self.len() {
+            let seg_idx = SegIdx(idx);
+            let seg = &self.segs[seg_idx.0];
+
+            self.enter.push((seg.start.y.clone(), seg_idx));
+            if !seg.is_horizontal() {
+                self.exit.push((seg.end.y.clone(), seg_idx));
+            }
+        }
+
+        // We sort the enter segments by y position, and then by horizontal
+        // start position so that they're fairly likely to get inserted in the
+        // sweep-line in order (which makes the indexing fix-ups faster).
+        self.enter.sort_by(|(y1, seg1), (y2, seg2)| {
+            y1.cmp(y2)
+                .then_with(|| self.segs[seg1.0].at_y(y1).cmp(&self.segs[seg2.0].at_y(y1)))
+        });
+        self.exit.sort_by(|(y1, _), (y2, _)| y1.cmp(y2));
+    }
+
+    /// All the entrance heights of segments, ordered by height.
+    ///
+    /// Includes horizontal segments.
+    pub fn entrances(&self) -> &[(F, SegIdx)] {
+        &self.enter
+    }
+
+    /// All the exit heights of segments, ordered by height.
+    ///
+    /// Does not include horizontal segments.
+    pub fn exits(&self) -> &[(F, SegIdx)] {
+        &self.exit
     }
 }
 

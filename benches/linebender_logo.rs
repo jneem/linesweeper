@@ -84,11 +84,7 @@ fn just_the_sweep(c: &mut Criterion) {
     }
 
     c.bench_function("logo: just the sweep", |b| {
-        b.iter(|| {
-            for _ in 0..1000 {
-                linesweeper::sweep::sweep(&segs, &eps, |_, _| {})
-            }
-        })
+        b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
     });
 }
 

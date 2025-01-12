@@ -110,12 +110,11 @@ impl<T> Drop for SliceGuard<'_, T> {
 
 #[derive(Clone, Debug)]
 pub struct EventQueue<F: Float> {
-    /// This includes horizontal segments.
-    /// TODO: this would be better stored in Segments, since that's a better
-    /// division of mutable vs immutable state.
-    enter: Vec<(F, SegIdx)>,
-    /// This does not include horizontal segments.
-    exit: Vec<(F, SegIdx)>,
+    /// The enter events are stored in `Segments<F>`; this is the index of the first
+    /// one that we haven't processed yet.
+    next_enter_idx: usize,
+    /// The index of the first exit event that we haven't processed yet.
+    next_exit_idx: usize,
     intersection: std::collections::BTreeSet<IntersectionEvent<F>>,
 }
 
@@ -148,8 +147,8 @@ impl<F: Float> EventQueue<F> {
         exit.sort_by(|x, y| x.cmp(y).reverse());
 
         Self {
-            enter,
-            exit,
+            next_enter_idx: 0,
+            next_exit_idx: 0,
             intersection,
         }
     }
@@ -158,38 +157,35 @@ impl<F: Float> EventQueue<F> {
         self.intersection.insert(ev);
     }
 
-    pub fn next_y(&self) -> Option<&F> {
-        let enter_y = self.enter.last().map(|(y, _)| y);
-        let exit_y = self.exit.last().map(|(y, _)| y);
+    pub fn next_y<'a>(&'a self, segments: &'a Segments<F>) -> Option<&'a F> {
+        let enter_y = segments
+            .entrances()
+            .get(self.next_enter_idx)
+            .map(|(y, _)| y);
+        let exit_y = segments.exits().get(self.next_exit_idx).map(|(y, _)| y);
         let int_y = self.intersection.first().map(|i| &i.y);
 
         [enter_y, exit_y, int_y].into_iter().flatten().min()
     }
 
-    pub fn entrances_at_y(&mut self, y: &F) -> SliceGuard<(F, SegIdx)> {
-        let start = self
-            .enter
+    pub fn entrances_at_y<'a>(&mut self, y: &F, segments: &'a Segments<F>) -> &'a [(F, SegIdx)] {
+        let entrances = &segments.entrances()[self.next_enter_idx..];
+        let count = entrances
             .iter()
-            .rposition(|(enter_y, _)| enter_y > y)
-            .map(|i| i + 1)
-            .unwrap_or(0);
-        SliceGuard {
-            vec: &mut self.enter,
-            start,
-        }
+            .position(|(enter_y, _)| enter_y > y)
+            .unwrap_or(entrances.len());
+        self.next_enter_idx += count;
+        &entrances[..count]
     }
 
-    pub fn exits_at_y(&mut self, y: &F) -> SliceGuard<(F, SegIdx)> {
-        let start = self
-            .exit
+    pub fn exits_at_y<'a>(&mut self, y: &F, segments: &'a Segments<F>) -> &'a [(F, SegIdx)] {
+        let exits = &segments.exits()[self.next_exit_idx..];
+        let count = exits
             .iter()
-            .rposition(|(exit_y, _)| exit_y > y)
-            .map(|i| i + 1)
-            .unwrap_or(0);
-        SliceGuard {
-            vec: &mut self.exit,
-            start,
-        }
+            .position(|(exit_y, _)| exit_y > y)
+            .unwrap_or(exits.len());
+        self.next_exit_idx += count;
+        &exits[..count]
     }
 
     pub fn next_intersection_at_y(&mut self, y: &F) -> Option<IntersectionEvent<F>> {
@@ -236,7 +232,7 @@ impl<'a, F: Float> Sweeper<'a, F> {
         Sweeper {
             eps,
             line: SegmentOrder::default(),
-            y: events.next_y().unwrap().clone(),
+            y: events.next_y(segments).unwrap().clone(),
             events,
             segments,
             segs_needing_positions: Vec::new(),
@@ -251,27 +247,26 @@ impl<'a, F: Float> Sweeper<'a, F> {
     pub fn next_line(&mut self) -> Option<SweepLine<'_, F>> {
         self.check_invariants();
 
-        let y = self.events.next_y().cloned()?;
+        let y = self.events.next_y(self.segments).cloned()?;
         self.advance(y.clone());
         self.check_invariants();
 
         // Process all the enter events at this y.
         {
-            // TODO: avoid the to_owned
-            let enters = self.events.entrances_at_y(&y).to_owned();
+            let enters = self.events.entrances_at_y(&y, self.segments);
             for (enter_y, idx) in enters {
-                debug_assert_eq!(enter_y, y);
-                self.handle_enter(idx);
+                debug_assert_eq!(enter_y, &y);
+                self.handle_enter(*idx);
                 self.check_invariants();
             }
         }
 
         // Process all the exit events.
         {
-            let exits = self.events.exits_at_y(&y).to_owned();
+            let exits = self.events.exits_at_y(&y, self.segments);
             for (exit_y, idx) in exits {
-                debug_assert_eq!(exit_y, y);
-                self.handle_exit(idx);
+                debug_assert_eq!(exit_y, &y);
+                self.handle_exit(*idx);
                 self.check_invariants();
             }
         }
