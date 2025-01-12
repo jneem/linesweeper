@@ -2,7 +2,7 @@
 #![doc = include_str!("../README.md")]
 
 mod geom;
-mod num;
+pub mod num;
 mod segments;
 pub mod sweep;
 pub mod topology;
@@ -11,7 +11,6 @@ pub mod topology;
 pub mod generators;
 
 pub use geom::{Point, Segment};
-pub use num::{CheapOrderedFloat, Float};
 pub use segments::{SegIdx, Segments};
 
 use ordered_float::NotNan;

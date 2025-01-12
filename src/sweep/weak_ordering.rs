@@ -938,10 +938,8 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
             .and_then(|idx| self.state.changed_intervals.get(idx))
     }
 
-    /// Returns an [`OutputEventBatcher`] for visiting and processing all positions within
+    /// Returns a [`SweepLineRange`] for visiting and processing all positions within
     /// a range of segments.
-    ///
-    /// The range must have come from [`SweepLine::changed_intervals`].
     pub fn next_range<'a>(
         &'a mut self,
         segments: &Segments<F>,
@@ -1236,8 +1234,8 @@ impl<F: Float> PartialOrd for OutputEvent<F> {
 
 /// Emits output events for a single sub-range of a single sweep-line.
 ///
-/// This is constructed using [`SweepLine::events_in_range`]. By repeatedly
-/// calling `OutputEventBatcher::increase_x` you can iterate over all
+/// This is constructed using [`SweepLine::next_range`]. By repeatedly
+/// calling `SweepLineRange::increase_x` you can iterate over all
 /// interesting horizontal positions, left to right (i.e. smaller `x` to larger
 /// `x`).
 #[derive(Debug)]
@@ -1330,7 +1328,7 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
     ///
     /// All the returned events start at the previous `x` position and end
     /// at the current `x` position. In particular, if you alternate between
-    /// calling [`OutputEventBatcher::increase_x`] and this method, you'll
+    /// calling [`SweepLineRange::increase_x`] and this method, you'll
     /// receive non-overlapping batches of output events.
     pub fn events(&mut self) -> Option<Vec<OutputEvent<F>>> {
         let next_x = self.x()?.clone();
@@ -1424,10 +1422,10 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
 
     /// Returns maps for looking up segment orders.
     ///
-    /// The first map corresponds to the old order at this height; the second map corresponds
-    /// to the new order. If the range came from `SweepLine::changed_intervals`, both maps will
-    /// have the same set of keys. The values in the maps are the positions of the segments in
-    /// the sweep line.
+    /// The first map corresponds to the old order at this height; the second
+    /// map corresponds to the new order. Both maps will have the same set of
+    /// keys. The values in the maps are the positions of the segments in the
+    /// sweep line.
     ///
     /// For example, if you ask for the range `4..7` and the old sweep line has segments `s42`,
     /// `s1`, `s77` in those positions then you'll get back the map `{ s42 -> 4, s1 -> 5, s77 -> 6 }`.

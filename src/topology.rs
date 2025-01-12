@@ -965,10 +965,11 @@ mod tests {
 
     use crate::{
         geom::Point,
+        num::Float,
         perturbation::{
             f64_perturbation, perturbation, realize_perturbation, F64Perturbation, Perturbation,
         },
-        Float, Segment,
+        Segment,
     };
 
     use super::{OutputSegIdx, Topology};

@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use linesweeper::{
-    boolean_op, topology::Topology, BooleanOp, CheapOrderedFloat, FillRule, Point, Segments,
+    boolean_op, num::CheapOrderedFloat, topology::Topology, BooleanOp, FillRule, Point, Segments,
 };
 
 type Float = CheapOrderedFloat;
