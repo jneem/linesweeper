@@ -159,8 +159,31 @@ impl<F: Float> Segments<F> {
         self.update_enter_exit(old_len);
     }
 
+    /// Add a collection of closed polylines to this arena.
+    ///
+    /// This can be much faster than calling `add_cycles` repeatedly.
+    pub fn add_cycles<P: Into<Point<F>>>(
+        &mut self,
+        ps: impl IntoIterator<Item = impl IntoIterator<Item = P>>,
+    ) {
+        let old_len = self.segs.len();
+        for p in ps {
+            self.add_cycle_without_updating_enter_exit(p);
+        }
+        self.update_enter_exit(old_len);
+    }
+
     /// Add a closed polyline to this arena.
     pub fn add_cycle<P: Into<Point<F>>>(&mut self, ps: impl IntoIterator<Item = P>) {
+        let old_len = self.segs.len();
+        self.add_cycle_without_updating_enter_exit(ps);
+        self.update_enter_exit(old_len);
+    }
+
+    fn add_cycle_without_updating_enter_exit<P: Into<Point<F>>>(
+        &mut self,
+        ps: impl IntoIterator<Item = P>,
+    ) {
         let old_len = self.segs.len();
 
         let ps: Vec<_> = ps.into_iter().map(|p| p.into()).collect();
@@ -183,10 +206,6 @@ impl<F: Float> Segments<F> {
         if let Some(last) = self.contour_next.last_mut() {
             *last = Some(SegIdx(old_len));
         }
-
-        // TODO: this makes it quadratic to add lots of cycles, because we're sorting enter/exit
-        // after each one.
-        self.update_enter_exit(old_len);
     }
 
     /// Construct a segment arena from a single closed polyline.
