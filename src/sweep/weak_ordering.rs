@@ -200,12 +200,11 @@ impl<F: Float> EventQueue<F> {
 /// Encapsulates the state of the sweep-line algorithm and allows iterating over sweep lines.
 #[derive(Clone, Debug)]
 pub struct Sweeper<'a, F: Float> {
-    pub(crate) y: F,
-    pub(crate) eps: F,
-    pub(crate) line: SegmentOrder,
-    pub(crate) events: EventQueue<F>,
-    // TODO: maybe borrow Segments?
-    pub(crate) segments: &'a Segments<F>,
+    y: F,
+    eps: F,
+    line: SegmentOrder,
+    events: EventQueue<F>,
+    segments: &'a Segments<F>,
 
     horizontals: Vec<SegIdx>,
 
@@ -220,7 +219,7 @@ pub struct Sweeper<'a, F: Float> {
     // These segments are identified by their index in the current order, so that
     // it's fast to find them. It means that we need to do some fixing-up if indices after
     // inserting all the new segments.
-    pub(crate) segs_needing_positions: Vec<usize>,
+    segs_needing_positions: Vec<usize>,
     changed_intervals: Vec<ChangedInterval>,
 }
 
