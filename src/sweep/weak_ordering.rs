@@ -18,10 +18,10 @@ pub(crate) struct SegmentOrderEntry {
     seg: SegIdx,
     exit: bool,
     enter: bool,
-    // This is filled out during `compute_changed_intervals`. Before that
-    // happens, segments are marked for needing positions by putting them in the
-    // `segs_needing_positions` list.
-    needs_position: bool,
+    // This is filled out during `compute_changed_intervals`, where we use it to detect
+    // if this segment was already marked as needing a position because it was near
+    // some other segment that needs a position.
+    in_changed_interval: bool,
     old_idx: Option<usize>,
 }
 
@@ -29,7 +29,7 @@ impl SegmentOrderEntry {
     fn reset_state(&mut self) {
         self.exit = false;
         self.enter = false;
-        self.needs_position = false;
+        self.in_changed_interval = false;
         self.old_idx = None;
     }
 
@@ -46,7 +46,7 @@ impl From<SegIdx> for SegmentOrderEntry {
             seg,
             exit: false,
             enter: false,
-            needs_position: false,
+            in_changed_interval: false,
             old_idx: None,
         }
     }
@@ -631,7 +631,7 @@ impl<F: Float> Sweeper<F> {
         let slack = eps.clone() / F::from_f32(4.0);
 
         for &idx in &self.segs_needing_positions {
-            if self.line.segs[idx].needs_position {
+            if self.line.segs[idx].in_changed_interval {
                 continue;
             }
             // Ensure that every segment in the changed interval has `old_idx` set. This
@@ -640,7 +640,7 @@ impl<F: Float> Sweeper<F> {
             // segments in a changed interval must have `old_idx` set.
             self.line.segs[idx].set_old_idx_if_unset(idx);
 
-            self.line.segs[idx].needs_position = true;
+            self.line.segs[idx].in_changed_interval = true;
             let seg_idx = self.line.segs[idx].seg;
             let mut start_idx = idx;
             let mut end_idx = idx + 1;
@@ -654,7 +654,7 @@ impl<F: Float> Sweeper<F> {
                     break;
                 } else {
                     seg_max = next_seg.upper(y, eps);
-                    self.line.segs[i].needs_position = true;
+                    self.line.segs[i].in_changed_interval = true;
                     self.line.segs[i].set_old_idx_if_unset(i);
 
                     end_idx = i + 1;
@@ -668,7 +668,7 @@ impl<F: Float> Sweeper<F> {
                     break;
                 } else {
                     seg_min = prev_seg.lower(y, eps);
-                    self.line.segs[i].needs_position = true;
+                    self.line.segs[i].in_changed_interval = true;
                     self.line.segs[i].set_old_idx_if_unset(i);
 
                     start_idx = i;
