@@ -937,7 +937,7 @@ pub struct Contour<F: Float> {
     /// Whether this contour is "outer" or not. A contour with no parent is "outer", and
     /// then they alternate: a contour is "outer" if and only if its parent isn't.
     ///
-    /// As you walk along a contour, the "occupied" part of the set it help represent is
+    /// As you walk along a contour, the "occupied" part of the set it represents is
     /// on your left. This means that outer contours wind counter-clockwise and inner
     /// contours wind clockwise.
     pub outer: bool,
