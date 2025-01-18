@@ -466,7 +466,6 @@ impl<F: Float> Topology<F> {
         let mut winding = scan_left
             .map(|idx| self.winding[idx].counter_clockwise)
             .unwrap_or_default();
-        let (old_order, new_order) = pos.range_orders();
         while let Some(next_x) = pos.x() {
             let p = Point::new(next_x.clone(), y.clone());
             // The first segment at our current point, in clockwise order.
@@ -475,8 +474,7 @@ impl<F: Float> Topology<F> {
             let mut last_seg = None;
 
             // Close off the horizontal segments from the previous point in this sweep-line.
-            let mut hsegs: Vec<_> = pos.active_horizontals().collect();
-            hsegs.sort_by_key(|s| new_order[s]);
+            let hsegs: Vec<_> = pos.active_horizontals().collect();
             let hsegs: Vec<_> = self.second_half_segs(hsegs.into_iter()).collect();
             self.add_segs_clockwise(&mut first_seg, &mut last_seg, hsegs.into_iter(), &p);
 
@@ -487,9 +485,13 @@ impl<F: Float> Topology<F> {
 
             // Sorting the connected-up segments by the old sweep-line's order means that they'll
             // be in clockwise order when seen from the current point.
-            segments_connected_up.sort_by_key(|s| old_order[s]);
+            segments_connected_up.sort_by_key(|(_seg_idx, old_sweep_idx)| *old_sweep_idx);
             let open_segs: Vec<_> = self
-                .second_half_segs(segments_connected_up.into_iter())
+                .second_half_segs(
+                    segments_connected_up
+                        .into_iter()
+                        .map(|(seg_idx, _)| seg_idx),
+                )
                 .collect();
 
             self.add_segs_clockwise(&mut first_seg, &mut last_seg, open_segs.into_iter(), &p);
@@ -498,10 +500,10 @@ impl<F: Float> Topology<F> {
             // to later sweep-lines. Sort them and allocate new output segments for them.
             // Also, calculate their winding numbers and update `winding`.
             let mut segments_connected_down: Vec<_> = pos.segments_connected_down().collect();
-            segments_connected_down.sort_by_key(|s| new_order[s]);
+            segments_connected_down.sort_by_key(|(_seg_idx, sweep_idx)| *sweep_idx);
 
             let mut new_out_segs = Vec::new();
-            for new_seg in segments_connected_down {
+            for (new_seg, _) in segments_connected_down {
                 let winding_dir = if segments.positively_oriented(new_seg) {
                     1
                 } else {
@@ -535,8 +537,7 @@ impl<F: Float> Topology<F> {
 
             // Finally, gather the output segments from horizontal segments starting here.
             // Allocate new output segments for them and calculate their winding numbers.
-            let mut hsegs: Vec<_> = pos.active_horizontals().collect();
-            hsegs.sort_by_key(|s| new_order[s]);
+            let hsegs: Vec<_> = pos.active_horizontals().collect();
 
             // We don't want to update our "global" winding number state because that's supposed
             // to keep track of the winding number below the current sweep line.

@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use linesweeper::{
-    boolean_op, generators::checkerboard, topology::Topology, BooleanOp, CheapOrderedFloat,
+    boolean_op, generators::checkerboard, num::CheapOrderedFloat, topology::Topology, BooleanOp,
     FillRule, Point, Segments,
 };
 

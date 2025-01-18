@@ -1,6 +1,6 @@
 //! Utilities for generating examples, benchmarks, and test cases.
 
-use crate::{Float, Point};
+use crate::{num::Float, Point};
 
 type Contours<F> = Vec<Vec<Point<F>>>;
 

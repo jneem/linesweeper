@@ -3,7 +3,6 @@
 //! This algorithm is documented in `docs/sweep.typ`.
 
 use std::collections::BTreeSet;
-use std::collections::HashMap;
 
 use malachite::Rational;
 
@@ -844,14 +843,6 @@ impl SegmentOrder {
     fn position(&self, seg: SegIdx) -> Option<usize> {
         self.segs.iter().position(|&x| x.seg == seg)
     }
-
-    fn range_order(&self, range: std::ops::Range<usize>) -> HashMap<SegIdx, usize> {
-        self.segs[range]
-            .iter()
-            .enumerate()
-            .map(|(idx, seg)| (seg.seg, idx))
-            .collect()
-    }
 }
 /// Computes the allowable x positions for a slice of segments.
 fn horizontal_positions<'a, F: Float>(
@@ -1004,6 +995,8 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
                 x1: F::from_f32(42.42),
                 connected_below: !entry.exit,
                 seg_idx: entry.seg,
+                sweep_idx: None,
+                old_sweep_idx: entry.old_idx,
             });
         }
 
@@ -1020,8 +1013,9 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
             .map_or(F::from_f32(0.0), |(_idx, min_x, _max_x)| {
                 min_x.clone() - F::from_f32(1.0)
             });
-        for (entry, min_x, max_x) in &buffers.positions {
+        for (idx, (entry, min_x, max_x)) in buffers.positions.iter().enumerate() {
             let ev = &mut events[entry.old_idx.unwrap() - range.segs.start];
+            ev.sweep_idx = Some(range.segs.start + idx);
             debug_assert_eq!(ev.seg_idx, entry.seg);
             let preferred_x = if *min_x <= ev.x0 && ev.x0 <= *max_x {
                 // Try snapping to the previous position if possible.
@@ -1060,6 +1054,8 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
                     x1: seg.end.x.clone(),
                     connected_below: false,
                     seg_idx,
+                    sweep_idx: None,
+                    old_sweep_idx: None,
                 });
             }
         }
@@ -1105,6 +1101,8 @@ struct HSeg<F: Float> {
     pub enter_first: bool,
     pub seg: SegIdx,
     pub start: F,
+    pub sweep_idx: Option<usize>,
+    pub old_sweep_idx: Option<usize>,
 }
 
 impl<F: Float> HSeg<F> {
@@ -1134,6 +1132,8 @@ impl<F: Float> HSeg<F> {
             seg: pos.seg_idx,
             connected_at_start,
             connected_at_end,
+            sweep_idx: pos.sweep_idx,
+            old_sweep_idx: pos.old_sweep_idx,
         })
     }
     pub fn connected_above_at(&self, x: &F) -> bool {
@@ -1184,6 +1184,10 @@ pub struct OutputEvent<F: Float> {
     pub connected_below: bool,
     /// The segment that's interacting with the sweep line.
     pub seg_idx: SegIdx,
+    /// The segment's index in the new sweep line (`None` for horizontal segments).
+    pub sweep_idx: Option<usize>,
+    /// The segment's index in the old sweep line (`None` for horizontal segments).
+    pub old_sweep_idx: Option<usize>,
 }
 
 impl<F: Float> OutputEvent<F> {
@@ -1197,13 +1201,23 @@ impl<F: Float> OutputEvent<F> {
         (&self.x0).max(&self.x1)
     }
 
-    fn new(seg_idx: SegIdx, x0: F, connected_above: bool, x1: F, connected_below: bool) -> Self {
+    fn new(
+        seg_idx: SegIdx,
+        x0: F,
+        connected_above: bool,
+        x1: F,
+        connected_below: bool,
+        sweep_idx: Option<usize>,
+        old_sweep_idx: Option<usize>,
+    ) -> Self {
         Self {
             x0,
             connected_above,
             x1,
             connected_below,
             seg_idx,
+            sweep_idx,
+            old_sweep_idx,
         }
     }
 
@@ -1273,18 +1287,18 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
 
     /// Iterates over all segments at the current position that are connected to
     /// something "above" (i.e. with smaller `y` than) the current sweep line.
-    pub fn segments_connected_up(&self) -> impl Iterator<Item = SegIdx> + '_ {
+    pub fn segments_connected_up(&self) -> impl Iterator<Item = (SegIdx, usize)> + '_ {
         let maybe_iter = self.x().map(|x| {
             let horiz = self
                 .active_horizontals
                 .iter()
                 .filter(|hseg| hseg.connected_above_at(x))
-                .map(|hseg| hseg.seg);
+                .map(|hseg| (hseg.seg, hseg.old_sweep_idx.unwrap()));
 
             let posns = self
                 .positions_at_x(x)
                 .filter(move |pos| pos.connected_above_at(x))
-                .map(|pos| pos.seg_idx);
+                .map(|pos| (pos.seg_idx, pos.old_sweep_idx.unwrap()));
 
             horiz.chain(posns)
         });
@@ -1294,18 +1308,18 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
 
     /// Iterates over all segments at the current position that are connected to
     /// something "below" (i.e. with larger `y` than) the current sweep line.
-    pub fn segments_connected_down(&self) -> impl Iterator<Item = SegIdx> + '_ {
+    pub fn segments_connected_down(&self) -> impl Iterator<Item = (SegIdx, usize)> + '_ {
         let maybe_iter = self.x().map(|x| {
             let horiz = self
                 .active_horizontals
                 .iter()
                 .filter(|hseg| hseg.connected_below_at(x))
-                .map(|hseg| hseg.seg);
+                .map(|hseg| (hseg.seg, hseg.sweep_idx.unwrap()));
 
             let posns = self
                 .positions_at_x(x)
                 .filter(move |pos| pos.connected_below_at(x))
-                .map(|pos| pos.seg_idx);
+                .map(|pos| (pos.seg_idx, pos.sweep_idx.unwrap()));
 
             horiz.chain(posns)
         });
@@ -1348,6 +1362,8 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
                     connected_start,
                     x1,
                     connected_end,
+                    h.sweep_idx,
+                    h.old_sweep_idx,
                 ));
             } else {
                 ret.push(OutputEvent::new(
@@ -1356,6 +1372,8 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
                     connected_end,
                     x0,
                     connected_start,
+                    h.sweep_idx,
+                    h.old_sweep_idx,
                 ));
             }
         }
@@ -1418,24 +1436,6 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
                 break;
             }
         }
-    }
-
-    /// Returns maps for looking up segment orders.
-    ///
-    /// The first map corresponds to the old order at this height; the second
-    /// map corresponds to the new order. Both maps will have the same set of
-    /// keys. The values in the maps are the positions of the segments in the
-    /// sweep line.
-    ///
-    /// For example, if you ask for the range `4..7` and the old sweep line has segments `s42`,
-    /// `s1`, `s77` in those positions then you'll get back the map `{ s42 -> 4, s1 -> 5, s77 -> 6 }`.
-    pub fn range_orders(&self) -> (HashMap<SegIdx, usize>, HashMap<SegIdx, usize>) {
-        let mut old_order = HashMap::new();
-        let range = self.changed_interval.segs.clone();
-        for (i, entry) in self.line.state.line.segs[range.clone()].iter().enumerate() {
-            old_order.insert(entry.seg, entry.old_idx.unwrap_or(range.start + i));
-        }
-        (old_order, self.line.state.line.range_order(range))
     }
 
     /// The indices within the sweep line represented by this range.
