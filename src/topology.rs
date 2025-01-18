@@ -3,7 +3,7 @@
 //! This consumes the output of the sweep-line algorithm and does things
 //! like winding number computations and boolean operations.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use crate::{
     geom::Point,
@@ -230,6 +230,43 @@ impl<T> std::ops::IndexMut<OutputSegIdx> for OutputSegVec<T> {
     }
 }
 
+/// An index into the set of points.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize)]
+pub struct PointIdx(usize);
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize)]
+struct PointVec<T> {
+    inner: Vec<T>,
+}
+
+impl<T> PointVec<T> {
+    fn with_capacity(cap: usize) -> Self {
+        Self {
+            inner: Vec::with_capacity(cap),
+        }
+    }
+}
+
+impl<T> Default for PointVec<T> {
+    fn default() -> Self {
+        Self { inner: Vec::new() }
+    }
+}
+
+impl<T> std::ops::Index<PointIdx> for PointVec<T> {
+    type Output = T;
+
+    fn index(&self, index: PointIdx) -> &Self::Output {
+        &self.inner[index.0]
+    }
+}
+
+impl<T> std::ops::IndexMut<PointIdx> for PointVec<T> {
+    fn index_mut(&mut self, index: PointIdx) -> &mut Self::Output {
+        &mut self.inner[index.0]
+    }
+}
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, serde::Serialize)]
 struct PointNeighbors {
     clockwise: HalfOutputSegIdx,
@@ -280,7 +317,9 @@ pub struct Topology<F: Float> {
     /// for the start half of the output segment.
     winding: OutputSegVec<HalfSegmentWindingNumbers>,
     /// The output points.
-    point: HalfOutputSegVec<Point<F>>,
+    points: PointVec<Point<F>>,
+    /// The segment endpoints, as indices into `points`.
+    point_idx: HalfOutputSegVec<PointIdx>,
     /// For each output half-segment, its neighboring segments are the ones that share a point with it.
     point_neighbors: HalfOutputSegVec<PointNeighbors>,
     /// Marks the output segments that have been deleted due to merges of coindident segments.
@@ -321,10 +360,10 @@ impl<F: Float> Topology<F> {
         first_seg: &mut Option<HalfOutputSegIdx>,
         last_seg: &mut Option<HalfOutputSegIdx>,
         segs: impl Iterator<Item = HalfOutputSegIdx>,
-        p: &Point<F>,
+        p: PointIdx,
     ) {
         for seg in segs {
-            self.point[seg] = p.clone();
+            self.point_idx[seg] = p;
             if first_seg.is_none() {
                 *first_seg = Some(seg);
             }
@@ -346,10 +385,10 @@ impl<F: Float> Topology<F> {
         first_seg: &mut Option<HalfOutputSegIdx>,
         last_seg: &mut Option<HalfOutputSegIdx>,
         segs: impl Iterator<Item = HalfOutputSegIdx>,
-        p: &Point<F>,
+        p: PointIdx,
     ) {
         for seg in segs {
-            self.point[seg] = p.clone();
+            self.point_idx[seg] = p;
             if last_seg.is_none() {
                 *last_seg = Some(seg);
             }
@@ -401,7 +440,7 @@ impl<F: Float> Topology<F> {
     fn new_half_seg(
         &mut self,
         idx: SegIdx,
-        p: Point<F>,
+        p: PointIdx,
         winding: HalfSegmentWindingNumbers,
         horizontal: bool,
     ) -> OutputSegIdx {
@@ -411,11 +450,11 @@ impl<F: Float> Topology<F> {
         } else {
             self.open_segs[idx.0].push_back(out_idx);
         }
-        self.point.start.push(p);
-        self.point
+        self.point_idx.start.push(p);
+        self.point_idx
             .end
             // TODO: maybe an option instead of this weird sentinel
-            .push(Point::new(F::from_f32(-42.0), F::from_f32(-42.0)));
+            .push(PointIdx(usize::MAX));
 
         let no_nbrs = PointNeighbors {
             clockwise: out_idx.first_half(),
@@ -452,7 +491,8 @@ impl<F: Float> Topology<F> {
 
             // We have at least as many output segments as input segments, so preallocate enough for them.
             winding: OutputSegVec::with_capacity(segments.len()),
-            point: HalfOutputSegVec::with_capacity(segments.len()),
+            points: PointVec::with_capacity(segments.len()),
+            point_idx: HalfOutputSegVec::with_capacity(segments.len()),
             point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
             deleted: OutputSegVec::with_capacity(segments.len()),
             scan_east: OutputSegVec::with_capacity(segments.len()),
@@ -493,7 +533,10 @@ impl<F: Float> Topology<F> {
         let mut connected_segs = SegmentsConnectedAtX::default();
 
         while let Some(next_x) = pos.x() {
-            let p = Point::new(next_x.clone(), y.clone());
+            let p = PointIdx(self.points.inner.len());
+            self.points
+                .inner
+                .push(Point::new(next_x.clone(), y.clone()));
             // The first segment at our current point, in clockwise order.
             let mut first_seg = None;
             // The last segment at our current point, in clockwise order.
@@ -503,13 +546,13 @@ impl<F: Float> Topology<F> {
             let hsegs = pos.active_horizontals();
             seg_buf.clear();
             seg_buf.extend(self.second_half_segs(hsegs));
-            self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), &p);
+            self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), p);
 
             // Find all the segments that are connected to something above this sweep-line at next_x.
             pos.update_segments_at_x(&mut connected_segs);
             seg_buf.clear();
             seg_buf.extend(self.second_half_segs(connected_segs.connected_up()));
-            self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), &p);
+            self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), p);
 
             // Then: gather the output segments from half-segments starting here and moving
             // to later sweep-lines. Allocate new output segments for them.
@@ -531,7 +574,7 @@ impl<F: Float> Topology<F> {
                     clockwise: prev_winding,
                     counter_clockwise: winding,
                 };
-                let half_seg = self.new_half_seg(new_seg, p.clone(), windings, false);
+                let half_seg = self.new_half_seg(new_seg, p, windings, false);
                 self.scan_east[half_seg] = scan_left;
                 scan_left = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
@@ -540,7 +583,7 @@ impl<F: Float> Topology<F> {
                 &mut first_seg,
                 &mut last_seg,
                 seg_buf.iter().copied(),
-                &p,
+                p,
             );
 
             // Bump the current x position, which will get rid of horizontals ending here
@@ -571,7 +614,7 @@ impl<F: Float> Topology<F> {
                     counter_clockwise: w,
                     clockwise: prev_w,
                 };
-                let half_seg = self.new_half_seg(new_seg, p.clone(), windings, true);
+                let half_seg = self.new_half_seg(new_seg, p, windings, true);
                 self.scan_east[half_seg] = scan_left;
                 seg_buf.push(half_seg.first_half());
             }
@@ -579,7 +622,7 @@ impl<F: Float> Topology<F> {
                 &mut first_seg,
                 &mut last_seg,
                 seg_buf.iter().copied(),
-                &p,
+                p,
             );
         }
     }
@@ -613,7 +656,7 @@ impl<F: Float> Topology<F> {
                 continue;
             }
             let cc_nbr = self.point_neighbors[idx.first_half()].clockwise;
-            if self.point[idx.second_half()] == self.point[cc_nbr.other_half()] {
+            if self.point_idx[idx.second_half()] == self.point_idx[cc_nbr.other_half()] {
                 // All output segments are in sweep line order, so if they're
                 // coincident then they'd better both be first halves.
                 debug_assert!(cc_nbr.first_half);
@@ -643,9 +686,9 @@ impl<F: Float> Topology<F> {
         }
     }
 
-    /// Returns the endpoing of an output half-segment.
+    /// Returns the endpoint of an output half-segment.
     pub fn point(&self, idx: HalfOutputSegIdx) -> &Point<F> {
-        &self.point[idx]
+        &self.points[self.point_idx[idx]]
     }
 
     /// Returns the contours of some set defined by this topology.
@@ -681,6 +724,11 @@ impl<F: Float> Topology<F> {
         };
 
         let mut visited = vec![false; self.winding.inner.len()];
+        // Keep track of the points that were visited on this walk, so that if we re-visit a
+        // point we can split out an additional contour. This might be more efficient if we
+        // index our points instead of storing them physically.
+        let mut last_visit = PointVec::with_capacity(self.points.inner.len());
+        last_visit.inner.resize(self.points.inner.len(), None);
         for idx in self.segment_indices() {
             if visited[idx.0] {
                 continue;
@@ -689,11 +737,6 @@ impl<F: Float> Topology<F> {
             if !bdy(idx) {
                 continue;
             }
-
-            // Keep track of the points that were visited on this walk, so that if we re-visit a
-            // point we can split out an additional contour. This might be more efficient if we
-            // index our points instead of storing them physically.
-            let mut last_visit: HashMap<Point<F>, usize> = HashMap::new();
 
             // We found a boundary segment. Let's start by scanning left to figure out where we
             // are relative to existing contours.
@@ -740,7 +783,7 @@ impl<F: Float> Topology<F> {
             // "endpoint" here means "as we walk the contour;" it could be either a first_half
             // or a second_half as far as `HalfOutputSegIdx` is concerned.
             let mut segs = Vec::new();
-            last_visit.insert(self.point[start].clone(), 0);
+            last_visit[self.point_idx[start]] = Some(0);
 
             debug_assert!(inside(self.winding(start).counter_clockwise));
             loop {
@@ -762,34 +805,36 @@ impl<F: Float> Topology<F> {
                     break;
                 }
 
-                let p = self.point[nbr].clone();
-                if let Some(seg_idx) = last_visit.get(&p) {
+                let p = self.point_idx[nbr];
+                let last_visit_idx = last_visit[p]
+                    .filter(|&idx| idx < segs.len() && self.point_idx[segs[idx].other_half()] == p);
+                if let Some(seg_idx) = last_visit_idx {
                     // We repeated a point, meaning that we've found an inner contour. Extract
                     // it and remove it from the current contour.
 
                     // seg_idx should point to the end of a segment whose start is at p.
-                    debug_assert_eq!(self.point[segs[*seg_idx].other_half()], p);
+                    debug_assert_eq!(self.point_idx[segs[seg_idx].other_half()], p);
 
                     let loop_contour_idx = ContourIdx(ret.contours.len());
-                    for &seg in &segs[*seg_idx..] {
+                    for &seg in &segs[seg_idx..] {
                         seg_contour[seg.idx.0] = Some(loop_contour_idx);
                     }
                     let mut points = Vec::with_capacity(segs.len() - seg_idx + 1);
-                    points.push(p);
-                    points.extend(segs[*seg_idx..].iter().map(|s| self.point[*s].clone()));
+                    points.push(self.points[p].clone());
+                    points.extend(segs[seg_idx..].iter().map(|s| self.point(*s).clone()));
                     ret.contours.push(Contour {
                         points,
                         parent: Some(contour_idx),
                         outer: !ret.contours[contour_idx.0].outer,
                     });
-                    segs.truncate(*seg_idx);
+                    segs.truncate(seg_idx);
                     // In principle, we should also be unsetting `last_visit`
                     // for all points in the contour we just removed. I *think*
                     // we don't need to, because it's impossible for the outer
                     // contour to visit any of them anyway. Should check this
                     // more carefully.
                 } else {
-                    last_visit.insert(p, segs.len());
+                    last_visit[p] = Some(segs.len());
                 }
 
                 next = nbr.other_half();
@@ -798,7 +843,7 @@ impl<F: Float> Topology<F> {
                 seg_contour[seg.idx.0] = Some(contour_idx);
             }
             ret.contours[contour_idx.0].points =
-                segs.iter().map(|s| self.point[*s].clone()).collect();
+                segs.iter().map(|s| self.point(*s).clone()).collect();
         }
 
         ret
@@ -1074,10 +1119,10 @@ mod tests {
                 let i = OutputSegIdx(i);
                 let j = OutputSegIdx(j);
 
-                let p0 = top.point[i.first_half()].clone();
-                let p1 = top.point[i.second_half()].clone();
-                let q0 = top.point[j.first_half()].clone();
-                let q1 = top.point[j.second_half()].clone();
+                let p0 = top.point(i.first_half()).clone();
+                let p1 = top.point(i.second_half()).clone();
+                let q0 = top.point(j.first_half()).clone();
+                let q1 = top.point(j.second_half()).clone();
 
                 let s = Segment::new(p0.clone().min(p1.clone()), p1.max(p0)).to_exact();
                 let t = Segment::new(q0.clone().min(q1.clone()), q1.max(q0)).to_exact();

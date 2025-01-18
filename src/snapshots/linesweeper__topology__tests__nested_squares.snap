@@ -107,12 +107,8 @@ expression: "(top, contours)"
       ),
     ],
   ),
-  point: HalfOutputSegVec(
-    start: [
-      Point(
-        y: -2.0,
-        x: -2.0,
-      ),
+  points: PointVec(
+    inner: [
       Point(
         y: -2.0,
         x: -2.0,
@@ -127,10 +123,6 @@ expression: "(top, contours)"
       ),
       Point(
         y: -1.0,
-        x: -1.0,
-      ),
-      Point(
-        y: -1.0,
         x: 1.0,
       ),
       Point(
@@ -138,43 +130,39 @@ expression: "(top, contours)"
         x: -1.0,
       ),
       Point(
+        y: 1.0,
+        x: 1.0,
+      ),
+      Point(
         y: 2.0,
         x: -2.0,
+      ),
+      Point(
+        y: 2.0,
+        x: 2.0,
       ),
     ],
+  ),
+  point_idx: HalfOutputSegVec(
+    start: [
+      PointIdx(0),
+      PointIdx(0),
+      PointIdx(1),
+      PointIdx(2),
+      PointIdx(2),
+      PointIdx(3),
+      PointIdx(4),
+      PointIdx(6),
+    ],
     end: [
-      Point(
-        y: 2.0,
-        x: -2.0,
-      ),
-      Point(
-        y: -2.0,
-        x: 2.0,
-      ),
-      Point(
-        y: 2.0,
-        x: 2.0,
-      ),
-      Point(
-        y: 1.0,
-        x: -1.0,
-      ),
-      Point(
-        y: -1.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 1.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 1.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 2.0,
-        x: 2.0,
-      ),
+      PointIdx(6),
+      PointIdx(1),
+      PointIdx(7),
+      PointIdx(4),
+      PointIdx(3),
+      PointIdx(5),
+      PointIdx(5),
+      PointIdx(7),
     ],
   ),
   point_neighbors: HalfOutputSegVec(

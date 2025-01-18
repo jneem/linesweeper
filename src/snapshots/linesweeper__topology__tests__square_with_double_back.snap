@@ -95,23 +95,11 @@ Topology(
       ),
     ],
   ),
-  point: HalfOutputSegVec(
-    start: [
+  points: PointVec(
+    inner: [
       Point(
         y: 0.0,
         x: 0.0,
-      ),
-      Point(
-        y: 0.0,
-        x: 0.0,
-      ),
-      Point(
-        y: 0.0,
-        x: 0.5,
-      ),
-      Point(
-        y: 0.0,
-        x: 0.5,
       ),
       Point(
         y: 0.0,
@@ -122,39 +110,37 @@ Topology(
         x: 1.0,
       ),
       Point(
+        y: 0.5,
+        x: 0.5,
+      ),
+      Point(
         y: 1.0,
         x: 0.0,
+      ),
+      Point(
+        y: 1.0,
+        x: 1.0,
       ),
     ],
+  ),
+  point_idx: HalfOutputSegVec(
+    start: [
+      PointIdx(0),
+      PointIdx(0),
+      PointIdx(1),
+      PointIdx(1),
+      PointIdx(1),
+      PointIdx(2),
+      PointIdx(4),
+    ],
     end: [
-      Point(
-        y: 1.0,
-        x: 0.0,
-      ),
-      Point(
-        y: 0.0,
-        x: 0.5,
-      ),
-      Point(
-        y: 0.5,
-        x: 0.5,
-      ),
-      Point(
-        y: 0.5,
-        x: 0.5,
-      ),
-      Point(
-        y: 0.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 1.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 1.0,
-        x: 1.0,
-      ),
+      PointIdx(4),
+      PointIdx(1),
+      PointIdx(3),
+      PointIdx(3),
+      PointIdx(2),
+      PointIdx(5),
+      PointIdx(5),
     ],
   ),
   point_neighbors: HalfOutputSegVec(

@@ -1,5 +1,5 @@
 ---
-source: sweeps/src/topology.rs
+source: src/topology.rs
 expression: top
 ---
 Topology(
@@ -107,20 +107,8 @@ Topology(
       ),
     ],
   ),
-  point: HalfOutputSegVec(
-    start: [
-      Point(
-        y: 0.0,
-        x: 0.0,
-      ),
-      Point(
-        y: 0.0,
-        x: 0.0,
-      ),
-      Point(
-        y: 0.0,
-        x: 0.0,
-      ),
+  points: PointVec(
+    inner: [
       Point(
         y: 0.0,
         x: 0.0,
@@ -140,41 +128,33 @@ Topology(
       Point(
         y: 1.0,
         x: 1.0,
+      ),
+      Point(
+        y: 2.0,
+        x: 0.0,
       ),
     ],
+  ),
+  point_idx: HalfOutputSegVec(
+    start: [
+      PointIdx(0),
+      PointIdx(0),
+      PointIdx(0),
+      PointIdx(0),
+      PointIdx(1),
+      PointIdx(2),
+      PointIdx(3),
+      PointIdx(4),
+    ],
     end: [
-      Point(
-        y: 1.0,
-        x: -1.0,
-      ),
-      Point(
-        y: 1.0,
-        x: 0.0,
-      ),
-      Point(
-        y: 1.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 0.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 1.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 2.0,
-        x: 0.0,
-      ),
-      Point(
-        y: 1.0,
-        x: 1.0,
-      ),
-      Point(
-        y: 2.0,
-        x: 0.0,
-      ),
+      PointIdx(2),
+      PointIdx(3),
+      PointIdx(4),
+      PointIdx(1),
+      PointIdx(4),
+      PointIdx(5),
+      PointIdx(4),
+      PointIdx(5),
     ],
   ),
   point_neighbors: HalfOutputSegVec(
