@@ -7,4 +7,6 @@
 
 mod weak_ordering;
 
-pub use weak_ordering::{sweep, ChangedInterval, OutputEvent, SweepLine, SweepLineRange, Sweeper};
+pub use weak_ordering::{
+    sweep, ChangedInterval, OutputEvent, SegmentsConnectedAtX, SweepLine, SweepLineRange, Sweeper,
+};

@@ -9,7 +9,7 @@ use crate::{
     geom::Point,
     num::Float,
     segments::{SegIdx, Segments},
-    sweep::{SweepLineRange, Sweeper},
+    sweep::{SegmentsConnectedAtX, SweepLineRange, Sweeper},
 };
 
 /// We support boolean operations, so a "winding number" for us is two winding
@@ -129,6 +129,15 @@ struct HalfOutputSegVec<T> {
     end: Vec<T>,
 }
 
+impl<T> HalfOutputSegVec<T> {
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            start: Vec::with_capacity(cap),
+            end: Vec::with_capacity(cap),
+        }
+    }
+}
+
 impl<T: std::fmt::Debug> std::fmt::Debug for HalfOutputSegVec<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         struct Entry<'a, T> {
@@ -191,6 +200,14 @@ impl<T> std::ops::IndexMut<HalfOutputSegIdx> for HalfOutputSegVec<T> {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize)]
 struct OutputSegVec<T> {
     inner: Vec<T>,
+}
+
+impl<T> OutputSegVec<T> {
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            inner: Vec::with_capacity(cap),
+        }
+    }
 }
 
 impl<T> Default for OutputSegVec<T> {
@@ -432,11 +449,13 @@ impl<F: Float> Topology<F> {
         let mut ret = Self {
             shape_a,
             open_segs: vec![VecDeque::new(); segments.len()],
-            winding: OutputSegVec::default(),
-            point: HalfOutputSegVec::default(),
-            point_neighbors: HalfOutputSegVec::default(),
-            deleted: OutputSegVec::default(),
-            scan_east: OutputSegVec::default(),
+
+            // We have at least as many output segments as input segments, so preallocate enough for them.
+            winding: OutputSegVec::with_capacity(segments.len()),
+            point: HalfOutputSegVec::with_capacity(segments.len()),
+            point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
+            deleted: OutputSegVec::with_capacity(segments.len()),
+            scan_east: OutputSegVec::with_capacity(segments.len()),
         };
         let mut sweep_state = Sweeper::new(&segments, eps.clone());
         while let Some(mut line) = sweep_state.next_line() {
@@ -449,14 +468,14 @@ impl<F: Float> Topology<F> {
                     debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
                     ret.open_segs[prev_seg.0].front().copied()
                 };
-                ret.update_from_positions(positions, &segments, scan_left_seg);
+                ret.process_sweep_line_range(positions, &segments, scan_left_seg);
             }
         }
         ret.merge_coincident();
         ret
     }
 
-    fn update_from_positions(
+    fn process_sweep_line_range(
         &mut self,
         mut pos: SweepLineRange<F>,
         segments: &Segments<F>,
@@ -466,6 +485,13 @@ impl<F: Float> Topology<F> {
         let mut winding = scan_left
             .map(|idx| self.winding[idx].counter_clockwise)
             .unwrap_or_default();
+
+        // A re-usable buffer for holding temporary lists of segment indices. We
+        // need to collect the output of second_half_segments because it holds
+        // a &mut self reference.
+        let mut seg_buf = Vec::new();
+        let mut connected_segs = SegmentsConnectedAtX::default();
+
         while let Some(next_x) = pos.x() {
             let p = Point::new(next_x.clone(), y.clone());
             // The first segment at our current point, in clockwise order.
@@ -474,36 +500,22 @@ impl<F: Float> Topology<F> {
             let mut last_seg = None;
 
             // Close off the horizontal segments from the previous point in this sweep-line.
-            let hsegs: Vec<_> = pos.active_horizontals().collect();
-            let hsegs: Vec<_> = self.second_half_segs(hsegs.into_iter()).collect();
-            self.add_segs_clockwise(&mut first_seg, &mut last_seg, hsegs.into_iter(), &p);
+            let hsegs = pos.active_horizontals();
+            seg_buf.clear();
+            seg_buf.extend(self.second_half_segs(hsegs));
+            self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), &p);
 
             // Find all the segments that are connected to something above this sweep-line at next_x.
-            // This is (a) all the horizontal segments terminating here, plus (b) the single-point
-            // positions in our position iterator.
-            let mut segments_connected_up: Vec<_> = pos.segments_connected_up().collect();
-
-            // Sorting the connected-up segments by the old sweep-line's order means that they'll
-            // be in clockwise order when seen from the current point.
-            segments_connected_up.sort_by_key(|(_seg_idx, old_sweep_idx)| *old_sweep_idx);
-            let open_segs: Vec<_> = self
-                .second_half_segs(
-                    segments_connected_up
-                        .into_iter()
-                        .map(|(seg_idx, _)| seg_idx),
-                )
-                .collect();
-
-            self.add_segs_clockwise(&mut first_seg, &mut last_seg, open_segs.into_iter(), &p);
+            pos.update_segments_at_x(&mut connected_segs);
+            seg_buf.clear();
+            seg_buf.extend(self.second_half_segs(connected_segs.connected_up()));
+            self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), &p);
 
             // Then: gather the output segments from half-segments starting here and moving
-            // to later sweep-lines. Sort them and allocate new output segments for them.
+            // to later sweep-lines. Allocate new output segments for them.
             // Also, calculate their winding numbers and update `winding`.
-            let mut segments_connected_down: Vec<_> = pos.segments_connected_down().collect();
-            segments_connected_down.sort_by_key(|(_seg_idx, sweep_idx)| *sweep_idx);
-
-            let mut new_out_segs = Vec::new();
-            for (new_seg, _) in segments_connected_down {
+            seg_buf.clear();
+            for new_seg in connected_segs.connected_down() {
                 let winding_dir = if segments.positively_oriented(new_seg) {
                     1
                 } else {
@@ -522,12 +534,12 @@ impl<F: Float> Topology<F> {
                 let half_seg = self.new_half_seg(new_seg, p.clone(), windings, false);
                 self.scan_east[half_seg] = scan_left;
                 scan_left = Some(half_seg);
-                new_out_segs.push(half_seg);
+                seg_buf.push(half_seg.first_half());
             }
             self.add_segs_counter_clockwise(
                 &mut first_seg,
                 &mut last_seg,
-                new_out_segs.into_iter().map(|s| s.first_half()),
+                seg_buf.iter().copied(),
                 &p,
             );
 
@@ -537,12 +549,12 @@ impl<F: Float> Topology<F> {
 
             // Finally, gather the output segments from horizontal segments starting here.
             // Allocate new output segments for them and calculate their winding numbers.
-            let hsegs: Vec<_> = pos.active_horizontals().collect();
+            let hsegs = pos.active_horizontals();
 
             // We don't want to update our "global" winding number state because that's supposed
             // to keep track of the winding number below the current sweep line.
             let mut w = winding;
-            let mut new_out_segs = Vec::new();
+            seg_buf.clear();
             for new_seg in hsegs {
                 let winding_dir = if segments.positively_oriented(new_seg) {
                     1
@@ -561,12 +573,12 @@ impl<F: Float> Topology<F> {
                 };
                 let half_seg = self.new_half_seg(new_seg, p.clone(), windings, true);
                 self.scan_east[half_seg] = scan_left;
-                new_out_segs.push(half_seg);
+                seg_buf.push(half_seg.first_half());
             }
             self.add_segs_counter_clockwise(
                 &mut first_seg,
                 &mut last_seg,
-                new_out_segs.into_iter().map(|s| s.first_half()),
+                seg_buf.iter().copied(),
                 &p,
             );
         }

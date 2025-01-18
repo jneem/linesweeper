@@ -1136,6 +1136,7 @@ impl<F: Float> HSeg<F> {
             old_sweep_idx: pos.old_sweep_idx,
         })
     }
+
     pub fn connected_above_at(&self, x: &F) -> bool {
         (*x == self.start && self.enter_first && self.connected_at_start)
             || (*x == self.end && !self.enter_first && self.connected_at_end)
@@ -1283,6 +1284,45 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
             .as_slice()
             .iter()
             .take_while(move |p| p.smaller_x() == x)
+    }
+
+    /// Updates a [`SegmentsConnectedAtX`] to reflect the current horizontal position.
+    pub fn update_segments_at_x(&self, segs: &mut SegmentsConnectedAtX) {
+        segs.connected_up.clear();
+        segs.connected_down.clear();
+
+        let Some(x) = self.x() else {
+            return;
+        };
+
+        for hseg in &self.active_horizontals {
+            if hseg.connected_above_at(x) {
+                segs.connected_up
+                    .push((hseg.seg, hseg.old_sweep_idx.unwrap()));
+            }
+
+            if hseg.connected_below_at(x) {
+                segs.connected_down
+                    .push((hseg.seg, hseg.sweep_idx.unwrap()));
+            }
+        }
+
+        for pos in self.positions_at_x(x) {
+            if pos.connected_above_at(x) {
+                segs.connected_up
+                    .push((pos.seg_idx, pos.old_sweep_idx.unwrap()));
+            }
+
+            if pos.connected_below_at(x) {
+                segs.connected_down
+                    .push((pos.seg_idx, pos.sweep_idx.unwrap()));
+            }
+        }
+
+        segs.connected_up
+            .sort_by_key(|(_seg_idx, sweep_idx)| *sweep_idx);
+        segs.connected_down
+            .sort_by_key(|(_seg_idx, sweep_idx)| *sweep_idx);
     }
 
     /// Iterates over all segments at the current position that are connected to
@@ -1465,6 +1505,39 @@ pub fn sweep<F: Float, C: FnMut(F, OutputEvent<F>)>(
                 }
             }
         }
+    }
+}
+
+/// A re-usable struct for collecting segments at a single position on a sweep-line.
+///
+/// See [`SweepLineRange::update_segments_at_x`] for where this is used. At
+/// any given time, this struct is implicitly associated to a single horizontal
+/// position: the position of the `SweepLineRange` last time we were updated.
+#[derive(Debug, Default)]
+pub struct SegmentsConnectedAtX {
+    connected_up: Vec<(SegIdx, usize)>,
+    connected_down: Vec<(SegIdx, usize)>,
+}
+
+impl SegmentsConnectedAtX {
+    /// The segments that are connected up to a previous sweep-line at the
+    /// current horizontal position.
+    ///
+    /// The returned iterator is sorted by the old sweep-line order. In other
+    /// words, it will return segments clockwise when viewed from the current
+    /// position.
+    pub fn connected_up(&self) -> impl Iterator<Item = SegIdx> + '_ {
+        self.connected_up.iter().map(|x| x.0)
+    }
+
+    /// The segments that are connected down to a subsequent sweep-line at the
+    /// current horizontal position.
+    ///
+    /// The returned iterator is sorted by the new sweep-line order. In other
+    /// words, it will return segments counter-clockwise when viewed from the current
+    /// position.
+    pub fn connected_down(&self) -> impl Iterator<Item = SegIdx> + '_ {
+        self.connected_down.iter().map(|x| x.0)
     }
 }
 
