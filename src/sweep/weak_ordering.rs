@@ -1064,7 +1064,7 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
         Some(SweepLineRange {
             positions: self.state.buffers.output_events.iter(),
             last_x: None,
-            active_horizontals: BTreeSet::new(),
+            active_horizontals: Vec::new(),
             changed_interval: range,
             line: &*self,
         })
@@ -1259,7 +1259,7 @@ pub struct SweepLineRange<'a, 'segs, F: Float> {
     line: &'a SweepLine<'a, 'segs, F>,
     changed_interval: ChangedInterval,
     positions: std::slice::Iter<'a, OutputEvent<F>>,
-    active_horizontals: BTreeSet<HSeg<F>>,
+    active_horizontals: Vec<HSeg<F>>,
 }
 
 impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
@@ -1420,14 +1420,10 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
 
         // Drain the active horizontals, throwing away horizontal segments that end before
         // the new x position.
-        while let Some(h) = self.active_horizontals.first() {
-            if h.end <= next_x {
-                self.active_horizontals.pop_first();
-            } else {
-                break;
-            }
-        }
+        self.drain_active_horizontals(&next_x);
 
+        // Move along to the next horizontal position, processing the x events at the current
+        // position and either emitting them immediately or saving them as horizontals.
         while let Some(pos) = self.positions.as_slice().first() {
             if pos.smaller_x() > &next_x {
                 break;
@@ -1442,9 +1438,10 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
                 // For horizontal segments, we don't output anything straight
                 // away. When we update the horizontal position and visit our
                 // horizontal segments, we'll output something.
-                self.active_horizontals.insert(hseg);
+                self.active_horizontals.push(hseg);
             }
         }
+        self.active_horizontals.sort();
         self.last_x = Some(next_x);
         Some(ret)
     }
@@ -1462,20 +1459,20 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
                 let p = self.positions.next().unwrap();
 
                 if let Some(hseg) = HSeg::from_position(p.clone()) {
-                    self.active_horizontals.insert(hseg);
+                    self.active_horizontals.push(hseg);
                 }
             }
         }
+        self.active_horizontals.sort();
     }
 
     fn drain_active_horizontals(&mut self, x: &F) {
-        while let Some(h) = self.active_horizontals.first() {
-            if h.end <= *x {
-                self.active_horizontals.pop_first();
-            } else {
-                break;
-            }
-        }
+        let new_start = self
+            .active_horizontals
+            .iter()
+            .position(|h| h.end > *x)
+            .unwrap_or(self.active_horizontals.len());
+        self.active_horizontals.drain(..new_start);
     }
 
     /// The indices within the sweep line represented by this range.
