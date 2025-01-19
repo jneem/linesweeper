@@ -216,6 +216,23 @@ impl<F: Float> Default for SweepLineBuffers<F> {
     }
 }
 
+/// Holds some buffers that are used when iterating over a sweep-line.
+///
+/// Save on re-allocation by allocating this once and reusing it in multiple calls to
+/// [`SweepLine::next_range`].
+#[derive(Clone, Debug)]
+pub struct SweepLineRangeBuffers<F: Float> {
+    active_horizontals: Vec<HSeg<F>>,
+}
+
+impl<F: Float> Default for SweepLineRangeBuffers<F> {
+    fn default() -> Self {
+        SweepLineRangeBuffers {
+            active_horizontals: Vec::new(),
+        }
+    }
+}
+
 /// Encapsulates the state of the sweep-line algorithm and allows iterating over sweep lines.
 #[derive(Clone, Debug)]
 pub struct Sweeper<'a, F: Float> {
@@ -931,11 +948,12 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
 
     /// Returns a [`SweepLineRange`] for visiting and processing all positions within
     /// a range of segments.
-    pub fn next_range<'a>(
+    pub fn next_range<'a, 'bufs>(
         &'a mut self,
+        bufs: &'bufs mut SweepLineRangeBuffers<F>,
         segments: &Segments<F>,
         eps: &F,
-    ) -> Option<SweepLineRange<'a, 'segs, F>> {
+    ) -> Option<SweepLineRange<'bufs, 'a, 'segs, F>> {
         let range = self
             .state
             .changed_intervals
@@ -1060,13 +1078,14 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
             }
         }
         events.sort();
+        bufs.active_horizontals.clear();
 
         Some(SweepLineRange {
-            positions: self.state.buffers.output_events.iter(),
+            output_event_idx: 0,
             last_x: None,
-            active_horizontals: Vec::new(),
             changed_interval: range,
-            line: &*self,
+            line: self,
+            bufs,
         })
     }
 }
@@ -1254,20 +1273,24 @@ impl<F: Float> PartialOrd for OutputEvent<F> {
 /// interesting horizontal positions, left to right (i.e. smaller `x` to larger
 /// `x`).
 #[derive(Debug)]
-pub struct SweepLineRange<'a, 'segs, F: Float> {
+pub struct SweepLineRange<'bufs, 'state, 'segs, F: Float> {
     last_x: Option<F>,
-    line: &'a SweepLine<'a, 'segs, F>,
+    line: &'state SweepLine<'state, 'segs, F>,
+    bufs: &'bufs mut SweepLineRangeBuffers<F>,
     changed_interval: ChangedInterval,
-    positions: std::slice::Iter<'a, OutputEvent<F>>,
-    active_horizontals: Vec<HSeg<F>>,
+    output_event_idx: usize,
 }
 
-impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
+impl<'segs, F: Float> SweepLineRange<'_, '_, 'segs, F> {
+    fn output_events(&self) -> &[OutputEvent<F>] {
+        &self.line.state.buffers.output_events[self.output_event_idx..]
+    }
+
     /// The current horizontal position, or `None` if we're finished.
     pub fn x(&self) -> Option<&F> {
         match (
-            self.active_horizontals.first(),
-            self.positions.as_slice().first(),
+            self.bufs.active_horizontals.first(),
+            self.output_events().first(),
         ) {
             (None, None) => None,
             (None, Some(pos)) => Some(pos.smaller_x()),
@@ -1276,12 +1299,11 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
         }
     }
 
-    fn positions_at_x<'a, 'b: 'a>(
+    fn positions_at_x<'c, 'b: 'c>(
         &'b self,
-        x: &'a F,
-    ) -> impl Iterator<Item = &'b OutputEvent<F>> + 'a {
-        self.positions
-            .as_slice()
+        x: &'c F,
+    ) -> impl Iterator<Item = &'b OutputEvent<F>> + 'c {
+        self.output_events()
             .iter()
             .take_while(move |p| p.smaller_x() == x)
     }
@@ -1295,7 +1317,7 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
             return;
         };
 
-        for hseg in &self.active_horizontals {
+        for hseg in &self.bufs.active_horizontals {
             if hseg.connected_above_at(x) {
                 segs.connected_up
                     .push((hseg.seg, hseg.old_sweep_idx.unwrap()));
@@ -1325,54 +1347,12 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
             .sort_by_key(|(_seg_idx, sweep_idx)| *sweep_idx);
     }
 
-    /// Iterates over all segments at the current position that are connected to
-    /// something "above" (i.e. with smaller `y` than) the current sweep line.
-    pub fn segments_connected_up(&self) -> impl Iterator<Item = (SegIdx, usize)> + '_ {
-        let maybe_iter = self.x().map(|x| {
-            let horiz = self
-                .active_horizontals
-                .iter()
-                .filter(|hseg| hseg.connected_above_at(x))
-                .map(|hseg| (hseg.seg, hseg.old_sweep_idx.unwrap()));
-
-            let posns = self
-                .positions_at_x(x)
-                .filter(move |pos| pos.connected_above_at(x))
-                .map(|pos| (pos.seg_idx, pos.old_sweep_idx.unwrap()));
-
-            horiz.chain(posns)
-        });
-
-        maybe_iter.into_iter().flatten()
-    }
-
-    /// Iterates over all segments at the current position that are connected to
-    /// something "below" (i.e. with larger `y` than) the current sweep line.
-    pub fn segments_connected_down(&self) -> impl Iterator<Item = (SegIdx, usize)> + '_ {
-        let maybe_iter = self.x().map(|x| {
-            let horiz = self
-                .active_horizontals
-                .iter()
-                .filter(|hseg| hseg.connected_below_at(x))
-                .map(|hseg| (hseg.seg, hseg.sweep_idx.unwrap()));
-
-            let posns = self
-                .positions_at_x(x)
-                .filter(move |pos| pos.connected_below_at(x))
-                .map(|pos| (pos.seg_idx, pos.sweep_idx.unwrap()));
-
-            horiz.chain(posns)
-        });
-
-        maybe_iter.into_iter().flatten()
-    }
-
     /// Iterates over the horizontal segments that are active at the current position.
     ///
     /// This includes the segments that end here, but does not include the ones
     /// that start here.
     pub fn active_horizontals(&self) -> impl Iterator<Item = SegIdx> + '_ {
-        self.active_horizontals.iter().map(|hseg| hseg.seg)
+        self.bufs.active_horizontals.iter().map(|hseg| hseg.seg)
     }
 
     /// Returns the collection of all output events that end at the current
@@ -1388,7 +1368,7 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
         let next_x = self.x()?.clone();
 
         let mut ret = Vec::new();
-        for h in &self.active_horizontals {
+        for h in &self.bufs.active_horizontals {
             // unwrap: on the first event of this sweep line, active_horizontals is empty. So
             // we only get here after last_x is populated.
             let x0 = self.last_x.clone().unwrap();
@@ -1424,24 +1404,29 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
 
         // Move along to the next horizontal position, processing the x events at the current
         // position and either emitting them immediately or saving them as horizontals.
-        while let Some(pos) = self.positions.as_slice().first() {
-            if pos.smaller_x() > &next_x {
+        while let Some(ev) = self
+            .line
+            .state
+            .buffers
+            .output_events
+            .get(self.output_event_idx)
+        {
+            if ev.smaller_x() > &next_x {
                 break;
             }
-            // unwrap: we just peeked at this element.
-            let pos = self.positions.next().unwrap();
+            self.output_event_idx += 1;
 
-            if pos.x0 == pos.x1 {
+            if ev.x0 == ev.x1 {
                 // We push output event for points immediately.
-                ret.push(pos.clone());
-            } else if let Some(hseg) = HSeg::from_position(pos.clone()) {
+                ret.push(ev.clone());
+            } else if let Some(hseg) = HSeg::from_position(ev.clone()) {
                 // For horizontal segments, we don't output anything straight
                 // away. When we update the horizontal position and visit our
                 // horizontal segments, we'll output something.
-                self.active_horizontals.push(hseg);
+                self.bufs.active_horizontals.push(hseg);
             }
         }
-        self.active_horizontals.sort();
+        self.bufs.active_horizontals.sort();
         self.last_x = Some(next_x);
         Some(ret)
     }
@@ -1451,28 +1436,34 @@ impl<'segs, F: Float> SweepLineRange<'_, 'segs, F> {
         if let Some(x) = self.x().cloned() {
             self.drain_active_horizontals(&x);
 
-            while let Some(p) = self.positions.as_slice().first() {
-                if p.smaller_x() > &x {
+            while let Some(ev) = self
+                .line
+                .state
+                .buffers
+                .output_events
+                .get(self.output_event_idx)
+            {
+                if ev.smaller_x() > &x {
                     break;
                 }
-                // unwrap: we just peeked at this element.
-                let p = self.positions.next().unwrap();
+                self.output_event_idx += 1;
 
-                if let Some(hseg) = HSeg::from_position(p.clone()) {
-                    self.active_horizontals.push(hseg);
+                if let Some(hseg) = HSeg::from_position(ev.clone()) {
+                    self.bufs.active_horizontals.push(hseg);
                 }
             }
         }
-        self.active_horizontals.sort();
+        self.bufs.active_horizontals.sort();
     }
 
     fn drain_active_horizontals(&mut self, x: &F) {
         let new_start = self
+            .bufs
             .active_horizontals
             .iter()
             .position(|h| h.end > *x)
-            .unwrap_or(self.active_horizontals.len());
-        self.active_horizontals.drain(..new_start);
+            .unwrap_or(self.bufs.active_horizontals.len());
+        self.bufs.active_horizontals.drain(..new_start);
     }
 
     /// The indices within the sweep line represented by this range.
@@ -1493,9 +1484,10 @@ pub fn sweep<F: Float, C: FnMut(F, OutputEvent<F>)>(
     mut callback: C,
 ) {
     let mut state = Sweeper::new(segments, eps.clone());
+    let mut range_bufs = SweepLineRangeBuffers::default();
     while let Some(mut line) = state.next_line() {
         let y = line.state.y.clone();
-        while let Some(mut range) = line.next_range(segments, eps) {
+        while let Some(mut range) = line.next_range(&mut range_bufs, segments, eps) {
             while let Some(events) = range.events() {
                 for ev in events {
                     callback(y.clone(), ev);
