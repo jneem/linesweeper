@@ -196,9 +196,12 @@ impl<F: Float> EventQueue<F> {
     }
 }
 
-// Holds some buffers that are used when iterating over a sweep-line.
+/// Holds some buffers that are used when iterating over a sweep-line.
+///
+/// Save on re-allocation by allocating this once and reusing it in multiple calls to
+/// [`Sweeper::next_line`].
 #[derive(Clone, Debug)]
-struct SweepLineBuffers<F: Float> {
+pub struct SweepLineBuffers<F: Float> {
     /// A subset of the old sweep-line.
     old_line: Vec<SegmentOrderEntry>,
     /// A vector of (segment, min allowable horizontal position, max allowable horizontal position).
@@ -242,10 +245,6 @@ pub struct Sweeper<'a, F: Float> {
     events: EventQueue<F>,
     segments: &'a Segments<F>,
 
-    // These buffers are only used in `events_in_range`. Keeping them here allows us to avoid
-    // allocating and re-allocating them.
-    buffers: SweepLineBuffers<F>,
-
     horizontals: Vec<SegIdx>,
 
     // The collection of segments that we know need to be given explicit
@@ -277,14 +276,16 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
             horizontals: Vec::new(),
-            buffers: SweepLineBuffers::default(),
         }
     }
 
     /// Moves the sweep forward, returning the next sweep line.
     ///
     /// Returns `None` when sweeping is complete.
-    pub fn next_line<'slf>(&'slf mut self) -> Option<SweepLine<'slf, 'segs, F>> {
+    pub fn next_line<'slf, 'buf>(
+        &'slf mut self,
+        bufs: &'buf mut SweepLineBuffers<F>,
+    ) -> Option<SweepLine<'buf, 'slf, 'segs, F>> {
         self.check_invariants();
 
         let y = self.events.next_y(self.segments).cloned()?;
@@ -321,6 +322,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         Some(SweepLine {
             state: self,
             next_changed_interval: 0,
+            bufs,
         })
     }
 
@@ -908,17 +910,15 @@ fn horizontal_positions<'a, F: Float>(
 /// orderings of the segments: the ordering just above `y` and the ordering just
 /// below `y`. If two line segments intersect at the sweep-line, their orderings
 /// above `y` and below `y` will be different.
-///
-/// TODO: the public API is pretty gross right now and requires lots of allocation.
-/// It will change.
 #[derive(Debug)]
-pub struct SweepLine<'state, 'segs, F: Float> {
-    state: &'state mut Sweeper<'segs, F>,
+pub struct SweepLine<'buf, 'state, 'segs, F: Float> {
+    state: &'state Sweeper<'segs, F>,
+    bufs: &'buf mut SweepLineBuffers<F>,
     // Index into state.changed_intervals
     next_changed_interval: usize,
 }
 
-impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
+impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
     /// The vertical position of this sweep-line.
     pub fn y(&self) -> &F {
         &self.state.y
@@ -961,7 +961,7 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
             .clone();
         self.next_changed_interval += 1;
 
-        let buffers = &mut self.state.buffers;
+        let buffers = &mut self.bufs;
         buffers
             .old_line
             .resize(range.segs.end - range.segs.start, SegIdx(424242).into());
@@ -1081,9 +1081,9 @@ impl<'segs, F: Float> SweepLine<'_, 'segs, F> {
         bufs.active_horizontals.clear();
 
         Some(SweepLineRange {
-            output_event_idx: 0,
             last_x: None,
             changed_interval: range,
+            output_events: &self.bufs.output_events,
             line: self,
             bufs,
         })
@@ -1275,15 +1275,15 @@ impl<F: Float> PartialOrd for OutputEvent<F> {
 #[derive(Debug)]
 pub struct SweepLineRange<'bufs, 'state, 'segs, F: Float> {
     last_x: Option<F>,
-    line: &'state SweepLine<'state, 'segs, F>,
+    line: &'state SweepLine<'state, 'state, 'segs, F>,
     bufs: &'bufs mut SweepLineRangeBuffers<F>,
     changed_interval: ChangedInterval,
-    output_event_idx: usize,
+    output_events: &'state [OutputEvent<F>],
 }
 
 impl<'segs, F: Float> SweepLineRange<'_, '_, 'segs, F> {
     fn output_events(&self) -> &[OutputEvent<F>] {
-        &self.line.state.buffers.output_events[self.output_event_idx..]
+        self.output_events
     }
 
     /// The current horizontal position, or `None` if we're finished.
@@ -1404,17 +1404,11 @@ impl<'segs, F: Float> SweepLineRange<'_, '_, 'segs, F> {
 
         // Move along to the next horizontal position, processing the x events at the current
         // position and either emitting them immediately or saving them as horizontals.
-        while let Some(ev) = self
-            .line
-            .state
-            .buffers
-            .output_events
-            .get(self.output_event_idx)
-        {
+        while let Some(ev) = self.output_events.first() {
             if ev.smaller_x() > &next_x {
                 break;
             }
-            self.output_event_idx += 1;
+            self.output_events = &self.output_events[1..];
 
             if ev.x0 == ev.x1 {
                 // We push output event for points immediately.
@@ -1436,17 +1430,11 @@ impl<'segs, F: Float> SweepLineRange<'_, '_, 'segs, F> {
         if let Some(x) = self.x().cloned() {
             self.drain_active_horizontals(&x);
 
-            while let Some(ev) = self
-                .line
-                .state
-                .buffers
-                .output_events
-                .get(self.output_event_idx)
-            {
+            while let Some(ev) = self.output_events.first() {
                 if ev.smaller_x() > &x {
                     break;
                 }
-                self.output_event_idx += 1;
+                self.output_events = &self.output_events[1..];
 
                 if let Some(hseg) = HSeg::from_position(ev.clone()) {
                     self.bufs.active_horizontals.push(hseg);
@@ -1472,7 +1460,7 @@ impl<'segs, F: Float> SweepLineRange<'_, '_, 'segs, F> {
     }
 
     /// The sweep line that this is a range of.
-    pub fn line(&self) -> &SweepLine<'_, 'segs, F> {
+    pub fn line(&self) -> &SweepLine<'_, '_, 'segs, F> {
         self.line
     }
 }
@@ -1485,7 +1473,8 @@ pub fn sweep<F: Float, C: FnMut(F, OutputEvent<F>)>(
 ) {
     let mut state = Sweeper::new(segments, eps.clone());
     let mut range_bufs = SweepLineRangeBuffers::default();
-    while let Some(mut line) = state.next_line() {
+    let mut line_bufs = SweepLineBuffers::default();
+    while let Some(mut line) = state.next_line(&mut line_bufs) {
         let y = line.state.y.clone();
         while let Some(mut range) = line.next_range(&mut range_bufs, segments, eps) {
             while let Some(events) = range.events() {
@@ -1735,7 +1724,8 @@ mod tests {
     fn snapshot_outputs(segs: Segments<NotNan<f64>>, eps: f64) -> Vec<Output> {
         let mut outputs = Vec::new();
         let mut sweeper = Sweeper::new(&segs, eps.try_into().unwrap());
-        while let Some(line) = sweeper.next_line() {
+        let mut line_bufs = SweepLineBuffers::default();
+        while let Some(line) = sweeper.next_line(&mut line_bufs) {
             outputs.push(Output {
                 order: line.state.line.clone(),
                 changed: line.state.changed_intervals.clone(),

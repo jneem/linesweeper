@@ -9,7 +9,9 @@ use crate::{
     geom::Point,
     num::Float,
     segments::{SegIdx, Segments},
-    sweep::{SegmentsConnectedAtX, SweepLineRange, SweepLineRangeBuffers, Sweeper},
+    sweep::{
+        SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
+    },
 };
 
 /// We support boolean operations, so a "winding number" for us is two winding
@@ -499,7 +501,8 @@ impl<F: Float> Topology<F> {
         };
         let mut sweep_state = Sweeper::new(&segments, eps.clone());
         let mut range_bufs = SweepLineRangeBuffers::default();
-        while let Some(mut line) = sweep_state.next_line() {
+        let mut line_bufs = SweepLineBuffers::default();
+        while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
             while let Some(positions) = line.next_range(&mut range_bufs, &segments, eps) {
                 let range = positions.seg_range();
                 let scan_left_seg = if range.segs.start == 0 {
