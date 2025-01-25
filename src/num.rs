@@ -115,7 +115,13 @@ impl PartialOrd for CheapOrderedFloat {
 impl Ord for CheapOrderedFloat {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.partial_cmp(&other.0).unwrap()
+        if self.0 < other.0 {
+            std::cmp::Ordering::Less
+        } else if self.0 > other.0 {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
     }
 }
 
