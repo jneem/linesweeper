@@ -828,10 +828,10 @@ impl SegmentOrder {
         };
 
         // The rust stdlib docs say that we're not allowed to do this, because
-        // our array isn't sorted with respect to `maybe_strictly_smaller`.
+        // our array isn't sorted with respect to `lower_pred`.
         // But for now at least, their implementation does a normal
         // binary search and so it's guaranteed to return an index where
-        // `maybe_strictly_smaller` fails but the index before it succeeds.
+        // `lower_pred` fails but the index before it succeeds.
         //
         // `search_start` is `i_- + 1` in the write-up; it's the first index
         // where the predicate returns false.
