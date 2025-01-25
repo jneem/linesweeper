@@ -104,41 +104,17 @@ pub struct EventQueue<F: Float> {
     intersection: std::collections::BTreeSet<IntersectionEvent<F>>,
 }
 
-impl<F: Float> EventQueue<F> {
-    /// Builds an event queue containing the starting and ending positions
-    /// of all the  segments.
-    ///
-    /// The returned event queue will not contain any intersection events.
-    pub fn from_segments(segments: &Segments<F>) -> Self {
-        let mut enter = Vec::with_capacity(segments.len());
-        let mut exit = Vec::with_capacity(segments.len());
-        let intersection = BTreeSet::new();
-
-        for seg in segments.indices() {
-            enter.push((segments[seg].start.y.clone(), seg));
-            if !segments[seg].is_horizontal() {
-                exit.push((segments[seg].end.y.clone(), seg));
-            }
-        }
-
-        // We sort the enter segments by reversed y position (so that we can consume them
-        // in chunks from the end of the vector), and then by horizontal start position so
-        // that they're fairly likely to get inserted in the sweep-line in order (which makes
-        // the indexing fix-ups faster).
-        enter.sort_by(|(y1, seg1), (y2, seg2)| {
-            y1.cmp(y2)
-                .reverse()
-                .then_with(|| segments[*seg1].at_y(y1).cmp(&segments[*seg2].at_y(y1)))
-        });
-        exit.sort_by(|x, y| x.cmp(y).reverse());
-
+impl<F: Float> Default for EventQueue<F> {
+    fn default() -> Self {
         Self {
             next_enter_idx: 0,
             next_exit_idx: 0,
-            intersection,
+            intersection: BTreeSet::new(),
         }
     }
+}
 
+impl<F: Float> EventQueue<F> {
     pub fn push(&mut self, ev: IntersectionEvent<F>) {
         self.intersection.insert(ev);
     }
@@ -252,7 +228,7 @@ pub struct Sweeper<'a, F: Float> {
 impl<'segs, F: Float> Sweeper<'segs, F> {
     /// Creates a new sweeper for a collection of segments, and with a given tolerance.
     pub fn new(segments: &'segs Segments<F>, eps: F) -> Self {
-        let events = EventQueue::from_segments(segments);
+        let events = EventQueue::default();
 
         Sweeper {
             eps,
@@ -969,6 +945,65 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
             .and_then(|idx| self.state.changed_intervals.get(idx))
     }
 
+    fn next_range_single_seg<'a, 'bufs>(
+        &'a mut self,
+        bufs: &'bufs mut SweepLineRangeBuffers<F>,
+        segments: &Segments<F>,
+        idx: usize,
+    ) -> Option<SweepLineRange<'bufs, 'a, 'segs, F>> {
+        bufs.active_horizontals.clear();
+        self.bufs.output_events.clear();
+
+        let entry = &self.state.line.segs[idx];
+        let x = segments[entry.seg].at_y(self.y());
+        if let Some(old_seg) = entry.old_seg {
+            // This entry is on a contour, where one segment ends and the next begins.
+            // We ouput two events (one per segment) at the same position.
+            self.bufs.output_events.push(OutputEvent {
+                x0: x.clone(),
+                connected_above: true,
+                x1: x.clone(),
+                connected_below: false,
+                seg_idx: old_seg,
+                sweep_idx: None,
+                old_sweep_idx: entry.old_idx,
+            });
+
+            self.bufs.output_events.push(OutputEvent {
+                x0: x.clone(),
+                connected_above: false,
+                x1: x.clone(),
+                connected_below: true,
+                seg_idx: entry.seg,
+                sweep_idx: Some(idx),
+                old_sweep_idx: None,
+            });
+        } else {
+            // It's a single segment either entering or exiting at this height.
+            // We can handle them both in a single case.
+            self.bufs.output_events.push(OutputEvent {
+                x0: x.clone(),
+                connected_above: !entry.enter,
+                x1: x.clone(),
+                connected_below: !entry.exit,
+                seg_idx: entry.seg,
+                sweep_idx: Some(idx),
+                old_sweep_idx: entry.old_idx,
+            });
+        }
+
+        Some(SweepLineRange {
+            last_x: None,
+            changed_interval: ChangedInterval {
+                segs: idx..(idx + 1),
+                horizontals: None,
+            },
+            output_events: &self.bufs.output_events,
+            line: self,
+            bufs,
+        })
+    }
+
     /// Returns a [`SweepLineRange`] for visiting and processing all positions within
     /// a range of segments.
     pub fn next_range<'a, 'bufs>(
@@ -983,6 +1018,11 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
             .get(self.next_changed_interval)?
             .clone();
         self.next_changed_interval += 1;
+
+        debug_assert!(!range.segs.is_empty());
+        if range.segs.len() == 1 && range.horizontals.is_none() {
+            return self.next_range_single_seg(bufs, segments, range.segs.start);
+        }
 
         let buffers = &mut self.bufs;
         buffers
