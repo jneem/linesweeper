@@ -12,6 +12,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: true,
           in_changed_interval: true,
           old_idx: Some(3),
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(4),
@@ -19,6 +20,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: true,
           in_changed_interval: true,
           old_idx: Some(2),
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(1),
@@ -26,6 +28,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: true,
           in_changed_interval: true,
           old_idx: Some(0),
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(2),
@@ -33,6 +36,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: true,
           in_changed_interval: true,
           old_idx: Some(1),
+          old_seg: None,
         ),
       ],
     ),
@@ -50,18 +54,12 @@ expression: "snapshot_outputs(segs, 0.1)"
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
-          seg: SegIdx(5),
-          exit: true,
-          enter: false,
-          in_changed_interval: true,
-          old_idx: Some(0),
-        ),
-        SegmentOrderEntry(
           seg: SegIdx(0),
-          exit: false,
+          exit: true,
           enter: true,
           in_changed_interval: true,
-          old_idx: Some(1),
+          old_idx: Some(0),
+          old_seg: Some(SegIdx(5)),
         ),
         SegmentOrderEntry(
           seg: SegIdx(4),
@@ -69,6 +67,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           in_changed_interval: false,
           old_idx: None,
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(1),
@@ -76,20 +75,15 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           in_changed_interval: false,
           old_idx: None,
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(2),
-          exit: true,
-          enter: false,
-          in_changed_interval: true,
-          old_idx: Some(4),
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(3),
-          exit: false,
+          exit: true,
           enter: true,
           in_changed_interval: true,
-          old_idx: Some(5),
+          old_idx: Some(3),
+          old_seg: Some(SegIdx(2)),
         ),
       ],
     ),
@@ -97,14 +91,14 @@ expression: "snapshot_outputs(segs, 0.1)"
       ChangedInterval(
         segs: Range(
           start: 0,
-          end: 2,
+          end: 1,
         ),
         horizontals: None,
       ),
       ChangedInterval(
         segs: Range(
-          start: 4,
-          end: 6,
+          start: 3,
+          end: 4,
         ),
         horizontals: None,
       ),
@@ -119,6 +113,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           in_changed_interval: true,
           old_idx: Some(0),
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(4),
@@ -126,6 +121,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           in_changed_interval: true,
           old_idx: Some(1),
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(1),
@@ -133,6 +129,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           in_changed_interval: true,
           old_idx: Some(2),
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(3),
@@ -140,6 +137,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           in_changed_interval: true,
           old_idx: Some(3),
+          old_seg: None,
         ),
       ],
     ),
@@ -162,6 +160,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           in_changed_interval: true,
           old_idx: Some(0),
+          old_seg: None,
         ),
         SegmentOrderEntry(
           seg: SegIdx(3),
@@ -169,6 +168,7 @@ expression: "snapshot_outputs(segs, 0.1)"
           enter: false,
           in_changed_interval: true,
           old_idx: Some(1),
+          old_seg: None,
         ),
       ],
     ),

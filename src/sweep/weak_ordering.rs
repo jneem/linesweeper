@@ -22,6 +22,8 @@ pub(crate) struct SegmentOrderEntry {
     // some other segment that needs a position.
     in_changed_interval: bool,
     old_idx: Option<usize>,
+    // TODO: docme
+    old_seg: Option<SegIdx>,
 }
 
 impl SegmentOrderEntry {
@@ -30,12 +32,17 @@ impl SegmentOrderEntry {
         self.enter = false;
         self.in_changed_interval = false;
         self.old_idx = None;
+        self.old_seg = None;
     }
 
     fn set_old_idx_if_unset(&mut self, i: usize) {
         if self.old_idx.is_none() {
             self.old_idx = Some(i);
         }
+    }
+
+    fn old_seg(&self) -> SegIdx {
+        self.old_seg.unwrap_or(self.seg)
     }
 }
 
@@ -47,6 +54,7 @@ impl From<SegIdx> for SegmentOrderEntry {
             enter: false,
             in_changed_interval: false,
             old_idx: None,
+            old_seg: None,
         }
     }
 }
@@ -84,27 +92,6 @@ pub struct IntersectionEvent<F: Float> {
     pub left: SegIdx,
     /// This segment used to be to the right, and after the intersection it will be to the left.
     pub right: SegIdx,
-}
-
-// This is probably too clever, and we should just use ranges.
-#[derive(Debug)]
-pub struct SliceGuard<'a, T> {
-    vec: &'a mut Vec<T>,
-    start: usize,
-}
-
-impl<T> std::ops::Deref for SliceGuard<'_, T> {
-    type Target = [T];
-
-    fn deref(&self) -> &Self::Target {
-        &self.vec[self.start..]
-    }
-}
-
-impl<T> Drop for SliceGuard<'_, T> {
-    fn drop(&mut self) {
-        self.vec.truncate(self.start)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -329,7 +316,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
     fn advance(&mut self, y: F) {
         // All the exiting segments should be in segs_needing_positions, so find them all and remove them.
         self.segs_needing_positions
-            .retain(|idx| self.line.segs[*idx].exit);
+            .retain(|idx| self.line.segs[*idx].exit && self.line.segs[*idx].old_seg.is_none());
 
         // Reset the state flags for all segments. All segments with non-trivial state flags should
         // belong to the changed intervals. This needs to go before we remove the exiting segments,
@@ -461,11 +448,32 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         let pos = self
             .line
             .insertion_idx(&self.y, self.segments, new_seg, &self.eps);
+        let contour_prev = if self.segments.positively_oriented(seg_idx) {
+            self.segments.contour_prev(seg_idx)
+        } else {
+            self.segments.contour_next(seg_idx)
+        };
+        if let Some(contour_prev) = contour_prev {
+            if self.segments[contour_prev].start.y < self.y {
+                if pos < self.line.segs.len() && self.line.segs[pos].seg == contour_prev {
+                    self.handle_contour_continuation(seg_idx, pos);
+                    return;
+                }
+                if pos > 0 && self.line.segs[pos - 1].seg == contour_prev {
+                    self.handle_contour_continuation(seg_idx, pos - 1);
+                    return;
+                }
+            }
+        }
+
         let mut entry = SegmentOrderEntry::from(seg_idx);
         entry.enter = true;
         entry.exit = false;
         self.insert(pos, entry);
+        self.add_seg_needing_position(pos);
+    }
 
+    fn add_seg_needing_position(&mut self, pos: usize) {
         // Fix up the index of any other segments that we got inserted before
         // (at this point, segs_needing_positions only contains newly-inserted
         // segments, and it's sorted increasing).
@@ -490,13 +498,27 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         debug_assert!(self.segs_needing_positions.is_sorted());
     }
 
+    // A special case of handle-enter, in which the entering segment is
+    // continuing the contour of an exiting segment.
+    fn handle_contour_continuation(&mut self, seg_idx: SegIdx, pos: usize) {
+        self.line.segs[pos].old_seg = Some(self.line.segs[pos].seg);
+        self.line.segs[pos].seg = seg_idx;
+        self.line.segs[pos].enter = true;
+        self.line.segs[pos].exit = true;
+        self.intersection_scan_right(pos);
+        self.intersection_scan_left(pos);
+        self.add_seg_needing_position(pos);
+    }
+
     // TODO: explain somewhere why this doesn't actually remove the segment
     // yet
     fn handle_exit(&mut self, seg_idx: SegIdx) {
-        let pos = self
-            .line
-            .position(seg_idx)
-            .expect("exit for a segment we don't have");
+        let Some(pos) = self.line.position(seg_idx) else {
+            // It isn't an error if we don't find the segment that's exiting: it
+            // might have been marked as a contour continuation, in which case
+            // it's now the `old_seg` of some sweep-line entry and not the `seg`.
+            return;
+        };
         // It's important that this goes before `scan_for_removal`, so that
         // the scan doesn't get confused by the segment that should be marked
         // for exit.
@@ -864,8 +886,9 @@ impl SegmentOrder {
     }
 }
 /// Computes the allowable x positions for a slice of segments.
-fn horizontal_positions<'a, F: Float>(
+fn horizontal_positions<'a, F: Float, G: Fn(&SegmentOrderEntry) -> SegIdx>(
     entries: &[SegmentOrderEntry],
+    entry_seg: G,
     y: &F,
     segments: &'a Segments<F>,
     eps: &'a F,
@@ -874,27 +897,27 @@ fn horizontal_positions<'a, F: Float>(
     out.clear();
     let mut max_so_far = entries
         .first()
-        .map(|seg| segments[seg.seg].lower(y, eps))
+        .map(|entry| segments[entry_seg(entry)].lower(y, eps))
         // If `self.segs` is empty our y doesn't matter; we're going to return
         // an empty vec.
         .unwrap_or(F::from_f32(0.0));
 
-    for seg in entries {
-        let x = segments[seg.seg].lower(y, eps);
+    for entry in entries {
+        let x = segments[entry_seg(entry)].lower(y, eps);
         max_so_far = max_so_far.clone().max(x);
         // Fill out the minimum allowed positions, with a placeholder for the maximum.
-        out.push((*seg, max_so_far.clone(), F::from_f32(0.0)))
+        out.push((*entry, max_so_far.clone(), F::from_f32(0.0)))
     }
 
     let mut min_so_far = entries
         .last()
-        .map(|seg| segments[seg.seg].upper(y, eps))
+        .map(|entry| segments[entry_seg(entry)].upper(y, eps))
         // If `self.segs` is empty our y doesn't matter; we're going to return
         // an empty vec.
         .unwrap_or(F::from_f32(0.0));
 
     for (entry, _, max_allowed) in out.iter_mut().rev() {
-        let x = segments[entry.seg].upper(y, eps);
+        let x = segments[entry_seg(entry)].upper(y, eps);
         min_so_far = min_so_far.clone().min(x);
         *max_allowed = min_so_far.clone();
     }
@@ -971,6 +994,7 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
 
         horizontal_positions(
             &buffers.old_line,
+            |entry| entry.old_seg(),
             &self.state.y,
             segments,
             eps,
@@ -993,7 +1017,7 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
             let preferred_x = if entry.exit {
                 // The best possible position is the true segment-ending position.
                 // (This could change if we want to be more sophisticated at joining contours.)
-                segments[entry.seg].end.x.clone()
+                segments[entry.old_seg()].end.x.clone()
             } else if entry.enter {
                 // The best possible position is the true segment-starting position.
                 // (This could change if we want to be more sophisticated at joining contours.)
@@ -1008,11 +1032,11 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
             max_so_far = x.clone();
             events.push(OutputEvent {
                 x0: x,
-                connected_above: !entry.enter,
+                connected_above: entry.old_seg.is_some() || !entry.enter,
                 // This will be filled out when we traverse new_xs.
                 x1: F::from_f32(42.42),
                 connected_below: !entry.exit,
-                seg_idx: entry.seg,
+                seg_idx: entry.old_seg(),
                 sweep_idx: None,
                 old_sweep_idx: entry.old_idx,
             });
@@ -1020,6 +1044,7 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
 
         horizontal_positions(
             &self.state.line.segs[range.segs.clone()],
+            |entry| entry.seg,
             &self.state.y,
             segments,
             eps,
@@ -1034,7 +1059,7 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
         for (idx, (entry, min_x, max_x)) in buffers.positions.iter().enumerate() {
             let ev = &mut events[entry.old_idx.unwrap() - range.segs.start];
             ev.sweep_idx = Some(range.segs.start + idx);
-            debug_assert_eq!(ev.seg_idx, entry.seg);
+            debug_assert_eq!(ev.seg_idx, entry.old_seg());
             let preferred_x = if *min_x <= ev.x0 && ev.x0 <= *max_x {
                 // Try snapping to the previous position if possible.
                 ev.x0.clone()
@@ -1046,6 +1071,20 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
                 .max(max_so_far.clone())
                 .min(max_x.clone());
             max_so_far = ev.x1.clone();
+
+            let x1 = ev.x1.clone();
+            if entry.old_seg.is_some() {
+                events.push(OutputEvent {
+                    x0: x1.clone(),
+                    x1,
+                    connected_above: false,
+                    // This will be filled out when we traverse new_xs.
+                    connected_below: true,
+                    seg_idx: entry.seg,
+                    sweep_idx: Some(range.segs.start + idx),
+                    old_sweep_idx: None,
+                });
+            }
         }
 
         // Modify the positions so that entering and exiting segments get their exact position.
