@@ -13,7 +13,8 @@ use ordered_float::OrderedFloat;
 /// it guard against them on construction. This makes things substantially
 /// faster: I measured a 20% improvement to some benchmarks by switching
 /// from `OrderedFloat` to `CheapOrderedFloat`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[serde(transparent)]
 pub struct CheapOrderedFloat(f64);
 
 impl std::ops::Add<CheapOrderedFloat> for CheapOrderedFloat {

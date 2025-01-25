@@ -13,7 +13,7 @@ pub mod generators;
 pub use geom::{Point, Segment};
 pub use segments::{SegIdx, Segments};
 
-use ordered_float::NotNan;
+use num::CheapOrderedFloat;
 use topology::{Topology, WindingNumber};
 
 #[cfg(test)]
@@ -66,7 +66,7 @@ pub fn boolean_op(
     set_b: &[Vec<(f64, f64)>],
     fill_rule: FillRule,
     op: BooleanOp,
-) -> Result<topology::Contours<NotNan<f64>>, Error> {
+) -> Result<topology::Contours<CheapOrderedFloat>, Error> {
     // Find the extremal values, to figure out how much precision we can support.
     let (min, max) = extrema(
         set_a
@@ -86,19 +86,19 @@ pub fn boolean_op(
     // error of addition and subtraction, which is EPSILON / 2.
     // unwrap: we already checked that min and max are non-NaN. This could overflow to infinity,
     // but it can't be NaN.
-    let eps = NotNan::try_from(m_2 * (f64::EPSILON * 64.0)).unwrap();
+    let eps = CheapOrderedFloat::from(m_2 * (f64::EPSILON * 64.0));
 
-    debug_assert!(eps.is_finite());
+    debug_assert!(eps.into_inner().is_finite());
+
+    fn pt(p: &(f64, f64)) -> Point<CheapOrderedFloat> {
+        Point::new(p.0.into(), p.1.into())
+    }
 
     // unwrap: the conversions only fail for NaN, and we already checked that our points
     // don't have any of those.
-    let top = Topology::new(
-        set_a
-            .iter()
-            .map(|ps| ps.iter().map(|p| Point::try_from(*p).ok().unwrap())),
-        set_b
-            .iter()
-            .map(|ps| ps.iter().map(|p| Point::try_from(*p).ok().unwrap())),
+    let top = Topology::<CheapOrderedFloat>::new(
+        set_a.iter().map(|ps| ps.iter().map(pt)),
+        set_b.iter().map(|ps| ps.iter().map(pt)),
         &eps,
     );
 
