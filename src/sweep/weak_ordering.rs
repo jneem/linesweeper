@@ -13,10 +13,12 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, serde::Serialize)]
-pub(crate) struct SegmentOrderEntry {
+pub(crate) struct SegmentOrderEntry<F: Float> {
     seg: SegIdx,
     exit: bool,
     enter: bool,
+    lower_bound: F,
+    upper_bound: F,
     // This is filled out during `compute_changed_intervals`, where we use it to detect
     // if this segment was already marked as needing a position because it was near
     // some other segment that needs a position.
@@ -26,7 +28,22 @@ pub(crate) struct SegmentOrderEntry {
     old_seg: Option<SegIdx>,
 }
 
-impl SegmentOrderEntry {
+impl<F: Float> SegmentOrderEntry<F> {
+    fn new(seg: SegIdx, segments: &Segments<F>, eps: &F) -> Self {
+        let x0 = segments[seg].start.x.clone();
+        let x1 = segments[seg].end.x.clone();
+        Self {
+            seg,
+            exit: false,
+            enter: false,
+            lower_bound: x0.clone().min(x1.clone()) - eps,
+            upper_bound: x0.max(x1) + eps,
+            in_changed_interval: false,
+            old_idx: None,
+            old_seg: None,
+        }
+    }
+
     fn reset_state(&mut self) {
         self.exit = false;
         self.enter = false;
@@ -46,39 +63,24 @@ impl SegmentOrderEntry {
     }
 }
 
-impl From<SegIdx> for SegmentOrderEntry {
-    fn from(seg: SegIdx) -> Self {
-        Self {
-            seg,
-            exit: false,
-            enter: false,
-            in_changed_interval: false,
-            old_idx: None,
-            old_seg: None,
-        }
+#[derive(Clone, Debug, serde::Serialize)]
+pub(crate) struct SegmentOrder<F: Float> {
+    pub(crate) segs: Vec<SegmentOrderEntry<F>>,
+}
+
+impl<F: Float> Default for SegmentOrder<F> {
+    fn default() -> Self {
+        Self { segs: Vec::new() }
     }
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize)]
-pub(crate) struct SegmentOrder {
-    pub(crate) segs: Vec<SegmentOrderEntry>,
-}
-
-impl SegmentOrder {
+impl<F: Float> SegmentOrder<F> {
     fn seg(&self, i: usize) -> SegIdx {
         self.segs[i].seg
     }
 
     fn is_exit(&self, i: usize) -> bool {
         self.segs[i].exit
-    }
-}
-
-impl FromIterator<SegIdx> for SegmentOrder {
-    fn from_iter<T: IntoIterator<Item = SegIdx>>(iter: T) -> Self {
-        SegmentOrder {
-            segs: iter.into_iter().map(SegmentOrderEntry::from).collect(),
-        }
     }
 }
 
@@ -166,9 +168,9 @@ impl<F: Float> EventQueue<F> {
 #[derive(Clone, Debug)]
 pub struct SweepLineBuffers<F: Float> {
     /// A subset of the old sweep-line.
-    old_line: Vec<SegmentOrderEntry>,
+    old_line: Vec<SegmentOrderEntry<F>>,
     /// A vector of (segment, min allowable horizontal position, max allowable horizontal position).
-    positions: Vec<(SegmentOrderEntry, F, F)>,
+    positions: Vec<(SegmentOrderEntry<F>, F, F)>,
     output_events: Vec<OutputEvent<F>>,
 }
 
@@ -204,7 +206,7 @@ impl<F: Float> Default for SweepLineRangeBuffers<F> {
 pub struct Sweeper<'a, F: Float> {
     y: F,
     eps: F,
-    line: SegmentOrder,
+    line: SegmentOrder<F>,
     events: EventQueue<F>,
     segments: &'a Segments<F>,
 
@@ -222,23 +224,12 @@ pub struct Sweeper<'a, F: Float> {
     // inserting all the new segments.
     segs_needing_positions: Vec<usize>,
     changed_intervals: Vec<ChangedInterval>,
-
-    segment_bounds: Vec<(F, F)>,
 }
 
 impl<'segs, F: Float> Sweeper<'segs, F> {
     /// Creates a new sweeper for a collection of segments, and with a given tolerance.
     pub fn new(segments: &'segs Segments<F>, eps: F) -> Self {
         let events = EventQueue::default();
-        let segment_bounds = segments
-            .segments()
-            .map(|s| {
-                (
-                    s.start.x.clone().min(s.end.x.clone()) - &eps,
-                    s.start.x.clone().max(s.end.x.clone()) + &eps,
-                )
-            })
-            .collect();
 
         Sweeper {
             eps,
@@ -249,7 +240,6 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
             horizontals: Vec::new(),
-            segment_bounds,
         }
     }
 
@@ -418,7 +408,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         }
     }
 
-    fn insert(&mut self, pos: usize, seg: SegmentOrderEntry) {
+    fn insert(&mut self, pos: usize, seg: SegmentOrderEntry<F>) {
         self.line.segs.insert(pos, seg);
         self.intersection_scan_right(pos);
         self.intersection_scan_left(pos);
@@ -432,13 +422,9 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
             return;
         }
 
-        let pos = self.line.insertion_idx(
-            &self.y,
-            self.segments,
-            &self.segment_bounds,
-            new_seg,
-            &self.eps,
-        );
+        let pos = self
+            .line
+            .insertion_idx(&self.y, self.segments, new_seg, &self.eps);
         let contour_prev = if self.segments.positively_oriented(seg_idx) {
             self.segments.contour_prev(seg_idx)
         } else {
@@ -457,7 +443,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
             }
         }
 
-        let mut entry = SegmentOrderEntry::from(seg_idx);
+        let mut entry = SegmentOrderEntry::new(seg_idx, self.segments, &self.eps);
         entry.enter = true;
         entry.exit = false;
         self.insert(pos, entry);
@@ -537,12 +523,12 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
             // sweep line, and while doing so we need to "push" along
             // all segments that are strictly bigger than `left_seg`
             // (slight false positives are allowed; no false negatives).
-            let mut to_move = vec![(left_idx, self.line.segs[left_idx])];
+            let mut to_move = vec![(left_idx, self.line.segs[left_idx].clone())];
             let threshold = eps.clone() / F::from_f32(-4.0);
             for j in (left_idx + 1)..right_idx {
                 let seg = &self.segments[self.line.seg(j)];
                 if seg.lower(y, eps) - left_seg.upper(y, eps) > threshold {
-                    to_move.push((j, self.line.segs[j]));
+                    to_move.push((j, self.line.segs[j].clone()));
                 }
             }
 
@@ -556,7 +542,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
             // index changed because of the removal.
             let insertion_pos = right_idx + 1 - to_move.len();
 
-            for &(_, seg) in to_move.iter().rev() {
+            for (_, seg) in to_move.into_iter().rev() {
                 self.insert(insertion_pos, seg);
             }
         }
@@ -795,11 +781,11 @@ impl Segment<Rational> {
     }
 }
 
-impl SegmentOrder {
+impl<F: Float> SegmentOrder<F> {
     /// If the ordering invariants fail, returns a pair of indices witnessing that failure.
     /// Used in tests, and when enabling slow-asserts
     #[allow(dead_code)]
-    fn find_invalid_order<F: Float>(
+    fn find_invalid_order(
         &self,
         y: &F,
         segments: &Segments<F>,
@@ -822,14 +808,7 @@ impl SegmentOrder {
     }
 
     // Finds an index into this sweep line where it's ok to insert this new segment.
-    fn insertion_idx<F: Float>(
-        &self,
-        y: &F,
-        segments: &Segments<F>,
-        seg_bounds: &[(F, F)],
-        seg: &Segment<F>,
-        eps: &F,
-    ) -> usize {
+    fn insertion_idx(&self, y: &F, segments: &Segments<F>, seg: &Segment<F>, eps: &F) -> usize {
         let seg_x = seg.start.x.clone();
 
         // Fast path: we first do a binary search just with the horizontal bounding intervals.
@@ -837,14 +816,13 @@ impl SegmentOrder {
         // we're to the right of the segment at `pos - 1`'s right-most point.
         // (It isn't necessarily the first such index because things aren't quite sorted; see
         // below about the binary search.)
-        let pos = self.segs.partition_point(|entry| {
-            let (_lower, upper) = &seg_bounds[entry.seg.0];
-            &seg_x >= upper
-        });
+        let pos = self
+            .segs
+            .partition_point(|entry| seg_x >= entry.upper_bound);
 
         if pos >= self.segs.len() {
             return pos;
-        } else if pos + 1 >= self.segs.len() || seg_bounds[self.segs[pos + 1].seg.0].0 >= seg_x {
+        } else if pos + 1 >= self.segs.len() || self.segs[pos + 1].lower_bound >= seg_x {
             // At this point, the segment before pos is definitely to our left, and the segment
             // after pos is definitely to our right (or there is no such segment). That means
             // we can insert either before or after `pos`. We'll choose based on the position.
@@ -864,7 +842,7 @@ impl SegmentOrder {
 
         // A predicate that tests `other.upper(y) <= seg(y)` with no false positives.
         // This is called `p` in the write-up.
-        let lower_pred = |other: &SegmentOrderEntry| -> bool {
+        let lower_pred = |other: &SegmentOrderEntry<F>| -> bool {
             let other = &segments[other.seg];
             // This is `other.upper(y, eps) < seg_y - slack`, but rearranged for better accuracy.
             seg_x.clone() - other.upper(y, eps) > slack
@@ -882,7 +860,7 @@ impl SegmentOrder {
         let mut idx = search_start;
         // A predicate that tests `other.lower(y) <= seg(y)`, with no false negatives (and
         // also some guarantees for the false positives). This is called `q` in the write-up.
-        let upper_pred = |other: &SegmentOrderEntry| -> bool {
+        let upper_pred = |other: &SegmentOrderEntry<F>| -> bool {
             let other = &segments[other.seg];
             // This is `other.lower(y, eps) < seg(y) + slack`, but rearranged for accuracy
             other.lower(y, eps) - &seg_x < slack
@@ -901,17 +879,17 @@ impl SegmentOrder {
     //
     // TODO: if we're large, we could use a binary search.
     fn position(&self, seg: SegIdx) -> Option<usize> {
-        self.segs.iter().position(|&x| x.seg == seg)
+        self.segs.iter().position(|x| x.seg == seg)
     }
 }
 /// Computes the allowable x positions for a slice of segments.
-fn horizontal_positions<'a, F: Float, G: Fn(&SegmentOrderEntry) -> SegIdx>(
-    entries: &[SegmentOrderEntry],
+fn horizontal_positions<'a, F: Float, G: Fn(&SegmentOrderEntry<F>) -> SegIdx>(
+    entries: &[SegmentOrderEntry<F>],
     entry_seg: G,
     y: &F,
     segments: &'a Segments<F>,
     eps: &'a F,
-    out: &mut Vec<(SegmentOrderEntry, F, F)>,
+    out: &mut Vec<(SegmentOrderEntry<F>, F, F)>,
 ) {
     out.clear();
     let mut max_so_far = entries
@@ -925,7 +903,7 @@ fn horizontal_positions<'a, F: Float, G: Fn(&SegmentOrderEntry) -> SegIdx>(
         let x = segments[entry_seg(entry)].lower(y, eps);
         max_so_far = max_so_far.clone().max(x);
         // Fill out the minimum allowed positions, with a placeholder for the maximum.
-        out.push((*entry, max_so_far.clone(), F::from_f32(0.0)))
+        out.push((entry.clone(), max_so_far.clone(), F::from_f32(0.0)))
     }
 
     let mut min_so_far = entries
@@ -1067,12 +1045,23 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
             return self.next_range_single_seg(bufs, segments, range.segs.start);
         }
 
+        let dummy_entry = SegmentOrderEntry {
+            seg: SegIdx(424242),
+            exit: false,
+            enter: false,
+            lower_bound: F::from_f32(0.0),
+            upper_bound: F::from_f32(0.0),
+            in_changed_interval: false,
+            old_idx: None,
+            old_seg: None,
+        };
+
         let buffers = &mut self.bufs;
         buffers
             .old_line
-            .resize(range.segs.end - range.segs.start, SegIdx(424242).into());
+            .resize(range.segs.end - range.segs.start, dummy_entry.clone());
         for entry in &self.state.line.segs[range.segs.clone()] {
-            buffers.old_line[entry.old_idx.unwrap() - range.segs.start] = *entry;
+            buffers.old_line[entry.old_idx.unwrap() - range.segs.start] = entry.clone();
         }
 
         horizontal_positions(
@@ -1701,7 +1690,11 @@ mod tests {
             let y: NotNan<f64> = at.try_into().unwrap();
             let segs = mk_segs(xs);
 
-            let line: SegmentOrder = (0..xs.len()).map(SegIdx).collect();
+            let line: SegmentOrder<NotNan<f64>> = SegmentOrder {
+                segs: (0..xs.len())
+                    .map(|i| SegmentOrderEntry::new(SegIdx(i), &segs, &eps))
+                    .collect(),
+            };
 
             line.find_invalid_order(&y, &segs, &eps)
                 .map(|(a, b)| (a.0, b.0))
@@ -1748,20 +1741,23 @@ mod tests {
             let mut xs: Vec<_> = xs.to_owned();
             xs.push(new);
             let segs = mk_segs(&xs);
-            let segment_bounds: Vec<_> = segs
-                .segments()
-                .map(|s| (s.start.x.min(s.end.x) - eps, s.start.x.max(s.end.x) + eps))
-                .collect();
 
             let x0: NotNan<f64> = new.0.try_into().unwrap();
             let x1: NotNan<f64> = new.1.try_into().unwrap();
             let new = Segment::new(Point::new(x0, y0), Point::new(x1, y1));
 
-            let mut line: SegmentOrder = (0..(xs.len() - 1)).map(SegIdx).collect();
-            let idx = line.insertion_idx(&y, &segs, &segment_bounds, &new, &eps);
+            let mut line: SegmentOrder<NotNan<f64>> = SegmentOrder {
+                segs: (0..(xs.len() - 1))
+                    .map(|i| SegmentOrderEntry::new(SegIdx(i), &segs, &eps))
+                    .collect(),
+            };
+            let idx = line.insertion_idx(&y, &segs, &new, &eps);
 
             assert!(line.find_invalid_order(&y, &segs, &eps).is_none());
-            line.segs.insert(idx, SegIdx(xs.len() - 1).into());
+            line.segs.insert(
+                idx,
+                SegmentOrderEntry::new(SegIdx(xs.len() - 1), &segs, &eps),
+            );
             assert!(line.find_invalid_order(&y, &segs, &eps).is_none());
             idx
         }
@@ -1844,7 +1840,7 @@ mod tests {
 
     #[derive(serde::Serialize, Debug)]
     struct Output {
-        order: SegmentOrder,
+        order: SegmentOrder<NotNan<f64>>,
         changed: Vec<ChangedInterval>,
     }
     fn snapshot_outputs(segs: Segments<NotNan<f64>>, eps: f64) -> Vec<Output> {
