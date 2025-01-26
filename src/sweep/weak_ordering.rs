@@ -216,19 +216,29 @@ pub struct Sweeper<'a, F: Float> {
     // These include:
     // - any segments that changed order with any other segments
     // - any segments that entered or exited
-    // - any segments that are between the endpoints of contour-adjacent segments.
     //
     // These segments are identified by their index in the current order, so that
-    // it's fast to find them. It means that we need to do some fixing-up if indices after
+    // it's fast to find them. It means that we need to do some fixing-up of indices after
     // inserting all the new segments.
     segs_needing_positions: Vec<usize>,
     changed_intervals: Vec<ChangedInterval>,
+
+    segment_bounds: Vec<(F, F)>,
 }
 
 impl<'segs, F: Float> Sweeper<'segs, F> {
     /// Creates a new sweeper for a collection of segments, and with a given tolerance.
     pub fn new(segments: &'segs Segments<F>, eps: F) -> Self {
         let events = EventQueue::default();
+        let segment_bounds = segments
+            .segments()
+            .map(|s| {
+                (
+                    s.start.x.clone().min(s.end.x.clone()) - &eps,
+                    s.start.x.clone().max(s.end.x.clone()) + &eps,
+                )
+            })
+            .collect();
 
         Sweeper {
             eps,
@@ -239,6 +249,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
             horizontals: Vec::new(),
+            segment_bounds,
         }
     }
 
@@ -421,9 +432,13 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
             return;
         }
 
-        let pos = self
-            .line
-            .insertion_idx(&self.y, self.segments, new_seg, &self.eps);
+        let pos = self.line.insertion_idx(
+            &self.y,
+            self.segments,
+            &self.segment_bounds,
+            new_seg,
+            &self.eps,
+        );
         let contour_prev = if self.segments.positively_oriented(seg_idx) {
             self.segments.contour_prev(seg_idx)
         } else {
@@ -811,10 +826,38 @@ impl SegmentOrder {
         &self,
         y: &F,
         segments: &Segments<F>,
+        seg_bounds: &[(F, F)],
         seg: &Segment<F>,
         eps: &F,
     ) -> usize {
-        let seg_y = seg.at_y(y);
+        let seg_x = seg.start.x.clone();
+
+        // Fast path: we first do a binary search just with the horizontal bounding intervals.
+        // `pos` is an index where we're to the left of that segment's right-most point, and
+        // we're to the right of the segment at `pos - 1`'s right-most point.
+        // (It isn't necessarily the first such index because things aren't quite sorted; see
+        // below about the binary search.)
+        let pos = self.segs.partition_point(|entry| {
+            let (_lower, upper) = &seg_bounds[entry.seg.0];
+            &seg_x >= upper
+        });
+
+        if pos >= self.segs.len() {
+            return pos;
+        } else if pos + 1 >= self.segs.len() || seg_bounds[self.segs[pos + 1].seg.0].0 >= seg_x {
+            // At this point, the segment before pos is definitely to our left, and the segment
+            // after pos is definitely to our right (or there is no such segment). That means
+            // we can insert either before or after `pos`. We'll choose based on the position.
+            // (We could also try checking whether the new segment is a contour neighbor of
+            // the segment at pos. That should be a pretty common case.)
+            let other = &segments[self.segs[pos].seg];
+            if seg_x < other.at_y(y) {
+                return pos;
+            } else {
+                return pos + 1;
+            }
+        }
+
         // Horizontal evaluation is accurate to within eps / 8, so if we want to compare
         // two different horizontal coordinates, we need a slack of eps / 4.
         let slack = eps.clone() / F::from_f32(4.0);
@@ -824,7 +867,7 @@ impl SegmentOrder {
         let lower_pred = |other: &SegmentOrderEntry| -> bool {
             let other = &segments[other.seg];
             // This is `other.upper(y, eps) < seg_y - slack`, but rearranged for better accuracy.
-            seg_y.clone() - other.upper(y, eps) > slack
+            seg_x.clone() - other.upper(y, eps) > slack
         };
 
         // The rust stdlib docs say that we're not allowed to do this, because
@@ -842,7 +885,7 @@ impl SegmentOrder {
         let upper_pred = |other: &SegmentOrderEntry| -> bool {
             let other = &segments[other.seg];
             // This is `other.lower(y, eps) < seg(y) + slack`, but rearranged for accuracy
-            other.lower(y, eps) - &seg_y < slack
+            other.lower(y, eps) - &seg_x < slack
         };
         for i in search_start..self.segs.len() {
             if upper_pred(&self.segs[i]) {
@@ -1705,13 +1748,17 @@ mod tests {
             let mut xs: Vec<_> = xs.to_owned();
             xs.push(new);
             let segs = mk_segs(&xs);
+            let segment_bounds: Vec<_> = segs
+                .segments()
+                .map(|s| (s.start.x.min(s.end.x) - eps, s.start.x.max(s.end.x) + eps))
+                .collect();
 
             let x0: NotNan<f64> = new.0.try_into().unwrap();
             let x1: NotNan<f64> = new.1.try_into().unwrap();
             let new = Segment::new(Point::new(x0, y0), Point::new(x1, y1));
 
             let mut line: SegmentOrder = (0..(xs.len() - 1)).map(SegIdx).collect();
-            let idx = line.insertion_idx(&y, &segs, &new, &eps);
+            let idx = line.insertion_idx(&y, &segs, &segment_bounds, &new, &eps);
 
             assert!(line.find_invalid_order(&y, &segs, &eps).is_none());
             line.segs.insert(idx, SegIdx(xs.len() - 1).into());
