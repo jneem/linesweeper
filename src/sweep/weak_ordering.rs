@@ -550,7 +550,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
 
     #[cfg(feature = "slow-asserts")]
     fn check_invariants(&self) {
-        for &seg_entry in &self.line.segs {
+        for seg_entry in &self.line.segs {
             let seg_idx = seg_entry.seg;
             let seg = &self.segments[seg_idx];
             assert!(
@@ -561,7 +561,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         }
 
         // All segments marked as stering or exiting must be in `self.segs_needing_positions`
-        for (idx, &seg_entry) in self.line.segs.iter().enumerate() {
+        for (idx, seg_entry) in self.line.segs.iter().enumerate() {
             if seg_entry.exit || seg_entry.enter {
                 assert!(self.segs_needing_positions.contains(&idx));
             }
