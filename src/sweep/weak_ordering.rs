@@ -433,11 +433,11 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         if let Some(contour_prev) = contour_prev {
             if self.segments[contour_prev].start.y < self.y {
                 if pos < self.line.segs.len() && self.line.segs[pos].seg == contour_prev {
-                    self.handle_contour_continuation(seg_idx, pos);
+                    self.handle_contour_continuation(seg_idx, new_seg, pos);
                     return;
                 }
                 if pos > 0 && self.line.segs[pos - 1].seg == contour_prev {
-                    self.handle_contour_continuation(seg_idx, pos - 1);
+                    self.handle_contour_continuation(seg_idx, new_seg, pos - 1);
                     return;
                 }
             }
@@ -479,11 +479,15 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
 
     // A special case of handle-enter, in which the entering segment is
     // continuing the contour of an exiting segment.
-    fn handle_contour_continuation(&mut self, seg_idx: SegIdx, pos: usize) {
+    fn handle_contour_continuation(&mut self, seg_idx: SegIdx, seg: &Segment<F>, pos: usize) {
+        let x0 = seg.start.x.clone();
+        let x1 = seg.end.x.clone();
         self.line.segs[pos].old_seg = Some(self.line.segs[pos].seg);
         self.line.segs[pos].seg = seg_idx;
         self.line.segs[pos].enter = true;
         self.line.segs[pos].exit = true;
+        self.line.segs[pos].lower_bound = x0.clone().min(x1.clone()) - &self.eps;
+        self.line.segs[pos].upper_bound = x0.max(x1) + &self.eps;
         self.intersection_scan_right(pos);
         self.intersection_scan_left(pos);
         self.add_seg_needing_position(pos, false);
