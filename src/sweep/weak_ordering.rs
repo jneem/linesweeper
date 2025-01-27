@@ -447,10 +447,10 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         entry.enter = true;
         entry.exit = false;
         self.insert(pos, entry);
-        self.add_seg_needing_position(pos);
+        self.add_seg_needing_position(pos, true);
     }
 
-    fn add_seg_needing_position(&mut self, pos: usize) {
+    fn add_seg_needing_position(&mut self, pos: usize, insert: bool) {
         // Fix up the index of any other segments that we got inserted before
         // (at this point, segs_needing_positions only contains newly-inserted
         // segments, and it's sorted increasing).
@@ -458,11 +458,13 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         // We sorted all the to-be-inserted segments by horizontal position
         // before inserting them, so we expect these two loops to be short most
         // of the time.
-        for other_pos in self.segs_needing_positions.iter_mut().rev() {
-            if *other_pos >= pos {
-                *other_pos += 1;
-            } else {
-                break;
+        if insert {
+            for other_pos in self.segs_needing_positions.iter_mut().rev() {
+                if *other_pos >= pos {
+                    *other_pos += 1;
+                } else {
+                    break;
+                }
             }
         }
         let insert_pos = self
@@ -484,7 +486,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         self.line.segs[pos].exit = true;
         self.intersection_scan_right(pos);
         self.intersection_scan_left(pos);
-        self.add_seg_needing_position(pos);
+        self.add_seg_needing_position(pos, false);
     }
 
     // TODO: explain somewhere why this doesn't actually remove the segment
@@ -1641,8 +1643,8 @@ mod tests {
         geom::{Point, Segment},
         perturbation::{
             f32_perturbation, f64_perturbation, perturbation, rational_perturbation,
-            realize_perturbation, F64Perturbation, FloatPerturbation, Perturbation,
-            PointPerturbation,
+            realize_perturbation, F32Perturbation, F64Perturbation, FloatPerturbation,
+            Perturbation, PointPerturbation,
         },
         segments::Segments,
     };
@@ -1917,5 +1919,19 @@ mod tests {
     fn perturbation_test_rational(perturbations in prop::collection::vec(perturbation(rational_perturbation(0.1.try_into().unwrap())), 1..5)) {
         run_perturbation(perturbations);
     }
+    }
+
+    #[test]
+    fn bug() {
+        use Perturbation::*;
+        let perturbations = vec![Superimposition {
+            left: Box::new(Base { idx: 0 }),
+            right: Box::new(Subdivision {
+                t: NotNan::try_from(0.727041).unwrap(),
+                idx: 3359701478425014077,
+                next: Box::new(Base { idx: 0 }),
+            }),
+        }];
+        run_perturbation::<F32Perturbation>(perturbations);
     }
 }
