@@ -10,6 +10,7 @@ use crate::{
     geom::Segment,
     num::Float,
     segments::{SegIdx, Segments},
+    treevec::TreeVec,
 };
 
 #[derive(Clone, Copy, Debug, serde::Serialize)]
@@ -65,12 +66,14 @@ impl<F: Float> SegmentOrderEntry<F> {
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct SegmentOrder<F: Float> {
-    pub(crate) segs: Vec<SegmentOrderEntry<F>>,
+    pub(crate) segs: TreeVec<SegmentOrderEntry<F>, 128>,
 }
 
 impl<F: Float> Default for SegmentOrder<F> {
     fn default() -> Self {
-        Self { segs: Vec::new() }
+        Self {
+            segs: TreeVec::new(),
+        }
     }
 }
 
@@ -299,7 +302,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         // belong to the changed intervals. This needs to go before we remove the exiting segments,
         // because that messes up the indices.
         for r in self.changed_intervals.drain(..) {
-            for seg in &mut self.line.segs[r.segs] {
+            for seg in self.line.segs.range_mut(r.segs) {
                 seg.reset_state();
             }
         }
@@ -515,7 +518,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         let right_idx = self.line.position(right).unwrap();
         if left_idx < right_idx {
             self.segs_needing_positions.extend(left_idx..=right_idx);
-            for (i, entry) in self.line.segs[left_idx..=right_idx].iter_mut().enumerate() {
+            for (i, entry) in self.line.segs.range_mut(left_idx..=right_idx).enumerate() {
                 if entry.old_idx.is_none() {
                     entry.old_idx = Some(left_idx + i);
                 }
@@ -556,7 +559,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
 
     #[cfg(feature = "slow-asserts")]
     fn check_invariants(&self) {
-        for seg_entry in &self.line.segs {
+        for seg_entry in self.line.segs.iter() {
             let seg_idx = seg_entry.seg;
             let seg = &self.segments[seg_idx];
             assert!(
@@ -598,7 +601,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
                                 .position(idx)
                                 .is_some_and(|pos| i <= pos && pos <= j)
                         };
-                        let has_exit_witness = self.line.segs[i..=j].iter().any(|seg_entry| {
+                        let has_exit_witness = self.line.segs.range(i..=j).any(|seg_entry| {
                             self.segments[seg_entry.seg].end.y.to_exact() <= y_int
                         });
 
@@ -1066,7 +1069,7 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
         buffers
             .old_line
             .resize(range.segs.end - range.segs.start, dummy_entry.clone());
-        for entry in &self.state.line.segs[range.segs.clone()] {
+        for entry in self.state.line.segs.range(range.segs.clone()) {
             buffers.old_line[entry.old_idx.unwrap() - range.segs.start] = entry.clone();
         }
 
@@ -1120,8 +1123,12 @@ impl<'segs, F: Float> SweepLine<'_, '_, 'segs, F> {
             });
         }
 
+        buffers.old_line.clear();
+        buffers
+            .old_line
+            .extend(self.state.line.segs.range(range.segs.clone()).cloned());
         horizontal_positions(
-            &self.state.line.segs[range.segs.clone()],
+            &buffers.old_line,
             |entry| entry.seg,
             &self.state.y,
             segments,

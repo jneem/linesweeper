@@ -13,6 +13,7 @@ generators = []
 default = []
 
 [dependencies]
+arrayvec = { version = "0.7.6", features = ["serde"] }
 malachite = "0.4.5"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive"] }

@@ -13,6 +13,10 @@ pub mod generators;
 pub use geom::{Point, Segment};
 pub use segments::{SegIdx, Segments};
 
+// pub so that we can use it in fuzz tests, but it's really private
+#[doc(hidden)]
+pub mod treevec;
+
 use num::CheapOrderedFloat;
 use topology::{Topology, WindingNumber};
 
