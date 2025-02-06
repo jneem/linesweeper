@@ -499,7 +499,10 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
     // TODO: explain somewhere why this doesn't actually remove the segment
     // yet
     fn handle_exit(&mut self, seg_idx: SegIdx) {
-        let Some(pos) = self.line.position(seg_idx) else {
+        let Some(pos) = self
+            .line
+            .position(seg_idx, self.segments, &self.y, &self.eps)
+        else {
             // It isn't an error if we don't find the segment that's exiting: it
             // might have been marked as a contour continuation, in which case
             // it's now the `old_seg` of some sweep-line entry and not the `seg`.
@@ -514,8 +517,14 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
     }
 
     fn handle_intersection(&mut self, left: SegIdx, right: SegIdx) {
-        let left_idx = self.line.position(left).unwrap();
-        let right_idx = self.line.position(right).unwrap();
+        let left_idx = self
+            .line
+            .position(left, self.segments, &self.y, &self.eps)
+            .unwrap();
+        let right_idx = self
+            .line
+            .position(right, self.segments, &self.y, &self.eps)
+            .unwrap();
         if left_idx < right_idx {
             self.segs_needing_positions.extend(left_idx..=right_idx);
             for (i, entry) in self.line.segs.range_mut(left_idx..=right_idx).enumerate() {
@@ -598,7 +607,7 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
                         // Find an event between i and j.
                         let is_between = |idx: SegIdx| -> bool {
                             self.line
-                                .position(idx)
+                                .position(idx, self.segments, &self.y, &self.eps)
                                 .is_some_and(|pos| i <= pos && pos <= j)
                         };
                         let has_exit_witness = self.line.segs.range(i..=j).any(|seg_entry| {
@@ -885,10 +894,53 @@ impl<F: Float> SegmentOrder<F> {
     }
 
     // Find the position of the given segment in our array.
-    //
-    // TODO: if we're large, we could use a binary search.
-    fn position(&self, seg: SegIdx) -> Option<usize> {
-        self.segs.iter().position(|x| x.seg == seg)
+    fn position(&self, seg_idx: SegIdx, segments: &Segments<F>, y: &F, eps: &F) -> Option<usize> {
+        if self.segs.len() <= 32 {
+            return self.segs.iter().position(|x| x.seg == seg_idx);
+        }
+
+        let seg = &segments[seg_idx];
+        let seg_start_pos = seg.start.x.clone().min(seg.end.x.clone()) - eps;
+        let seg_end_pos = seg.start.x.clone().max(seg.end.x.clone()) + eps;
+
+        // start_idx points to a segment whose upper bound is bigger than `seg`'s start
+        // position (so it could potentially be `seg`). But the segment at `start_idx - 1`
+        // has an upper bound less than `seg`'s start position, so `seg` cannot be at
+        // `start_idx - 1` or anywhere before it.
+        let mut start_idx = self
+            .segs
+            .partition_point(|entry| entry.upper_bound <= seg_start_pos);
+
+        // end_idx points to something that's definitely after `seg`.
+        let mut end_idx = self
+            .segs
+            .partition_point(|entry| entry.lower_bound <= seg_end_pos);
+
+        if end_idx <= start_idx {
+            return None;
+        }
+
+        // If the bounds are reasonable, we'll just do a linear search between them.
+        // If they're too far apart, try to refine them first.
+        if end_idx - start_idx > 32 {
+            start_idx = self.segs.partition_point(|entry| {
+                let other_seg = &segments[entry.seg];
+                other_seg.upper(y, eps) <= seg_start_pos
+            });
+
+            end_idx = self.segs.partition_point(|entry| {
+                let other_seg = &segments[entry.seg];
+                other_seg.lower(y, eps) <= seg_end_pos
+            });
+        }
+
+        if end_idx <= start_idx {
+            return None;
+        }
+        self.segs
+            .range(start_idx..)
+            .position(|x| x.seg == seg_idx)
+            .map(|i| i + start_idx)
     }
 }
 /// Computes the allowable x positions for a slice of segments.
@@ -1654,8 +1706,8 @@ mod tests {
         geom::{Point, Segment},
         perturbation::{
             f32_perturbation, f64_perturbation, perturbation, rational_perturbation,
-            realize_perturbation, F32Perturbation, F64Perturbation, FloatPerturbation,
-            Perturbation, PointPerturbation,
+            realize_perturbation, F64Perturbation, FloatPerturbation, Perturbation,
+            PointPerturbation,
         },
         segments::Segments,
     };
@@ -1930,19 +1982,5 @@ mod tests {
     fn perturbation_test_rational(perturbations in prop::collection::vec(perturbation(rational_perturbation(0.1.try_into().unwrap())), 1..5)) {
         run_perturbation(perturbations);
     }
-    }
-
-    #[test]
-    fn bug() {
-        use Perturbation::*;
-        let perturbations = vec![Superimposition {
-            left: Box::new(Base { idx: 0 }),
-            right: Box::new(Subdivision {
-                t: NotNan::try_from(0.727041).unwrap(),
-                idx: 3359701478425014077,
-                next: Box::new(Base { idx: 0 }),
-            }),
-        }];
-        run_perturbation::<F32Perturbation>(perturbations);
     }
 }

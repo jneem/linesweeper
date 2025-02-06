@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use linesweeper::{
     boolean_op,
@@ -73,40 +73,45 @@ fn xor(c: &mut Criterion) {
             .collect()
     };
 
-    let (contours_even, contours_odd) = checkerboard(10);
-    let contours_even = to_floats(contours_even);
-    let contours_odd = to_floats(contours_odd);
+    let mut group = c.benchmark_group("checkerboard: xor");
+    for size in [10, 100, 500] {
+        let (contours_even, contours_odd) = checkerboard(size);
+        let contours_even = to_floats(contours_even);
+        let contours_odd = to_floats(contours_odd);
 
-    c.bench_function("checkerboard: xor", |b| {
-        b.iter(|| {
-            black_box(boolean_op(
-                &contours_even,
-                &contours_odd,
-                FillRule::EvenOdd,
-                BooleanOp::Xor,
-            ))
+        group.bench_with_input(BenchmarkId::new("linesweeper", size), &size, |b, _size| {
+            b.iter(|| {
+                black_box(boolean_op(
+                    &contours_even,
+                    &contours_odd,
+                    FillRule::EvenOdd,
+                    BooleanOp::Xor,
+                ))
+            });
         });
-    });
 
-    let to_float_arrays = |contours: Vec<Vec<(f64, f64)>>| -> Vec<Vec<_>> {
-        contours
-            .into_iter()
-            .map(|ps| ps.into_iter().map(|(x, y)| [x, y]).collect())
-            .collect()
-    };
-    let contours_even = to_float_arrays(contours_even);
-    let contours_odd = to_float_arrays(contours_odd);
+        let to_float_arrays = |contours: Vec<Vec<(f64, f64)>>| -> Vec<Vec<_>> {
+            contours
+                .into_iter()
+                .map(|ps| ps.into_iter().map(|(x, y)| [x, y]).collect())
+                .collect()
+        };
+        let contours_even = to_float_arrays(contours_even);
+        let contours_odd = to_float_arrays(contours_odd);
 
-    c.bench_function("checkerboard: xor i_overlay", |b| {
-        b.iter(|| {
-            use i_overlay::float::single::SingleFloatOverlay;
-            contours_even.overlay(
-                &contours_odd,
-                i_overlay::core::overlay_rule::OverlayRule::Xor,
-                i_overlay::core::fill_rule::FillRule::EvenOdd,
-            );
+        group.bench_with_input(BenchmarkId::new("i_overlay", size), &size, |b, _size| {
+            b.iter(|| {
+                use i_overlay::float::single::SingleFloatOverlay;
+                contours_even.overlay(
+                    &contours_odd,
+                    i_overlay::core::overlay_rule::OverlayRule::Xor,
+                    i_overlay::core::fill_rule::FillRule::EvenOdd,
+                );
+            });
         });
-    });
+    }
+    drop(group);
+
     let (contours_even, contours_odd) = slanted_checkerboard(10);
     let contours_even = to_floats(contours_even);
     let contours_odd = to_floats(contours_odd);
