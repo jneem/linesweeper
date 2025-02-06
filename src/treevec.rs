@@ -393,23 +393,36 @@ impl<T, const B: usize> TreeVec<T, B> {
     }
 
     pub fn iter(&self) -> Iter<'_, T, B> {
-        let mut ret = Iter {
-            stack: Vec::new(),
-            leaf: [].iter(),
-            remaining: self.len(),
+        let inner = match &*self.root {
+            Node::Leaf { data } => IterInner::Simple(data.iter()),
+            Node::Internal { .. } => {
+                let mut ret = TreeIter {
+                    stack: Vec::new(),
+                    leaf: [].iter(),
+                    remaining: self.len(),
+                };
+                ret.descend(&*self.root);
+                IterInner::Tree(ret)
+            }
         };
-        ret.descend(&*self.root);
-        ret
+        Iter { inner }
     }
 
     pub fn iter_mut(&mut self) -> IterMut<'_, T, B> {
-        let mut ret = IterMut {
-            stack: Vec::new(),
-            leaf: [].iter_mut(),
-            remaining: self.len(),
+        let len = self.len();
+        let inner = match &mut *self.root {
+            Node::Leaf { data } => IterMutInner::Simple(data.iter_mut()),
+            root @ Node::Internal { .. } => {
+                let mut ret = TreeIterMut {
+                    stack: Vec::new(),
+                    leaf: [].iter_mut(),
+                    remaining: len,
+                };
+                ret.descend(root);
+                IterMutInner::Tree(ret)
+            }
         };
-        ret.descend(&mut *self.root);
-        ret
+        IterMut { inner }
     }
 
     pub fn partition_point<P>(&self, mut pred: P) -> usize
@@ -444,7 +457,7 @@ impl<T, const B: usize> TreeVec<T, B> {
         }
     }
 
-    pub fn range(&self, range: impl std::ops::RangeBounds<usize>) -> Iter<'_, T, B> {
+    fn normalize_bounds(&self, range: impl std::ops::RangeBounds<usize>) -> (usize, usize) {
         let start = match range.start_bound() {
             std::ops::Bound::Included(x) => *x,
             std::ops::Bound::Excluded(x) => *x + 1,
@@ -455,40 +468,49 @@ impl<T, const B: usize> TreeVec<T, B> {
             std::ops::Bound::Excluded(x) => *x,
             std::ops::Bound::Unbounded => self.len(),
         };
+        (start, end)
+    }
 
-        if end > self.len() {
-            panic!("out of bounds");
-        }
-        let mut ret = Iter {
-            stack: Vec::new(),
-            leaf: [].iter(),
-            remaining: end - start,
+    pub fn range(&self, range: impl std::ops::RangeBounds<usize>) -> Iter<'_, T, B> {
+        let (start, end) = self.normalize_bounds(range);
+        let inner = match &*self.root {
+            Node::Leaf { data } => IterInner::Simple(data[start..end].iter()),
+            Node::Internal { .. } => {
+                if end > self.len() {
+                    panic!("out of bounds");
+                }
+                let mut ret = TreeIter {
+                    stack: Vec::new(),
+                    leaf: [].iter(),
+                    remaining: end - start,
+                };
+                ret.descend_to(&*self.root, start);
+                IterInner::Tree(ret)
+            }
         };
-        ret.descend_to(&*self.root, start);
-        ret
+        Iter { inner }
     }
 
     pub fn range_mut(&mut self, range: impl std::ops::RangeBounds<usize>) -> IterMut<'_, T, B> {
-        let start = match range.start_bound() {
-            std::ops::Bound::Included(x) => *x,
-            std::ops::Bound::Excluded(x) => *x + 1,
-            std::ops::Bound::Unbounded => 0,
+        let (start, end) = self.normalize_bounds(range);
+        let len = self.len();
+
+        let inner = match &mut *self.root {
+            Node::Leaf { data } => IterMutInner::Simple(data[start..end].iter_mut()),
+            root @ Node::Internal { .. } => {
+                if end > len {
+                    panic!("out of bounds");
+                }
+                let mut ret = TreeIterMut {
+                    stack: Vec::new(),
+                    leaf: [].iter_mut(),
+                    remaining: end - start,
+                };
+                ret.descend_to(root, start);
+                IterMutInner::Tree(ret)
+            }
         };
-        let end = match range.end_bound() {
-            std::ops::Bound::Included(x) => *x + 1,
-            std::ops::Bound::Excluded(x) => *x,
-            std::ops::Bound::Unbounded => self.len(),
-        };
-        if end > self.len() {
-            panic!("out of bounds");
-        }
-        let mut ret = IterMut {
-            stack: Vec::new(),
-            leaf: [].iter_mut(),
-            remaining: end - start,
-        };
-        ret.descend_to(&mut *self.root, start);
-        ret
+        IterMut { inner }
     }
 }
 
@@ -518,12 +540,21 @@ impl<T, const B: usize> std::ops::IndexMut<usize> for TreeVec<T, B> {
 }
 
 pub struct Iter<'a, T, const B: usize> {
+    inner: IterInner<'a, T, B>,
+}
+
+enum IterInner<'a, T, const B: usize> {
+    Simple(std::slice::Iter<'a, T>),
+    Tree(TreeIter<'a, T, B>),
+}
+
+struct TreeIter<'a, T, const B: usize> {
     stack: Vec<std::slice::Iter<'a, Box<Node<T, B>>>>,
     leaf: std::slice::Iter<'a, T>,
     remaining: usize,
 }
 
-impl<'a, T, const B: usize> Iter<'a, T, B> {
+impl<'a, T, const B: usize> TreeIter<'a, T, B> {
     fn descend(&mut self, mut node: &'a Node<T, B>) {
         loop {
             match node {
@@ -561,12 +592,8 @@ impl<'a, T, const B: usize> Iter<'a, T, B> {
             }
         }
     }
-}
 
-impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<&'a T> {
         if self.remaining == 0 {
             None
         } else {
@@ -590,13 +617,34 @@ impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
     }
 }
 
+impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
+    type Item = &'a T;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.inner {
+            IterInner::Simple(it) => it.next(),
+            IterInner::Tree(it) => it.next(),
+        }
+    }
+}
+
 pub struct IterMut<'a, T, const B: usize> {
+    inner: IterMutInner<'a, T, B>,
+}
+
+enum IterMutInner<'a, T, const B: usize> {
+    Simple(std::slice::IterMut<'a, T>),
+    Tree(TreeIterMut<'a, T, B>),
+}
+
+pub struct TreeIterMut<'a, T, const B: usize> {
     stack: Vec<std::slice::IterMut<'a, Box<Node<T, B>>>>,
     leaf: std::slice::IterMut<'a, T>,
     remaining: usize,
 }
 
-impl<'a, T, const B: usize> IterMut<'a, T, B> {
+impl<'a, T, const B: usize> TreeIterMut<'a, T, B> {
     fn descend(&mut self, mut node: &'a mut Node<T, B>) {
         loop {
             match node {
@@ -634,12 +682,8 @@ impl<'a, T, const B: usize> IterMut<'a, T, B> {
             }
         }
     }
-}
 
-impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<&'a mut T> {
         if self.remaining == 0 {
             None
         } else {
@@ -659,6 +703,18 @@ impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
                     return self.leaf.next();
                 }
             }
+        }
+    }
+}
+
+impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
+    type Item = &'a mut T;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.inner {
+            IterMutInner::Simple(iter) => iter.next(),
+            IterMutInner::Tree(tree_iter) => tree_iter.next(),
         }
     }
 }
