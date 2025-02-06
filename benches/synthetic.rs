@@ -2,7 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 
 use linesweeper::{
     boolean_op,
-    generators::{checkerboard, slanted_checkerboard},
+    generators::{checkerboard, slanted_checkerboard, slanties},
     num::CheapOrderedFloat,
     topology::Topology,
     BooleanOp, FillRule, Point, Segments,
@@ -76,6 +76,46 @@ fn xor(c: &mut Criterion) {
     let mut group = c.benchmark_group("checkerboard: xor");
     for size in [10, 100, 500] {
         let (contours_even, contours_odd) = checkerboard(size);
+        let contours_even = to_floats(contours_even);
+        let contours_odd = to_floats(contours_odd);
+
+        group.bench_with_input(BenchmarkId::new("linesweeper", size), &size, |b, _size| {
+            b.iter(|| {
+                black_box(boolean_op(
+                    &contours_even,
+                    &contours_odd,
+                    FillRule::EvenOdd,
+                    BooleanOp::Xor,
+                ))
+            });
+        });
+
+        let to_float_arrays = |contours: Vec<Vec<(f64, f64)>>| -> Vec<Vec<_>> {
+            contours
+                .into_iter()
+                .map(|ps| ps.into_iter().map(|(x, y)| [x, y]).collect())
+                .collect()
+        };
+        let contours_even = to_float_arrays(contours_even);
+        let contours_odd = to_float_arrays(contours_odd);
+
+        group.bench_with_input(BenchmarkId::new("i_overlay", size), &size, |b, _size| {
+            b.iter(|| {
+                use i_overlay::float::single::SingleFloatOverlay;
+                contours_even.overlay(
+                    &contours_odd,
+                    i_overlay::core::overlay_rule::OverlayRule::Xor,
+                    i_overlay::core::fill_rule::FillRule::EvenOdd,
+                );
+            });
+        });
+    }
+    drop(group);
+
+    // TODO: copy-paste
+    let mut group = c.benchmark_group("slanties: xor");
+    for size in [10, 100, 500] {
+        let (contours_even, contours_odd) = slanties(size);
         let contours_even = to_floats(contours_even);
         let contours_odd = to_floats(contours_odd);
 

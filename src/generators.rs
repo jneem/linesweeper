@@ -73,3 +73,31 @@ pub fn slanted_checkerboard<F: Float>(n: usize) -> (Contours<F>, Contours<F>) {
         squares((f(20.0), f(20.0)), f(30.0), f(40.0), f(1.0), n - 1),
     )
 }
+
+/// The "evens" are a bunch of long, skinny parallelograms going from top-left
+/// to bottom-right. The "odds" go from top-right to bottom-left.
+pub fn slanties<F: Float>(n: usize) -> (Contours<F>, Contours<F>) {
+    let f = F::from_f32;
+    let h = f(20.0) * f(n as f32);
+
+    let mut even = Vec::new();
+    let mut odd = Vec::new();
+    for i in 0..n {
+        let x_off = f(20.0) * f(i as f32);
+        even.push(vec![
+            Point::new(x_off.clone(), f(0.0)),
+            Point::new(x_off.clone() + h.clone(), h.clone()),
+            Point::new(x_off.clone() + h.clone() + f(10.0), h.clone()),
+            Point::new(x_off.clone() + f(10.0), f(0.0)),
+        ]);
+
+        odd.push(vec![
+            Point::new(x_off.clone() + h.clone(), f(0.0)),
+            Point::new(x_off.clone(), h.clone()),
+            Point::new(x_off.clone() + f(10.0), h.clone()),
+            Point::new(x_off.clone() + h.clone() + f(10.0), f(0.0)),
+        ]);
+    }
+
+    (even, odd)
+}

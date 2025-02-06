@@ -1,10 +1,10 @@
 use std::{path::PathBuf, str::FromStr};
 
-use clap::Parser;
+use clap::{Args, Parser};
 use ordered_float::NotNan;
 use svg::Document;
 
-use linesweeper::topology::Topology;
+use linesweeper::{generators, topology::Topology, Point};
 
 type Float = NotNan<f64>;
 
@@ -34,10 +34,19 @@ impl FromStr for Op {
     }
 }
 
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
+enum Example {
+    Checkerboard,
+    SlantedCheckerboard,
+    Slanties,
+}
+
 #[derive(Parser)]
-struct Args {
-    input: PathBuf,
+struct Cli {
     output: PathBuf,
+
+    #[command(flatten)]
+    input: Input,
 
     #[arg(long)]
     non_zero: bool,
@@ -46,16 +55,41 @@ struct Args {
     epsilon: Option<f64>,
 }
 
-pub fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct Input {
+    input: Option<PathBuf>,
 
-    let input = std::fs::read_to_string(&args.input)?;
-    let tree = usvg::Tree::from_str(&input, &usvg::Options::default())?;
-    let contours = svg_util::svg_to_contours(&tree);
-    eprintln!("{} contours", contours.len());
+    #[arg(long)]
+    example: Option<Example>,
+}
+
+fn get_contours(input: &Input) -> anyhow::Result<(Vec<Vec<Point<Float>>>, Vec<Vec<Point<Float>>>)> {
+    match (&input.input, &input.example) {
+        (Some(path), None) => {
+            let input = std::fs::read_to_string(path)?;
+            let tree = usvg::Tree::from_str(&input, &usvg::Options::default())?;
+            let mut contours = svg_util::svg_to_contours(&tree);
+            let rest = contours.split_off(1);
+            Ok((contours, rest))
+        }
+        (None, Some(example)) => match example {
+            Example::Checkerboard => Ok(generators::checkerboard(10)),
+            Example::SlantedCheckerboard => Ok(generators::slanted_checkerboard(10)),
+            Example::Slanties => Ok(generators::slanties(10)),
+        },
+        _ => unreachable!(),
+    }
+}
+
+pub fn main() -> anyhow::Result<()> {
+    let args = Cli::parse();
+    let (shape_a, shape_b) = get_contours(&args.input)?;
 
     let eps = args.epsilon.unwrap_or(0.1).try_into().unwrap();
-    let top = Topology::new([contours[0].clone()], contours[1..].iter().cloned(), &eps);
+    let top = Topology::new(shape_a.clone(), shape_b.clone(), &eps);
+    let mut contours = shape_a;
+    contours.extend(shape_b);
 
     let ys: Vec<_> = contours.iter().flatten().map(|p| p.y).collect();
     let xs: Vec<_> = contours.iter().flatten().map(|p| p.x).collect();
