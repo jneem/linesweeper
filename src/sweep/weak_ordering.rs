@@ -16,16 +16,83 @@ use crate::{
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 pub(crate) struct SegmentOrderEntry<F: Float> {
     seg: SegIdx,
+    /// True if this segment is about to leave the sweep-line.
+    ///
+    /// We handle enter/exits like this:
+    ///
+    /// 1. insert the newly entered segments
+    /// 2. mark the about-to-exit segments
+    /// 3. process intersections and re-shuffle things
+    /// 4. output the geometry
+    /// 5. remove the exited segments that we marked in step 2.
+    ///
+    /// The reason we don't remove about-to-exit segments immediately in
+    /// step 2 is to make it easier to compare the old and new orderings.
+    /// We keep track of the re-shuffling in step 3 (see `old_idx` below),
+    /// and the lack of deletions means that we don't need to worry about
+    /// indices shifting.
     exit: bool,
     enter: bool,
+    /// This is epsilon below this segment's smallest horizontal position. All
+    /// horizontal positions smaller than this are guaranteed not to interact
+    /// with this segment.
     lower_bound: F,
+    /// This is epsilon above this segment's largest horizontal position. All
+    /// horizontal positions larger than this are guaranteed not to interact
+    /// with this segment.
     upper_bound: F,
-    // This is filled out during `compute_changed_intervals`, where we use it to detect
-    // if this segment was already marked as needing a position because it was near
-    // some other segment that needs a position.
+    /// This is filled out during `compute_changed_intervals`, where we use it as
+    /// a sort of "dirty" flag to avoid processing an entry twice.
     in_changed_interval: bool,
+    /// We need to keep track of two sweep-line orders at once: the previous one
+    /// and the current one. And if a large sweep-line has only one small change,
+    /// we want the cost of this tracking to be small. We do this by keeping the
+    /// sweep line in the "current" order, and then whenever some segments have
+    /// their order changed, we remember their old positions.
+    ///
+    /// So, for example, say we're in a situation like this, where the dashed
+    /// horizontal line is the position of the sweep:
+    ///
+    /// ```text
+    /// s_1  s_3   s_5  s_7
+    ///  │     ╲   ╱     ╲
+    ///  │      ╲ ╱       ╲
+    /// ╌│╌╌╌╌╌╌╌╳╌╌╌╌╌╌╌╌╌╲
+    ///  │      ╱ ╲         ╲
+    /// ```
+    ///
+    /// The old order is [s_1, s_3, s_5, s_7], and we start off with all the old_idx
+    /// fields set to `None`. Then we swap `s_3` and `s_5`, so the current order
+    /// is [s_1, s_5, s_3, s_7] and we set the old_idx fields to be
+    /// [None, Some(2), Some(1), None]. This allows us to reconstruct the original
+    /// order when we need to.
     old_idx: Option<usize>,
-    // TODO: docme
+    /// When two segments are contour-adjacent, we allow them to "share" the same
+    /// sweep-line slot. This helps performance (because we aren't constantly
+    /// removing and inserting segments in the middle of the sweep-line), and makes
+    /// it easier to generate good output (because if we have both contour-adjacent
+    /// segments handy, it's easy to avoid unnecessary horizontal segments).
+    ///
+    /// So in a situation like this, for example:
+    ///
+    /// ```text
+    /// s_1   s_3     s_7
+    ///  │      ╲       ╲
+    ///  │       ╲       ╲
+    ///  │       ╱        ╲
+    ///  │      ╱          ╲
+    ///       s_5
+    /// ```
+    ///
+    /// when the sweep-line hits the "kink" the new order will be [s_1, s_5, s_7]
+    /// and the old_seg values will be [None, Some(s_3), None].
+    ///
+    /// Note that `old_seg` is not guaranteed to get used for all contour-adjacent
+    /// segments, even if they're monotonic in y: if there are some other annoying
+    /// segments nearby, the new segment and the old segment might get separated
+    /// in the sweep-line. In this case, they will get their own entries.
+    ///
+    /// If this is `Some`, both `enter` and `exit` will be true.
     old_seg: Option<SegIdx>,
 }
 
@@ -496,8 +563,8 @@ impl<'segs, F: Float> Sweeper<'segs, F> {
         self.add_seg_needing_position(pos, false);
     }
 
-    // TODO: explain somewhere why this doesn't actually remove the segment
-    // yet
+    /// Marks a segment as needing to exit, but doesn't actually remove it
+    /// from the sweep-line. See `SegmentOrderEntry::exit` for an explanation.
     fn handle_exit(&mut self, seg_idx: SegIdx) {
         let Some(pos) = self
             .line
