@@ -31,10 +31,12 @@
           buildInputs = [
             cargo-insta
             cargo-flamegraph
+            cargo-fuzz
             cargo-outdated
             cargo-show-asm
             libclang
             libxkbcommon
+            stdenv.cc.cc
             typst
             tinymist
             vulkan-loader
