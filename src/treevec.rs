@@ -85,6 +85,13 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    fn first(&self) -> Option<&T> {
+        match self {
+            Node::Leaf { data } => data.first(),
+            Node::Internal { children, .. } => children.first().and_then(|c| c.first()),
+        }
+    }
+
     fn insert(&mut self, offset: usize, element: T) -> InsertResult<T, B> {
         match self {
             Node::Leaf { data } => {
@@ -299,6 +306,24 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    fn partition_point<P>(&self, mut pred: P) -> usize
+    where
+        P: FnMut(&T) -> bool,
+    {
+        match self {
+            Node::Leaf { data } => data.partition_point(pred),
+            Node::Internal { children, size } => {
+                let child_idx = children.partition_point(|child| pred(child.first().unwrap()));
+                if child_idx > 0 {
+                    children[child_idx - 1].partition_point(pred)
+                        + size[..(child_idx - 1)].iter().copied().sum::<usize>()
+                } else {
+                    0
+                }
+            }
+        }
+    }
+
     fn check_invariants(&self, is_root: bool) {
         match self {
             Node::Leaf { data } => {
@@ -425,36 +450,11 @@ impl<T, const B: usize> TreeVec<T, B> {
         IterMut { inner }
     }
 
-    pub fn partition_point<P>(&self, mut pred: P) -> usize
+    pub fn partition_point<P>(&self, pred: P) -> usize
     where
         P: FnMut(&T) -> bool,
     {
-        if let Node::Leaf { data } = &*self.root {
-            return data.partition_point(pred);
-        }
-
-        // Our own slow, manual binary search. Could be sped up by using the tree structure.
-        let mut end = self.len();
-        if end == 0 {
-            return 0;
-        }
-        let mut start = 0usize;
-
-        while end > start + 1 {
-            let mid = (start + end) / 2;
-            let val = pred(&self[mid]);
-
-            if val {
-                start = mid;
-            } else {
-                end = mid;
-            }
-        }
-        if pred(&self[start]) {
-            start + 1
-        } else {
-            start
-        }
+        self.root.partition_point(pred)
     }
 
     fn normalize_bounds(&self, range: impl std::ops::RangeBounds<usize>) -> (usize, usize) {
