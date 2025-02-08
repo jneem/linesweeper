@@ -2,19 +2,61 @@ use crate::{num::Float, SegIdx};
 
 use super::{ChangedInterval, OutputEvent, SweepLine};
 
+/// A horizontal fragment.
+///
+/// Represents a horizontal part of a segment, which could be either an actual
+/// horizontal segment or a little horizontal connector of a segment in a
+/// sweep-line.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct HSeg<F: Float> {
-    pub end: F,
-    pub connected_at_start: bool,
-    pub connected_at_end: bool,
-    pub enter_first: bool,
+struct HFrag<F: Float> {
+    /// The segment this horizontal fragment is a part of.
     pub seg: SegIdx,
+    /// The first (smallest) horizontal position of this fragment.
     pub start: F,
+    /// The last (largest) horizontal position of this fragment.
+    pub end: F,
+    /// Does this segment continue out of the sweep-line at `start`?
+    ///
+    /// For a horizontal segment, this will always be false. On its own,
+    /// this doesn't tell you whether the segment points up or down at
+    /// `start`; for that, see `enter_first`.
+    pub connected_at_start: bool,
+    /// Does this segment continue out of the sweep-line at `end`?
+    ///
+    /// For a horizontal segment, this will always be false.
+    pub connected_at_end: bool,
+    /// When traversing the segment in sweep-line order, does it visit
+    /// `start` first?
+    ///
+    /// For example:
+    ///
+    /// ```text
+    /// s_1        s_2   s_3
+    ///  ╲          ╱     ╲
+    ///   ╲        ╱       ╲
+    ///   ─      ─           ─
+    ///   ╲    ╱               ╲
+    ///    ╲  ╱                 ╲
+    /// ```
+    ///
+    /// When moving from top to bottom (i.e. sweep-line order), s_1 and s_2
+    /// visit the larger horizontal position of the fragment before the smaller
+    /// one, so `enter_first` is false. On the other hand, s_3 has `enter_first`
+    /// as true.
+    pub enter_first: bool,
+    /// The position of the segment in the current sweep-line.
+    ///
+    /// This will be `None` if, and only if, the segment is horizontal.
     pub sweep_idx: Option<usize>,
+    /// The position of the segment in the old sweep-line.
+    ///
+    /// This will be `None` if, and only if, the segment is horizontal.
     pub old_sweep_idx: Option<usize>,
 }
 
-impl<F: Float> HSeg<F> {
+impl<F: Float> HFrag<F> {
+    /// Given a segment's interaction with the sweep-line, returns the corresponding
+    /// horizontal fragment if there is one.
     pub fn from_position(pos: OutputEvent<F>) -> Option<Self> {
         let OutputEvent {
             x0,
@@ -34,7 +76,7 @@ impl<F: Float> HSeg<F> {
         } else {
             (x1, x0, connected_below, connected_above)
         };
-        Some(HSeg {
+        Some(HFrag {
             end,
             start,
             enter_first,
@@ -46,11 +88,13 @@ impl<F: Float> HSeg<F> {
         })
     }
 
+    /// Does this horizontal fragment's segment stick up from the sweep-line at `x`?
     pub fn connected_above_at(&self, x: &F) -> bool {
         (*x == self.start && self.enter_first && self.connected_at_start)
             || (*x == self.end && !self.enter_first && self.connected_at_end)
     }
 
+    /// Does this horizontal fragment's segment stick down from the sweep-line at `x`?
     pub fn connected_below_at(&self, x: &F) -> bool {
         (*x == self.start && !self.enter_first && self.connected_at_start)
             || (*x == self.end && self.enter_first && self.connected_at_end)
@@ -219,7 +263,7 @@ impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
             if ev.x0 == ev.x1 {
                 // We push output event for points immediately.
                 ret.push(ev.clone());
-            } else if let Some(hseg) = HSeg::from_position(ev.clone()) {
+            } else if let Some(hseg) = HFrag::from_position(ev.clone()) {
                 // For horizontal segments, we don't output anything straight
                 // away. When we update the horizontal position and visit our
                 // horizontal segments, we'll output something.
@@ -242,7 +286,7 @@ impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
                 }
                 self.output_events = &self.output_events[1..];
 
-                if let Some(hseg) = HSeg::from_position(ev.clone()) {
+                if let Some(hseg) = HFrag::from_position(ev.clone()) {
                     self.bufs.active_horizontals.push(hseg);
                 }
             }
@@ -310,7 +354,15 @@ impl SegmentsConnectedAtX {
 /// [`SweepLine::next_range`].
 #[derive(Clone, Debug)]
 pub struct SweepLineRangeBuffers<F: Float> {
-    active_horizontals: Vec<HSeg<F>>,
+    /// All the horizontal segments overlapping with the sweep-line-range's current
+    /// horizontal position, ordered by ending position.
+    ///
+    /// We could keep this in an ordered data structure, but it turns out to
+    /// be faster to just sort it regularly: every time we modify this, we also
+    /// advance the horizontal position and iterate over this entire collection.
+    /// Therefore, there's no asymptotic run-time to be gained by having a fast
+    /// way to insert/delete a single element.
+    active_horizontals: Vec<HFrag<F>>,
 }
 
 impl<F: Float> Default for SweepLineRangeBuffers<F> {
