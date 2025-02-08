@@ -1,5 +1,5 @@
 ---
-source: src/sweep/weak_ordering.rs
+source: src/sweep/sweep_line.rs
 expression: "snapshot_outputs(segs, 0.01)"
 ---
 [
