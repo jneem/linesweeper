@@ -79,6 +79,9 @@ fn xor(c: &mut Criterion) {
         let contours_even = to_floats(contours_even);
         let contours_odd = to_floats(contours_odd);
 
+        if size > 100 {
+            group.sample_size(10);
+        }
         group.bench_with_input(BenchmarkId::new("linesweeper", size), &size, |b, _size| {
             b.iter(|| {
                 black_box(boolean_op(
@@ -110,7 +113,7 @@ fn xor(c: &mut Criterion) {
             });
         });
     }
-    drop(group);
+    group.finish();
 
     // TODO: copy-paste
     let mut group = c.benchmark_group("slanties: xor");
@@ -119,6 +122,9 @@ fn xor(c: &mut Criterion) {
         let contours_even = to_floats(contours_even);
         let contours_odd = to_floats(contours_odd);
 
+        if size > 100 {
+            group.sample_size(10);
+        }
         group.bench_with_input(BenchmarkId::new("linesweeper", size), &size, |b, _size| {
             b.iter(|| {
                 black_box(boolean_op(
@@ -150,7 +156,7 @@ fn xor(c: &mut Criterion) {
             });
         });
     }
-    drop(group);
+    group.finish();
 
     let (contours_even, contours_odd) = slanted_checkerboard(10);
     let contours_even = to_floats(contours_even);

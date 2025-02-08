@@ -900,8 +900,8 @@ impl<F: Float> SegmentOrder<F> {
         }
 
         let seg = &segments[seg_idx];
-        let seg_start_pos = seg.start.x.clone().min(seg.end.x.clone()) - eps;
-        let seg_end_pos = seg.start.x.clone().max(seg.end.x.clone()) + eps;
+        let seg_lower = seg.lower(y, eps);
+        let seg_upper = seg.upper(y, eps);
 
         // start_idx points to a segment whose upper bound is bigger than `seg`'s start
         // position (so it could potentially be `seg`). But the segment at `start_idx - 1`
@@ -909,12 +909,12 @@ impl<F: Float> SegmentOrder<F> {
         // `start_idx - 1` or anywhere before it.
         let mut start_idx = self
             .segs
-            .partition_point(|entry| entry.upper_bound <= seg_start_pos);
+            .partition_point(|entry| entry.upper_bound <= seg_lower);
 
         // end_idx points to something that's definitely after `seg`.
         let mut end_idx = self
             .segs
-            .partition_point(|entry| entry.lower_bound <= seg_end_pos);
+            .partition_point(|entry| entry.lower_bound <= seg_upper);
 
         if end_idx <= start_idx {
             return None;
@@ -925,12 +925,12 @@ impl<F: Float> SegmentOrder<F> {
         if end_idx - start_idx > 32 {
             start_idx = self.segs.partition_point(|entry| {
                 let other_seg = &segments[entry.seg];
-                other_seg.upper(y, eps) <= seg_start_pos
+                other_seg.upper(y, eps) <= seg_lower
             });
 
             end_idx = self.segs.partition_point(|entry| {
                 let other_seg = &segments[entry.seg];
-                other_seg.lower(y, eps) <= seg_end_pos
+                other_seg.lower(y, eps) <= seg_upper
             });
         }
 
