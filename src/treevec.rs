@@ -1,6 +1,13 @@
 use arrayvec::ArrayVec;
 use serde::ser::SerializeSeq;
 
+/// A container with fast random access and random insertion/deletion.
+///
+/// The implementation is based on a short, wide, more-or-less-balanced tree.
+/// You get to choose how wide it is: `B` is the maximum size of each node,
+/// and we ensure that every node but the root has at least `B/2` elements.
+/// The depth of the tree is therefore of order `log_B (n)`, where `n`
+/// is the number of elements.
 #[derive(Clone, Debug)]
 pub struct TreeVec<T, const B: usize> {
     root: Box<Node<T, B>>,
@@ -19,32 +26,59 @@ impl<T: serde::Serialize, const B: usize> serde::Serialize for TreeVec<T, B> {
     }
 }
 
+/// A single node in the tree.
 #[derive(Clone, Debug, serde::Serialize)]
 enum Node<T, const B: usize> {
     Leaf {
+        /// Guaranteed to have at least `B/2` elements (and in particular,
+        /// to be non-empty) *except* if this node happens to be the root
+        /// of the tree.
         data: ArrayVec<T, B>,
     },
+    /// An internal node. The two arrays, `size` and `children`, are guaranteed
+    /// to be non-empty. And unless this node is the root of the tree,
+    /// they will have at least `B/2` elements.
     Internal {
+        /// For each child, the number of elements in its subtree.
+        ///
+        /// (And so the number of elements in my subtree is the sum of these.)
         size: ArrayVec<usize, B>,
+        /// The children. Each subtree is guaranteed to have the same height.
         children: ArrayVec<Box<Node<T, B>>, B>,
     },
 }
 
+/// The result of inserting an element into a subtree.
 enum InsertResult<T, const B: usize> {
+    /// It fits!
     Done,
+    /// It didn't fit, and the subtree had to be split into two subtrees.
+    /// The node in here is the second of the two subtrees.
     Split(Box<Node<T, B>>),
 }
 
+/// The result of removing an element from a subtree.
 enum RemoveResult {
+    /// It's gone!
     Done,
+    /// It's gone, but the root of the subtree now has too few children.
     Undersize,
 }
 
+/// The result of fixing up the sizes of two sibling subtrees.
 enum MergeResult {
+    /// The two subtrees both fit in a single node: one has been drained and added
+    /// to the other.
     Absorbed,
+    /// Some elements were moved from one subtree to another, and now they both
+    /// have valid sizes.
     Rebalanced,
 }
 
+/// Which subtree does the given offset belong to?
+///
+/// Returns the index of the subtree containing that offset, and the offset
+/// relative to the subtree.
 fn child_idx(sizes: &[usize], mut offset: usize) -> Option<(usize, usize)> {
     for (idx, &size) in sizes.iter().enumerate() {
         if size > offset {
@@ -56,6 +90,7 @@ fn child_idx(sizes: &[usize], mut offset: usize) -> Option<(usize, usize)> {
 }
 
 impl<T, const B: usize> Node<T, B> {
+    /// Returns the size of the subtree rooted at this node.
     fn subtree_size(&self) -> usize {
         match self {
             Node::Leaf { data } => data.len(),
@@ -63,7 +98,7 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
-    // offset is the offset relative to this node
+    /// Gets the item at offset `offset`, relative to the subtree rooted at this node.
     fn get(&self, offset: usize) -> Option<&T> {
         match self {
             Node::Leaf { data } => data.get(offset),
@@ -74,7 +109,7 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
-    // offset is the offset relative to this node
+    /// Gets (mutably) the item at offset `offset`, relative to the subtree rooted at this node.
     fn get_mut(&mut self, offset: usize) -> Option<&mut T> {
         match self {
             Node::Leaf { data } => data.get_mut(offset),
@@ -85,6 +120,9 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    /// Returns the first item in the subtree.
+    ///
+    /// `tree.first()` is equivalent to `tree.get(0)`, but faster.
     fn first(&self) -> Option<&T> {
         match self {
             Node::Leaf { data } => data.first(),
@@ -92,6 +130,12 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    /// Inserts an element into the subtree rooted at this node.
+    ///
+    /// The offset is relative to this subtree.
+    ///
+    /// If this insertion causes the subtree to overflow, the root node will be split.
+    /// In this case, this node will be modified, and the new sibling will be returned.
     fn insert(&mut self, offset: usize, element: T) -> InsertResult<T, B> {
         match self {
             Node::Leaf { data } => {
@@ -516,7 +560,8 @@ impl<T, const B: usize> TreeVec<T, B> {
 
 impl<T, const B: usize> FromIterator<T> for TreeVec<T, B> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        // TODO: a faster implementation
+        // TODO: a faster implementation, maybe? This is only
+        // used in tests right now.
         let mut ret = TreeVec::new();
         for (idx, x) in iter.into_iter().enumerate() {
             ret.insert(idx, x);
