@@ -158,7 +158,7 @@ impl<F: Float> SegmentOrder<F> {
 }
 
 #[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
-pub struct IntersectionEvent<F: Float> {
+struct IntersectionEvent<F: Float> {
     pub y: F,
     /// This segment used to be to the left, and after the intersection it will be to the right.
     ///
@@ -170,7 +170,7 @@ pub struct IntersectionEvent<F: Float> {
 }
 
 #[derive(Clone, Debug)]
-pub struct EventQueue<F: Float> {
+struct EventQueue<F: Float> {
     /// The enter events are stored in `Segments<F>`; this is the index of the first
     /// one that we haven't processed yet.
     next_enter_idx: usize,
