@@ -150,7 +150,8 @@ impl<F: Float> SegmentOrder<F> {
     }
 
     fn is_exit(&self, i: usize) -> bool {
-        self.segs[i].exit
+        let seg = &self.segs[i];
+        seg.exit && seg.old_seg.is_none()
     }
 }
 
