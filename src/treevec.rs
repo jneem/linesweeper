@@ -195,6 +195,8 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    /// We're undersized (by one; we only support removing a single element at a time)
+    /// and maybe our right_sibling can help by giving us some more elements.
     fn merge_from_right(&mut self, right_sibling: &mut Node<T, B>) -> MergeResult {
         match (self, right_sibling) {
             (Node::Leaf { data: left_data }, Node::Leaf { data: right_data }) => {
@@ -203,7 +205,14 @@ impl<T, const B: usize> Node<T, B> {
                     left_data.extend(right_data.drain(..));
                     MergeResult::Absorbed
                 } else {
+                    // Since we're only undersized by one, we could just move a single
+                    // element over. It's probably more efficient to rebalance more
+                    // aggressively, so we can avoid rebalancing in the future. So
+                    // here we try to equalize the sizes.
                     let count = (right_data.len() - left_data.len()) / 2;
+                    // We're undersized, and since the two of us don't fit in a single
+                    // node, right_data must have at least B/2 + 1 elements. Therefore
+                    // the difference in sizes is at least 2.
                     debug_assert!(count > 0);
                     left_data.extend(right_data.drain(..count));
                     MergeResult::Rebalanced
@@ -235,11 +244,16 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    /// We're undersized (by one; we only support removing a single element at a time)
+    /// and maybe our right_sibling can help by giving us some more elements.
     fn merge_from_left(&mut self, left_sibling: &mut Node<T, B>) -> MergeResult {
         match (left_sibling, self) {
             (Node::Leaf { data: left_data }, Node::Leaf { data: right_data }) => {
                 debug_assert!(right_data.len() <= left_data.len());
                 if left_data.len() + right_data.len() <= B {
+                    // There's no efficient and safe way to insert a bunch of
+                    // data at the beginning of right, so instead we append to
+                    // left and then swap them.
                     left_data.extend(right_data.drain(..));
                     std::mem::swap(left_data, right_data);
                     MergeResult::Absorbed
@@ -278,6 +292,10 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    /// Remove an element from a given offset in this subtree.
+    ///
+    /// This may leave the root of the subtree undersized, in which case the
+    /// return value will let you know.
     fn remove(&mut self, offset: usize) -> RemoveResult {
         match self {
             Node::Leaf { data } => {
@@ -294,7 +312,15 @@ impl<T, const B: usize> Node<T, B> {
                 match children[idx].remove(offset) {
                     RemoveResult::Done => RemoveResult::Done,
                     RemoveResult::Undersize => {
+                        // We now have an undersized node at index i. We try
+                        // to merge in more from the right neighbor (because
+                        // that's the more efficient merge direction in our
+                        // implementation). But if `i` is the last element, we
+                        // fall back to merging from the left.
                         if idx + 1 < children.len() {
+                            // This little incantation seems to be the easiest
+                            // (stable, safe) way to get two &muts to different
+                            // elements.
                             let (a, b) = children.split_at_mut(idx + 1);
                             let cur = a.last_mut().unwrap();
                             let next = b.first_mut().unwrap();
@@ -319,6 +345,12 @@ impl<T, const B: usize> Node<T, B> {
                                 }
                             }
                         } else {
+                            // We couldn't merge from the right, since `idx`
+                            // is at the end. Since internal nodes can't be
+                            // undersized, as long as B >= 4 we must have at
+                            // least 2 elements and so there is something to
+                            // our left. (Maybe we should have something to
+                            // ensure that B >= 4?)
                             debug_assert!(idx > 0);
 
                             let (a, b) = children.split_at_mut(idx);
@@ -350,6 +382,7 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    /// Returns the offset (in this subtree) of the first element for which `pred` returns false.
     fn partition_point<P>(&self, mut pred: P) -> usize
     where
         P: FnMut(&T) -> bool,
@@ -357,6 +390,8 @@ impl<T, const B: usize> Node<T, B> {
         match self {
             Node::Leaf { data } => data.partition_point(pred),
             Node::Internal { children, size } => {
+                // It seems to be faster if we first do a binary search over our subtrees,
+                // and then we descend into the interesting subtree.
                 let child_idx = children.partition_point(|child| pred(child.first().unwrap()));
                 if child_idx > 0 {
                     children[child_idx - 1].partition_point(pred)
@@ -368,6 +403,7 @@ impl<T, const B: usize> Node<T, B> {
         }
     }
 
+    /// Assert that this subtree satisfies our invariants, panicking if not.
     fn check_invariants(&self, is_root: bool) {
         match self {
             Node::Leaf { data } => {
@@ -402,10 +438,15 @@ impl<T, const B: usize> Default for TreeVec<T, B> {
 }
 
 impl<T, const B: usize> TreeVec<T, B> {
+    /// Constructs a new, empty, `TreeVec`.
+    ///
+    /// This allocates a little; we don't have a special-case non-allocating
+    /// `TreeVec` for empty containers.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Returns true if we're empty.
     pub fn is_empty(&self) -> bool {
         match &*self.root {
             Node::Leaf { data } => data.is_empty(),
@@ -413,18 +454,32 @@ impl<T, const B: usize> TreeVec<T, B> {
         }
     }
 
+    /// Returns the number of elements in this container.
     pub fn len(&self) -> usize {
         self.root.subtree_size()
     }
 
+    /// Gets a reference to the element at a specified index, or `None` if the
+    /// index is out-of-bounds.
+    ///
+    /// Runtime is linear in the height of the tree (logarithmic in the length).
     pub fn get(&self, index: usize) -> Option<&T> {
         self.root.get(index)
     }
 
+    /// Gets a mutable reference to the element at a specified index, or `None`
+    /// if the index is out-of-bounds.
+    ///
+    /// Runtime is linear in the height of the tree (logarithmic in the length).
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         self.root.get_mut(index)
     }
 
+    /// Inserts an element at a specified index, or panics if the index is
+    /// out-of-bounds.
+    ///
+    /// Runtime is linear in the height of the tree (logarithmic in the length),
+    /// and also linear in `B`.
     pub fn insert(&mut self, index: usize, element: T) {
         match self.root.insert(index, element) {
             InsertResult::Done => {}
@@ -446,6 +501,11 @@ impl<T, const B: usize> TreeVec<T, B> {
         }
     }
 
+    /// Inserts an element at a specified index, shifting all later elements
+    /// back by 1.
+    ///
+    /// Runtime is linear in the height of the tree (logarithmic in the length),
+    /// and also linear in `B`.
     pub fn remove(&mut self, index: usize) {
         self.root.remove(index);
 
@@ -457,10 +517,12 @@ impl<T, const B: usize> TreeVec<T, B> {
         }
     }
 
+    /// Asserts that this subtree satisfies our invariants, panicking if not.
     pub fn check_invariants(&self) {
         self.root.check_invariants(true);
     }
 
+    /// Returns an iterator over all the elements in this container.
     pub fn iter(&self) -> Iter<'_, T, B> {
         let inner = match &*self.root {
             Node::Leaf { data } => IterInner::Simple(data.iter()),
@@ -477,6 +539,8 @@ impl<T, const B: usize> TreeVec<T, B> {
         Iter { inner }
     }
 
+    /// Returns an iterator over mutable references to all the elements in this
+    /// container.
     pub fn iter_mut(&mut self) -> IterMut<'_, T, B> {
         let len = self.len();
         let inner = match &mut *self.root {
@@ -494,6 +558,13 @@ impl<T, const B: usize> TreeVec<T, B> {
         IterMut { inner }
     }
 
+    /// Returns the index of the first element for which `pred` returns false.
+    ///
+    /// The above assumes that we're sorted in the sense that `pred` returns `true` for the first
+    /// bunch of elements and then `false` for the rest. If not, we don't necessarily return
+    /// the first offset for which `pred` if `false`, but we do return some offset where
+    /// `pred` is `false` but `pred` is `true` at `offset - 1`. (Here, corner cases are specified
+    /// by declaring that `pred` is `true` at offset `-1` and `false` at offset `len`.
     pub fn partition_point<P>(&self, pred: P) -> usize
     where
         P: FnMut(&T) -> bool,
@@ -501,6 +572,9 @@ impl<T, const B: usize> TreeVec<T, B> {
         self.root.partition_point(pred)
     }
 
+    /// Turns a generic range bounds into an inclusive start and an exclusive end.
+    ///
+    /// This won't work if the range end is inclusive of `usize::MAX`, so don't do that.
     fn normalize_bounds(&self, range: impl std::ops::RangeBounds<usize>) -> (usize, usize) {
         let start = match range.start_bound() {
             std::ops::Bound::Included(x) => *x,
@@ -515,6 +589,7 @@ impl<T, const B: usize> TreeVec<T, B> {
         (start, end)
     }
 
+    /// Returns an iterator over a sub-range of this container.
     pub fn range(&self, range: impl std::ops::RangeBounds<usize>) -> Iter<'_, T, B> {
         let (start, end) = self.normalize_bounds(range);
         let inner = match &*self.root {
@@ -535,6 +610,7 @@ impl<T, const B: usize> TreeVec<T, B> {
         Iter { inner }
     }
 
+    /// Returns an iterator over mutable references to a sub-range of this container.
     pub fn range_mut(&mut self, range: impl std::ops::RangeBounds<usize>) -> IterMut<'_, T, B> {
         let (start, end) = self.normalize_bounds(range);
         let len = self.len();
@@ -584,22 +660,36 @@ impl<T, const B: usize> std::ops::IndexMut<usize> for TreeVec<T, B> {
     }
 }
 
+/// An iterator over elements of a [`TreeVec`].
 pub struct Iter<'a, T, const B: usize> {
     inner: IterInner<'a, T, B>,
 }
 
+// We special-case a fast-path for a tree with height 1.
+//
+// This, along with some inline annotations, makes a measurable performance
+// difference.
 enum IterInner<'a, T, const B: usize> {
     Simple(std::slice::Iter<'a, T>),
     Tree(TreeIter<'a, T, B>),
 }
 
 struct TreeIter<'a, T, const B: usize> {
+    // If you imagine how the recursive implementation of a tree iteration
+    // works, the local state at each intermediate call consists of a
+    // partially-finished iteration over the children of that internal node.
+    // This stores the stack of that imaginary recursive implementation.
     stack: Vec<std::slice::Iter<'a, Box<Node<T, B>>>>,
     leaf: std::slice::Iter<'a, T>,
+    // The number of remaining elements; used for iteration over ranges. The
+    // full-iteration implementation doesn't need it, but it isn't worth having
+    // two different iterator implementations.
     remaining: usize,
 }
 
 impl<'a, T, const B: usize> TreeIter<'a, T, B> {
+    // Fill out the rest of the stack and the leaf, by descending
+    // to the first descendent of `node`.
     fn descend(&mut self, mut node: &'a Node<T, B>) {
         loop {
             match node {
@@ -617,6 +707,8 @@ impl<'a, T, const B: usize> TreeIter<'a, T, B> {
         }
     }
 
+    // Fill out the rest of the stack and the leaf, by descending
+    // to the node at offset `offset` in the subtree rooted at `node`.
     fn descend_to(&mut self, mut node: &'a Node<T, B>, mut offset: usize) {
         loop {
             match node {
@@ -646,6 +738,8 @@ impl<'a, T, const B: usize> TreeIter<'a, T, B> {
             if let Some(ret) = self.leaf.next() {
                 Some(ret)
             } else {
+                // The current leaf is exhausted. Unwind the stack until we find
+                // a non-exhausted internal node, then descend again.
                 loop {
                     let stack_top = self.stack.last_mut()?;
 
@@ -674,6 +768,7 @@ impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
     }
 }
 
+/// An iterator over mutable references elements of a [`TreeVec`].
 pub struct IterMut<'a, T, const B: usize> {
     inner: IterMutInner<'a, T, B>,
 }
@@ -683,7 +778,10 @@ enum IterMutInner<'a, T, const B: usize> {
     Tree(TreeIterMut<'a, T, B>),
 }
 
-pub struct TreeIterMut<'a, T, const B: usize> {
+// This is basically a copy-pasted of `TreeIter`, but with non-mut things
+// turned into mut things. Right now there's only the one duplication so
+// is isn't worth trying to build an abstraction.
+struct TreeIterMut<'a, T, const B: usize> {
     stack: Vec<std::slice::IterMut<'a, Box<Node<T, B>>>>,
     leaf: std::slice::IterMut<'a, T>,
     remaining: usize,
