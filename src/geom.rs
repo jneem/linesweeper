@@ -9,7 +9,7 @@ use crate::num::Float;
 ///
 /// Points are sorted by `y` and then by `x`, for the convenience of our sweep-line
 /// algorithm (which moves in increasing `y`).
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Point<F: Float> {
     /// Vertical coordinate.
     ///
