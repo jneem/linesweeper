@@ -17,15 +17,16 @@ arrayvec = { version = "0.7.6", features = ["serde"] }
 malachite = "0.4.5"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive"] }
+kurbo = "0.11.1"
 
 [dev-dependencies]
 anyhow = "1.0.80"
+arbitrary = { version = "1.4.1", features = ["derive"] }
 assert_matches = "1.5.0"
 clap = { version = "4.5.1", features = ["derive"] }
 criterion = "0.5.1"
 i_overlay = "1.9.4"
 insta = { version = "1.41.1", features = ["serde", "ron"] }
-kurbo = "0.11.1"
 proptest = "1.4.0"
 svg = { version = "0.18", default-features = false }
 usvg = { version = "0.44.0", default-features = false }

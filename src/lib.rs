@@ -1,6 +1,7 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+pub mod curve;
 mod geom;
 pub mod num;
 mod segments;
