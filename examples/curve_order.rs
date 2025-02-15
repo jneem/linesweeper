@@ -1,5 +1,5 @@
 use arbitrary::Unstructured;
-use kurbo::{Affine, CubicBez, ParamCurve, Point, Vec2};
+use kurbo::{Affine, CubicBez, ParamCurve, Point};
 use linesweeper::curve::{intersect_cubics, solve_t_for_y, Ternary};
 
 const DATA: &str = r#"

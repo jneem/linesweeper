@@ -1,10 +1,6 @@
 #![allow(missing_docs)]
-use std::borrow::BorrowMut;
 
-use kurbo::{
-    common::solve_cubic, CubicBez, Line, ParamCurve as _, ParamCurveExtrema, PathSeg, QuadBez,
-    Shape, Vec2,
-};
+use kurbo::{common::solve_cubic, CubicBez, Line, ParamCurve as _, PathSeg, QuadBez, Shape, Vec2};
 
 #[derive(Clone, Debug)]
 struct CurveOrderEntry {
@@ -93,6 +89,10 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
     println!("{:?}", c);
     println!("{} {} {} {}", c0, c1, c2, c3);
     panic!("no solution found, y = {}", y);
+}
+
+pub fn solve_x_for_y(c: CubicBez, y: f64) -> f64 {
+    c.eval(solve_t_for_y(c, y)).x
 }
 
 // Return two roots of this monic quadratic, the smaller one first.
@@ -367,24 +367,22 @@ fn intersect_cubics_rec(
 
     let ep0 = EstParab::from_cubic(c0);
     let ep1 = EstParab::from_cubic(c1);
-    //println!("ep0 = {:?}", ep0);
-    //println!("ep0 = {:?}", ep1);
     let dep = ep1 - ep0;
     let mut scratch = CurveOrder::new(y0);
     push_quadratic_signs(
         dep.c2,
         dep.c1,
         dep.c0,
-        dep.dmin - eps,
-        dep.dmax + eps,
+        -dep.dmax - eps,
+        -dep.dmin + eps,
         y0,
         y1,
         &mut scratch,
     );
 
     //println!("ep1 - ep0 = {:?}", dep);
-    for (new_y0, new_y1, t) in scratch.iter() {
-        if t == Ternary::Ish {
+    for (new_y0, new_y1, order) in scratch.iter() {
+        if order == Ternary::Ish {
             let mid = 0.5 * (new_y0 + new_y1);
 
             // We test the difference between y1 and y0, not new_y1 and new_y0.
@@ -394,7 +392,7 @@ fn intersect_cubics_rec(
             // will be very close, but we'll recurse one more time to get a better
             // quadratic approximation.
             if y1 - y0 <= eps || dep.dmax - dep.dmin <= eps {
-                out.push(new_y1, t);
+                out.push(new_y1, order);
             } else if new_y1 - new_y0 < 0.5 * (y1 - y0) {
                 intersect_cubics_rec(orig_c0, orig_c1, new_y0, new_y1, eps, out);
             } else {
@@ -402,7 +400,14 @@ fn intersect_cubics_rec(
                 intersect_cubics_rec(orig_c0, orig_c1, mid, new_y1, eps, out);
             }
         } else {
-            out.push(new_y1, t);
+            if order == Ternary::Greater {
+                debug_assert!(solve_x_for_y(orig_c0, new_y0) < solve_x_for_y(orig_c1, new_y0));
+                debug_assert!(solve_x_for_y(orig_c0, new_y1) < solve_x_for_y(orig_c1, new_y1));
+            } else {
+                debug_assert!(solve_x_for_y(orig_c0, new_y0) > solve_x_for_y(orig_c1, new_y0));
+                debug_assert!(solve_x_for_y(orig_c0, new_y1) > solve_x_for_y(orig_c1, new_y1));
+            }
+            out.push(new_y1, order);
         }
     }
 }
