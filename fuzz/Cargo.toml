@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
 arbtest = "0.3.2"
+kurbo = "0.11.1"
 libfuzzer-sys = "0.4"
 
 [dependencies.linesweeper]
@@ -29,3 +30,10 @@ test = false
 doc = false
 bench = false
 
+
+[[bin]]
+name = "curve_order"
+path = "fuzz_targets/curve_order.rs"
+test = false
+doc = false
+bench = false

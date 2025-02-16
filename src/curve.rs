@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
 
+use arrayvec::ArrayVec;
 use kurbo::{common::solve_cubic, CubicBez, Line, ParamCurve as _, PathSeg, QuadBez, Shape, Vec2};
 
 #[derive(Clone, Debug)]
@@ -81,10 +82,19 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
     let c2 = 3.0 * (c.p2.y - 2.0 * c.p1.y + c.p0.y);
     let c1 = 3.0 * (c.p1.y - c.p0.y);
     let c0 = c.p0.y - y;
-    for t in solve_cubic(c0, c1, c2, c3) {
+
+    for t in solve_cubic_in_unit_interval(c0, c1, c2, c3) {
         if (0.0..=1.0).contains(&t) {
             return t;
         }
+    }
+
+    // The sharp cutoff at the endpoint can miss some legitimate internal
+    // points. The 1e-4 threshold is a bit arbitrary, though.
+    if (y - c.p3.y).abs() < 1e-4 {
+        return 1.0;
+    } else if (y - c.p0.y).abs() < 1e-4 {
+        return 0.0;
     }
     println!("{:?}", c);
     println!("{} {} {} {}", c0, c1, c2, c3);
@@ -93,6 +103,31 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
 
 pub fn solve_x_for_y(c: CubicBez, y: f64) -> f64 {
     c.eval(solve_t_for_y(c, y)).x
+}
+
+// Tries to solve a cubic, but only looks for accurate solutions in the interval [0.0, 1.0].
+//
+// This doesn't actually filter out solutions outside that interval, it only
+// makes some tweaks for better numerical stability inside it.
+fn solve_cubic_in_unit_interval(c0: f64, c1: f64, mut c2: f64, mut c3: f64) -> ArrayVec<f64, 3> {
+    // Since we're only interested in small values of t, we can ignore c3 if it's
+    // much smaller than the other coefficients.
+    //
+    // To explain where the 1e7 comes from, suppose we take a threshold of T.
+    // By zeroing out c3, we're introducing error of order 1/T by modifying the
+    // cubic. (For our applications, we care less about numerical stability of
+    // the roots and more about the *value* at the roots being about zero.)
+    // On the other hand, if c2 / c3 is of order T, when we use it to find roots
+    // we'll have a relative error of about 1e-15, and so an absolute error of
+    // about T * 1e-15 (because that's how accurate f64s are). Balancing out these
+    // sources of error suggests we take T around 1e7.
+    if c3.abs() < c2.abs().max(c1.abs()).max(c2.abs()) / 1e7 {
+        c3 = 0.0;
+        if c2.abs() < c1.abs().max(c0.abs()) / 1e7 {
+            c2 = 0.0;
+        }
+    }
+    solve_cubic(c0, c1, c2, c3)
 }
 
 // Return two roots of this monic quadratic, the smaller one first.
@@ -159,31 +194,43 @@ fn monic_quadratic_roots(b: f64, c: f64) -> (f64, f64) {
 #[allow(clippy::too_many_arguments)]
 fn push_quadratic_signs(
     a: f64,
-    b: f64,
+    orig_b: f64,
     c: f64,
     lower: f64,
     upper: f64,
     x0: f64,
     x1: f64,
+    // TODO: explain this slop
+    y_slop: f64,
     out: &mut CurveOrder,
 ) {
     debug_assert!(lower < upper);
 
     let mut push = |end: f64, order: Ternary| {
-        if end > x0 && out.cmps.last().is_none_or(|last| last.end < x1) {
+        let end = if order == Ternary::Ish {
+            end + y_slop
+        } else {
+            end - y_slop
+        };
+        if end > x0
+            && out
+                .cmps
+                .last()
+                .is_none_or(|last| last.end < x1 && last.end < end)
+        {
             out.push(end.min(x1), order);
         }
     };
 
     let c_lower = (c - lower) * a.recip();
     let c_upper = (c - upper) * a.recip();
-    let b = b * a.recip();
+    let b = orig_b * a.recip();
     if !c_lower.is_finite() || !c_upper.is_finite() || !b.is_finite() {
         // a is zero or very small, treat as linear eqn
-        let root0 = -(c - lower) / b;
-        let root1 = -(c - upper) / b;
+        let root0 = -(c - lower) / orig_b;
+        let root1 = -(c - upper) / orig_b;
         if root0.is_finite() && root1.is_finite() {
-            if b > 0.0 {
+            if orig_b > 0.0 {
                 push(root0, Ternary::Less);
                 push(root1, Ternary::Ish);
                 push(x1, Ternary::Greater);
@@ -206,6 +253,7 @@ fn push_quadratic_signs(
 
     let (r_lower, s_lower) = monic_quadratic_roots(b, c_lower);
     let (r_upper, s_upper) = monic_quadratic_roots(b, c_upper);
+    //dbg!(r_lower, s_lower, r_upper, s_upper);
 
     if a > 0.0 {
         debug_assert!(r_upper <= r_lower || r_lower.is_infinite());
@@ -293,7 +341,17 @@ impl EstParab {
             let f1 = dparams.0.y * dxdt1 + dparams.1.y * dxdt0 - dparams.1.x;
             let f2 = dparams.0.y * dxdt2 + dparams.1.y * dxdt1;
             let f3 = dparams.1.y * dxdt2;
-            for t in solve_cubic(f0, f1, f2, f3) {
+
+            // I think this is the same as what's above, just re-derived because I didn't follow it...
+            // let f0 = 2.0 * params.0.y * params.1.y * c2 + params.1.y * c1 - params.1.x;
+            // let f1 = 2.0 * params.1.y * params.1.y * c2
+            //     + 4.0 * params.0.y * params.2.y * c2
+            //     + 2.0 * params.2.y * c1
+            //     - 2.0 * params.2.x;
+            // let f2 = 2.0 * params.1.y * params.2.y * c2 + 4.0 * params.1.y * params.2.y * c2;
+            // let f3 = 4.0 * params.2.y * params.2.y * c2;
+            for t in solve_cubic_in_unit_interval(f0, f1, f2, f3) {
+                //dbg!(t);
                 if (0.0..=1.0).contains(&t) {
                     let p = q.eval(t);
                     let x = p.x - (c0 + c1 * p.y + c2 * p.y.powi(2));
@@ -311,6 +369,33 @@ impl EstParab {
             dmin,
             dmax,
         }
+    }
+
+    fn eval(&self, y: f64) -> f64 {
+        self.c0 + self.c1 * y + self.c2 * y * y
+    }
+
+    fn brute_force_d(&self, c: CubicBez) {
+        let mut dmin = 0.0f64;
+        let mut dmax = 0.0f64;
+        let mut which_min = 0.0f64;
+        for i in 0..1001 {
+            let t = i as f64 / 1000.0;
+            let p = c.eval(t);
+            let x = p.x - self.eval(p.y);
+            if x < dmin {
+                which_min = t;
+            }
+            dmin = dmin.min(x);
+            dmax = dmax.max(x);
+        }
+
+        let t = 0.2980852;
+        let p = c.eval(t);
+        let x = dbg!(p.x) - dbg!(self.eval(dbg!(p.y)));
+        dbg!(x);
+
+        eprintln!("dmin {dmin:.4}, dmax {dmax:.4}, min at {which_min:.4}");
     }
 }
 
@@ -345,6 +430,7 @@ fn intersect_cubics_rec(
     eps: f64,
     out: &mut CurveOrder,
 ) {
+    //eprintln!("recursing {y0:.4}..{y1:.4}");
     let c0 = orig_c0.subsegment(solve_t_for_y(orig_c0, y0)..solve_t_for_y(orig_c0, y1));
     let c1 = orig_c1.subsegment(solve_t_for_y(orig_c1, y0)..solve_t_for_y(orig_c1, y1));
 
@@ -365,9 +451,16 @@ fn intersect_cubics_rec(
         return;
     }
 
+    // println!("making ep0");
     let ep0 = EstParab::from_cubic(c0);
+    // println!("making ep1");
     let ep1 = EstParab::from_cubic(c1);
+    // println!("done with ep1");
     let dep = ep1 - ep0;
+    // dbg!(ep0);
+    // dbg!(ep1);
+    // dbg!(dep);
+    // ep1.brute_force_d(c1);
     let mut scratch = CurveOrder::new(y0);
     push_quadratic_signs(
         dep.c2,
@@ -377,8 +470,25 @@ fn intersect_cubics_rec(
         -dep.dmin + eps,
         y0,
         y1,
+        eps,
         &mut scratch,
     );
+
+    for (new_y0, new_y1, order) in scratch.iter() {
+        // dbg!(new_y0, new_y1, order);
+        // dbg!(ep0.eval(new_y1));
+        // dbg!(ep1.eval(new_y1));
+        // dbg!(solve_x_for_y(orig_c0, new_y1));
+        // dbg!(solve_x_for_y(orig_c1, new_y1));
+        // dbg!(solve_t_for_y(orig_c1, new_y1));
+        if order == Ternary::Greater {
+            debug_assert!(solve_x_for_y(orig_c0, new_y0) < solve_x_for_y(orig_c1, new_y0));
+            debug_assert!(solve_x_for_y(orig_c0, new_y1) < solve_x_for_y(orig_c1, new_y1));
+        } else if order == Ternary::Less {
+            debug_assert!(solve_x_for_y(orig_c0, new_y0) > solve_x_for_y(orig_c1, new_y0));
+            debug_assert!(solve_x_for_y(orig_c0, new_y1) > solve_x_for_y(orig_c1, new_y1));
+        }
+    }
 
     //println!("ep1 - ep0 = {:?}", dep);
     for (new_y0, new_y1, order) in scratch.iter() {
@@ -400,19 +510,13 @@ fn intersect_cubics_rec(
                 intersect_cubics_rec(orig_c0, orig_c1, mid, new_y1, eps, out);
             }
         } else {
-            if order == Ternary::Greater {
-                debug_assert!(solve_x_for_y(orig_c0, new_y0) < solve_x_for_y(orig_c1, new_y0));
-                debug_assert!(solve_x_for_y(orig_c0, new_y1) < solve_x_for_y(orig_c1, new_y1));
-            } else {
-                debug_assert!(solve_x_for_y(orig_c0, new_y0) > solve_x_for_y(orig_c1, new_y0));
-                debug_assert!(solve_x_for_y(orig_c0, new_y1) > solve_x_for_y(orig_c1, new_y1));
-            }
             out.push(new_y1, order);
         }
     }
 }
 
 pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
+    //dbg!(c0, c1);
     let y0 = c0.p0.y.max(c1.p0.y);
     let y1 = c0.p3.y.min(c1.p3.y);
 
@@ -421,4 +525,29 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
         intersect_cubics_rec(c0, c1, y0, y1, eps, &mut ret);
     }
     ret
+}
+
+#[cfg(test)]
+mod tests {
+    use kurbo::CubicBez;
+
+    use super::intersect_cubics;
+
+    #[test]
+    fn bug() {
+        let c0 = CubicBez {
+            p0: (0.5, 0.0).into(),
+            p1: (0.0, 0.0).into(),
+            p2: (0.0, 0.0).into(),
+            p3: (0.0, 1.0).into(),
+        };
+        let c1 = CubicBez {
+            p0: (0.5, 0.0).into(),
+            p1: (0.0, 0.0).into(),
+            p2: (0.0, 0.0).into(),
+            p3: (0.9999847414437646, 1.0).into(),
+        };
+
+        intersect_cubics(c0, c1, 1e-1);
+    }
 }
