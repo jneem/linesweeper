@@ -208,27 +208,36 @@ fn monic_quadratic_roots(b: f64, c: f64) -> (f64, f64) {
     }
 }
 
-/// Consider the quadratic equation `a x^2 + b x + c` for `x` between `x0` and `x1`.
+/// Analyze the sign of a quadratic.
+///
+/// Consider the quadratic equation `a x^2 + b x + c` for `x` between `x0` and `x1`, and some
+/// thresholds `lower < upper`. We consider the quadratic "less" if it's smaller than `lower`,
+/// "greater" if it's bigger than `upper`, and "ish" if it's between the two thresholds.
+/// We push the results of this sign analysis to `out`.
+///
+/// `slop` expands the "ish" range, in order to be conservative when the quadratic coefficients
+/// are large. In that case, we might be accurate with our root computations but still get the
+/// signs wrong because of our large coefficients.
 #[allow(clippy::too_many_arguments)]
 fn push_quadratic_signs(
     a: f64,
-    orig_b: f64,
+    b: f64,
     c: f64,
     lower: f64,
     upper: f64,
     x0: f64,
     x1: f64,
     // TODO: explain this slop
-    y_slop: f64,
+    slop: f64,
     out: &mut CurveOrder,
 ) {
     debug_assert!(lower < upper);
 
     let mut push = |end: f64, order: Ternary| {
         let end = if order == Ternary::Ish {
-            end + y_slop
+            end + slop
         } else {
-            end - y_slop
+            end - slop
         };
         if end > x0
             && out
@@ -240,15 +249,15 @@ fn push_quadratic_signs(
         }
     };
 
-    let c_lower = (c - lower) * a.recip();
-    let c_upper = (c - upper) * a.recip();
-    let b = orig_b * a.recip();
-    if !c_lower.is_finite() || !c_upper.is_finite() || !b.is_finite() {
+    let scaled_c_lower = (c - lower) * a.recip();
+    let scaled_c_upper = (c - upper) * a.recip();
+    let scaled_b = b * a.recip();
+    if !scaled_c_lower.is_finite() || !scaled_c_upper.is_finite() || !scaled_b.is_finite() {
         // a is zero or very small, treat as linear eqn
-        let root0 = -(c - lower) / orig_b;
-        let root1 = -(c - upper) / orig_b;
+        let root0 = -(c - lower) / b;
+        let root1 = -(c - upper) / b;
         if root0.is_finite() && root1.is_finite() {
-            if orig_b > 0.0 {
+            if b > 0.0 {
                 push(root0, Ternary::Less);
                 push(root1, Ternary::Ish);
                 push(x1, Ternary::Greater);
@@ -269,8 +278,8 @@ fn push_quadratic_signs(
         return;
     }
 
-    let (r_lower, s_lower) = monic_quadratic_roots(b, c_lower);
-    let (r_upper, s_upper) = monic_quadratic_roots(b, c_upper);
+    let (r_lower, s_lower) = monic_quadratic_roots(scaled_b, scaled_c_lower);
+    let (r_upper, s_upper) = monic_quadratic_roots(scaled_b, scaled_c_upper);
     //dbg!(r_lower, s_lower, r_upper, s_upper);
 
     if a > 0.0 {
