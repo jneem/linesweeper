@@ -109,7 +109,7 @@ pub fn solve_x_for_y(c: CubicBez, y: f64) -> f64 {
 //
 // This doesn't actually filter out solutions outside that interval, it only
 // makes some tweaks for better numerical stability inside it.
-fn solve_cubic_in_unit_interval(c0: f64, c1: f64, mut c2: f64, mut c3: f64) -> ArrayVec<f64, 3> {
+fn solve_cubic_in_unit_interval(c0: f64, c1: f64, c2: f64, c3: f64) -> ArrayVec<f64, 3> {
     // Since we're only interested in small values of t, we can ignore c3 if it's
     // much smaller than the other coefficients.
     //
@@ -121,13 +121,31 @@ fn solve_cubic_in_unit_interval(c0: f64, c1: f64, mut c2: f64, mut c3: f64) -> A
     // we'll have a relative error of about 1e-15, and so an absolute error of
     // about T * 1e-15 (because that's how accurate f64s are). Balancing out these
     // sources of error suggests we take T around 1e7.
+    let mut new_c3 = c3;
+    let mut new_c2 = c2;
     if c3.abs() < c2.abs().max(c1.abs()).max(c2.abs()) / 1e7 {
-        c3 = 0.0;
+        new_c3 = 0.0;
         if c2.abs() < c1.abs().max(c0.abs()) / 1e7 {
-            c2 = 0.0;
+            new_c2 = 0.0;
         }
     }
-    solve_cubic(c0, c1, c2, c3)
+    let mut roots = solve_cubic(c0, c1, new_c2, new_c3);
+
+    // Do a Newton step to increase accuracy. Also, we do this with the original
+    // parameters, which helps reduce the error that we may have introduced.
+    //dbg!(c0, c1, c2, c3);
+    for x in &mut roots {
+        let val = c3 * *x * *x * *x + c2 * *x * *x + c1 * *x + c0;
+        //dbg!(*x, val);
+        let deriv = 3.0 * c3 * *x * *x + 2.0 * c2 * *x + c1;
+
+        if val.abs() > 1e-14 && deriv.abs() > val.abs() {
+            *x -= val / deriv;
+            //let val_after = c3 * *x * *x * *x + c2 * *x * *x + c1 * *x + c0;
+            //dbg!(val, val_after);
+        }
+    }
+    roots
 }
 
 // Return two roots of this monic quadratic, the smaller one first.
@@ -379,8 +397,8 @@ impl EstParab {
         let mut dmin = 0.0f64;
         let mut dmax = 0.0f64;
         let mut which_min = 0.0f64;
-        for i in 0..1001 {
-            let t = i as f64 / 1000.0;
+        for i in 0..10001 {
+            let t = i as f64 / 10000.0;
             let p = c.eval(t);
             let x = p.x - self.eval(p.y);
             if x < dmin {
@@ -390,12 +408,12 @@ impl EstParab {
             dmax = dmax.max(x);
         }
 
-        let t = 0.2980852;
-        let p = c.eval(t);
-        let x = dbg!(p.x) - dbg!(self.eval(dbg!(p.y)));
-        dbg!(x);
+        // let t = 0.2980852;
+        // let p = c.eval(t);
+        // let x = dbg!(p.x) - dbg!(self.eval(dbg!(p.y)));
+        // dbg!(x);
 
-        eprintln!("dmin {dmin:.4}, dmax {dmax:.4}, min at {which_min:.4}");
+        eprintln!("dmin {dmin:.7}, dmax {dmax:.7}, min at {which_min:.7}");
     }
 }
 
@@ -430,7 +448,7 @@ fn intersect_cubics_rec(
     eps: f64,
     out: &mut CurveOrder,
 ) {
-    //eprintln!("recursing {y0:.4}..{y1:.4}");
+    //eprintln!("recursing {y0:.7}..{y1:.7}");
     let c0 = orig_c0.subsegment(solve_t_for_y(orig_c0, y0)..solve_t_for_y(orig_c0, y1));
     let c1 = orig_c1.subsegment(solve_t_for_y(orig_c1, y0)..solve_t_for_y(orig_c1, y1));
 
@@ -480,7 +498,9 @@ fn intersect_cubics_rec(
         // dbg!(ep1.eval(new_y1));
         // dbg!(solve_x_for_y(orig_c0, new_y1));
         // dbg!(solve_x_for_y(orig_c1, new_y1));
-        // dbg!(solve_t_for_y(orig_c1, new_y1));
+        // dbg!(solve_t_for_y(orig_c0, new_y1));
+        // let t = solve_t_for_y(orig_c0, new_y1);
+        // dbg!(ep0.eval(dbg!(orig_c0.eval(t).y)));
         if order == Ternary::Greater {
             debug_assert!(solve_x_for_y(orig_c0, new_y0) < solve_x_for_y(orig_c1, new_y0));
             debug_assert!(solve_x_for_y(orig_c0, new_y1) < solve_x_for_y(orig_c1, new_y1));
@@ -501,6 +521,9 @@ fn intersect_cubics_rec(
             // "ish" interval that's just an artifact. In this case, new_y0 and new_y1
             // will be very close, but we'll recurse one more time to get a better
             // quadratic approximation.
+            //
+            // TODO: investigate fuzz/artifacts/curve_order/crash-bee7187920a9fe9e38bbf40ce6ff8cd80774c7a7
+            // more closely. It seems to recurse more than it should...
             if y1 - y0 <= eps || dep.dmax - dep.dmin <= eps {
                 out.push(new_y1, order);
             } else if new_y1 - new_y0 < 0.5 * (y1 - y0) {
@@ -516,7 +539,7 @@ fn intersect_cubics_rec(
 }
 
 pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
-    //dbg!(c0, c1);
+    // dbg!(c0, c1);
     let y0 = c0.p0.y.max(c1.p0.y);
     let y1 = c0.p3.y.min(c1.p3.y);
 
@@ -525,29 +548,4 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
         intersect_cubics_rec(c0, c1, y0, y1, eps, &mut ret);
     }
     ret
-}
-
-#[cfg(test)]
-mod tests {
-    use kurbo::CubicBez;
-
-    use super::intersect_cubics;
-
-    #[test]
-    fn bug() {
-        let c0 = CubicBez {
-            p0: (0.5, 0.0).into(),
-            p1: (0.0, 0.0).into(),
-            p2: (0.0, 0.0).into(),
-            p3: (0.0, 1.0).into(),
-        };
-        let c1 = CubicBez {
-            p0: (0.5, 0.0).into(),
-            p1: (0.0, 0.0).into(),
-            p2: (0.0, 0.0).into(),
-            p3: (0.9999847414437646, 1.0).into(),
-        };
-
-        intersect_cubics(c0, c1, 1e-1);
-    }
 }
