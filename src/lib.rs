@@ -18,7 +18,6 @@ pub use segments::{SegIdx, Segments};
 #[doc(hidden)]
 pub mod treevec;
 
-use num::CheapOrderedFloat;
 use topology::{Topology, WindingNumber};
 
 #[cfg(test)]
@@ -71,7 +70,7 @@ pub fn boolean_op(
     set_b: &[Vec<(f64, f64)>],
     fill_rule: FillRule,
     op: BooleanOp,
-) -> Result<topology::Contours<CheapOrderedFloat>, Error> {
+) -> Result<topology::Contours, Error> {
     // Find the extremal values, to figure out how much precision we can support.
     let (min, max) = extrema(
         set_a
@@ -91,20 +90,20 @@ pub fn boolean_op(
     // error of addition and subtraction, which is EPSILON / 2.
     // unwrap: we already checked that min and max are non-NaN. This could overflow to infinity,
     // but it can't be NaN.
-    let eps = CheapOrderedFloat::from(m_2 * (f64::EPSILON * 64.0));
+    let eps = m_2 * (f64::EPSILON * 64.0);
 
-    debug_assert!(eps.into_inner().is_finite());
+    debug_assert!(eps.is_finite());
 
-    fn pt(p: &(f64, f64)) -> Point<CheapOrderedFloat> {
-        Point::new(p.0.into(), p.1.into())
+    fn pt(p: &(f64, f64)) -> Point {
+        Point::new(p.0, p.1)
     }
 
     // unwrap: the conversions only fail for NaN, and we already checked that our points
     // don't have any of those.
-    let top = Topology::<CheapOrderedFloat>::new(
+    let top = Topology::new(
         set_a.iter().map(|ps| ps.iter().map(pt)),
         set_b.iter().map(|ps| ps.iter().map(pt)),
-        &eps,
+        eps,
     );
 
     let inside = |windings: WindingNumber| {

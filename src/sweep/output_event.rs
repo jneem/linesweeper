@@ -1,4 +1,4 @@
-use crate::{num::Float, SegIdx};
+use crate::{num::CheapOrderedFloat, SegIdx};
 
 /// Describes the interaction between a line segment and a sweep-line.
 ///
@@ -17,11 +17,11 @@ use crate::{num::Float, SegIdx};
 /// when traversing the segment in sweep-line order (i.e. in increasing `y`,
 /// and increasing `x` if the segment is horizontal) then it visits `x0`
 /// before `x1`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OutputEvent<F: Float> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutputEvent {
     /// The first horizontal coordinate on this sweep-line that we'd hit if
     /// we were traversing the segment in sweep-line orientation.
-    pub x0: F,
+    pub x0: f64,
     /// Does this line segment extend "above" (i.e. smaller `y`) this sweep-line?
     ///
     /// If so, it will extend up from `x0`, because that's what the "sweep-line order"
@@ -29,7 +29,7 @@ pub struct OutputEvent<F: Float> {
     pub connected_above: bool,
     /// The last horizontal coordinate on this sweep-line that we'd hit if
     /// we were traversing the segment in sweep-line orientation.
-    pub x1: F,
+    pub x1: f64,
     /// Does this line segment extend "below" (i.e. larger `y`) this sweep-line?
     ///
     /// If so, it will extend down from `x1`, because that's what the "sweep-line order"
@@ -43,22 +43,24 @@ pub struct OutputEvent<F: Float> {
     pub old_sweep_idx: Option<usize>,
 }
 
-impl<F: Float> OutputEvent<F> {
+impl Eq for OutputEvent {}
+
+impl OutputEvent {
     /// The smallest `x` coordinate at which the line segment touches the sweep-line.
-    pub fn smaller_x(&self) -> &F {
-        (&self.x0).min(&self.x1)
+    pub fn smaller_x(&self) -> f64 {
+        self.x0.min(self.x1)
     }
 
     /// The largest `x` coordinate at which the line segment touches the sweep-line.
-    pub fn larger_x(&self) -> &F {
-        (&self.x0).max(&self.x1)
+    pub fn larger_x(&self) -> f64 {
+        self.x0.max(self.x1)
     }
 
     pub(crate) fn new(
         seg_idx: SegIdx,
-        x0: F,
+        x0: f64,
         connected_above: bool,
-        x1: F,
+        x1: f64,
         connected_below: bool,
         sweep_idx: Option<usize>,
         old_sweep_idx: Option<usize>,
@@ -75,25 +77,28 @@ impl<F: Float> OutputEvent<F> {
     }
 
     /// Does the line segment extend up from the horizontal coordinate `x`?
-    pub fn connected_above_at(&self, x: &F) -> bool {
-        x == &self.x0 && self.connected_above
+    pub fn connected_above_at(&self, x: f64) -> bool {
+        x == self.x0 && self.connected_above
     }
 
     /// Does the line segment extend down from the horizontal coordinate `x`?
-    pub fn connected_below_at(&self, x: &F) -> bool {
-        x == &self.x1 && self.connected_below
+    pub fn connected_below_at(&self, x: f64) -> bool {
+        x == self.x1 && self.connected_below
     }
 }
 
-impl<F: Float> Ord for OutputEvent<F> {
+impl Ord for OutputEvent {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.smaller_x()
-            .cmp(other.smaller_x())
-            .then_with(|| self.larger_x().cmp(other.larger_x()))
+        CheapOrderedFloat::from(self.smaller_x())
+            .cmp(&CheapOrderedFloat::from(other.smaller_x()))
+            .then_with(|| {
+                CheapOrderedFloat::from(self.larger_x())
+                    .cmp(&CheapOrderedFloat::from(other.larger_x()))
+            })
     }
 }
 
-impl<F: Float> PartialOrd for OutputEvent<F> {
+impl PartialOrd for OutputEvent {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }

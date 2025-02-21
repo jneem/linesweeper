@@ -2,10 +2,6 @@
 
 use std::hash::Hash;
 
-use malachite::Rational;
-use ordered_float::NotNan;
-use ordered_float::OrderedFloat;
-
 /// A wrapper for `f64` that implements `Ord`.
 ///
 /// Unlike the more principled wrappers in the `ordered_float` crate, this
@@ -125,158 +121,14 @@ impl Ord for CheapOrderedFloat {
     }
 }
 
-impl Float for CheapOrderedFloat {
-    fn from_f32(x: f32) -> Self {
-        Self(x.into())
-    }
-
-    fn to_exact(&self) -> Rational {
-        self.0.try_into().unwrap()
-    }
-
-    #[inline(always)]
-    fn abs(self) -> Self {
-        CheapOrderedFloat(self.0.abs())
-    }
-
-    fn is_subnormal(&self) -> bool {
-        self.0.is_subnormal()
-    }
-}
-
 impl From<f64> for CheapOrderedFloat {
     fn from(value: f64) -> Self {
         CheapOrderedFloat(value)
     }
 }
 
-/// A trait for abstracting over the properties we need from numerical types.
-///
-/// This is implemented for `NotNan<f64>`, `NotNan<f32>`, and `malachite::Rational`.
-pub trait Float:
-    Sized
-    + std::ops::Add<Self, Output = Self>
-    + std::ops::Sub<Self, Output = Self>
-    + std::ops::Mul<Self, Output = Self>
-    + std::ops::Div<Self, Output = Self>
-    + std::ops::Neg<Output = Self>
-    + for<'a> std::ops::Add<&'a Self, Output = Self>
-    + for<'a> std::ops::Sub<&'a Self, Output = Self>
-    + for<'a> std::ops::Mul<&'a Self, Output = Self>
-    + for<'a> std::ops::Div<&'a Self, Output = Self>
-    + Clone
-    + std::fmt::Debug
-    + Ord
-    + Eq
-    + Hash
-    + 'static
-{
-    /// Convert from a `f32`. This is allowed to panic if `x` is infinite or NaN.
-    fn from_f32(x: f32) -> Self;
-
-    /// Convert this number to a rational, for exact computation.
-    fn to_exact(&self) -> Rational;
-
-    /// The absolute value.
-    fn abs(self) -> Self;
-
-    /// Is this a subnormal number?
-    fn is_subnormal(&self) -> bool;
-}
-
-impl Float for Rational {
-    fn from_f32(x: f32) -> Self {
-        Rational::try_from(x).unwrap()
-    }
-
-    fn to_exact(&self) -> Rational {
-        self.clone()
-    }
-
-    fn abs(self) -> Self {
-        <Rational as malachite::num::arithmetic::traits::Abs>::abs(self)
-    }
-
-    fn is_subnormal(&self) -> bool {
-        false
-    }
-}
-
-impl Float for NotNan<f32> {
-    fn from_f32(x: f32) -> Self {
-        NotNan::try_from(x).unwrap()
-    }
-
-    fn to_exact(&self) -> Rational {
-        self.into_inner().try_into().unwrap()
-    }
-
-    fn abs(self) -> Self {
-        self.into_inner().abs().try_into().unwrap()
-    }
-
-    fn is_subnormal(&self) -> bool {
-        self.into_inner().is_subnormal()
-    }
-}
-
-impl Float for NotNan<f64> {
-    fn from_f32(x: f32) -> Self {
-        NotNan::try_from(f64::from(x)).unwrap()
-    }
-
-    fn to_exact(&self) -> Rational {
-        self.into_inner().try_into().unwrap()
-    }
-
-    fn abs(self) -> Self {
-        self.into_inner().abs().try_into().unwrap()
-    }
-
-    fn is_subnormal(&self) -> bool {
-        self.into_inner().is_subnormal()
-    }
-}
-
-impl Float for OrderedFloat<f64> {
-    fn from_f32(x: f32) -> Self {
-        OrderedFloat::from(f64::from(x))
-    }
-
-    fn to_exact(&self) -> Rational {
-        self.into_inner().try_into().unwrap()
-    }
-
-    fn abs(self) -> Self {
-        self.into_inner().abs().into()
-    }
-
-    fn is_subnormal(&self) -> bool {
-        self.into_inner().is_subnormal()
-    }
-}
-
-impl Float for OrderedFloat<f32> {
-    fn from_f32(x: f32) -> Self {
-        OrderedFloat::from(x)
-    }
-
-    fn to_exact(&self) -> Rational {
-        self.into_inner().try_into().unwrap()
-    }
-
-    fn abs(self) -> Self {
-        self.into_inner().abs().into()
-    }
-
-    fn is_subnormal(&self) -> bool {
-        self.into_inner().is_subnormal()
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
     use proptest::prelude::*;
 
     // Kind of like Arbitrary, but
@@ -295,29 +147,11 @@ pub(crate) mod tests {
         }
     }
 
-    impl Reasonable for NotNan<f32> {
-        type Strategy = BoxedStrategy<NotNan<f32>>;
+    impl Reasonable for f64 {
+        type Strategy = BoxedStrategy<f64>;
 
         fn reasonable() -> Self::Strategy {
-            (-1e6f32..1e6).prop_map(|x| NotNan::new(x).unwrap()).boxed()
-        }
-    }
-
-    impl Reasonable for NotNan<f64> {
-        type Strategy = BoxedStrategy<NotNan<f64>>;
-
-        fn reasonable() -> Self::Strategy {
-            (-1e6..1e6).prop_map(|x| NotNan::new(x).unwrap()).boxed()
-        }
-    }
-
-    impl Reasonable for Rational {
-        type Strategy = BoxedStrategy<Rational>;
-
-        fn reasonable() -> Self::Strategy {
-            (-1e6..1e6)
-                .prop_map(|x| Rational::try_from(x).unwrap())
-                .boxed()
+            (-1e6..1e6).boxed()
         }
     }
 }

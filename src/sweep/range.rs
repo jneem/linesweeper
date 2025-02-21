@@ -1,4 +1,4 @@
-use crate::{num::Float, SegIdx};
+use crate::{num::CheapOrderedFloat, SegIdx};
 
 use super::{ChangedInterval, OutputEvent, SweepLine};
 
@@ -7,14 +7,14 @@ use super::{ChangedInterval, OutputEvent, SweepLine};
 /// Represents a horizontal part of a segment, which could be either an actual
 /// horizontal segment or a little horizontal connector of a segment in a
 /// sweep-line.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct HFrag<F: Float> {
+#[derive(Clone, Debug, PartialEq)]
+struct HFrag {
     /// The segment this horizontal fragment is a part of.
     pub seg: SegIdx,
     /// The first (smallest) horizontal position of this fragment.
-    pub start: F,
+    pub start: f64,
     /// The last (largest) horizontal position of this fragment.
-    pub end: F,
+    pub end: f64,
     /// Does this segment continue out of the sweep-line at `start`?
     ///
     /// For a horizontal segment, this will always be false. On its own,
@@ -54,10 +54,10 @@ struct HFrag<F: Float> {
     pub old_sweep_idx: Option<usize>,
 }
 
-impl<F: Float> HFrag<F> {
+impl HFrag {
     /// Given a segment's interaction with the sweep-line, returns the corresponding
     /// horizontal fragment if there is one.
-    pub fn from_position(pos: OutputEvent<F>) -> Option<Self> {
+    pub fn from_position(pos: OutputEvent) -> Option<Self> {
         let OutputEvent {
             x0,
             connected_above,
@@ -89,15 +89,15 @@ impl<F: Float> HFrag<F> {
     }
 
     /// Does this horizontal fragment's segment stick up from the sweep-line at `x`?
-    pub fn connected_above_at(&self, x: &F) -> bool {
-        (*x == self.start && self.enter_first && self.connected_at_start)
-            || (*x == self.end && !self.enter_first && self.connected_at_end)
+    pub fn connected_above_at(&self, x: f64) -> bool {
+        (x == self.start && self.enter_first && self.connected_at_start)
+            || (x == self.end && !self.enter_first && self.connected_at_end)
     }
 
     /// Does this horizontal fragment's segment stick down from the sweep-line at `x`?
-    pub fn connected_below_at(&self, x: &F) -> bool {
-        (*x == self.start && !self.enter_first && self.connected_at_start)
-            || (*x == self.end && self.enter_first && self.connected_at_end)
+    pub fn connected_below_at(&self, x: f64) -> bool {
+        (x == self.start && !self.enter_first && self.connected_at_start)
+            || (x == self.end && self.enter_first && self.connected_at_end)
     }
 }
 
@@ -108,19 +108,19 @@ impl<F: Float> HFrag<F> {
 /// interesting horizontal positions, left to right (i.e. smaller `x` to larger
 /// `x`).
 #[derive(Debug)]
-pub struct SweepLineRange<'bufs, 'state, 'segs, F: Float> {
-    last_x: Option<F>,
-    line: &'state SweepLine<'state, 'state, 'segs, F>,
-    bufs: &'bufs mut SweepLineRangeBuffers<F>,
+pub struct SweepLineRange<'bufs, 'state, 'segs> {
+    last_x: Option<f64>,
+    line: &'state SweepLine<'state, 'state, 'segs>,
+    bufs: &'bufs mut SweepLineRangeBuffers,
     changed_interval: ChangedInterval,
-    output_events: &'state [OutputEvent<F>],
+    output_events: &'state [OutputEvent],
 }
 
-impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
+impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
     pub(crate) fn new(
-        line: &'state SweepLine<'state, 'state, 'segs, F>,
-        output_events: &'state [OutputEvent<F>],
-        bufs: &'bufs mut SweepLineRangeBuffers<F>,
+        line: &'state SweepLine<'state, 'state, 'segs>,
+        output_events: &'state [OutputEvent],
+        bufs: &'bufs mut SweepLineRangeBuffers,
         changed_interval: ChangedInterval,
     ) -> Self {
         Self {
@@ -132,27 +132,24 @@ impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
         }
     }
 
-    fn output_events(&self) -> &[OutputEvent<F>] {
+    fn output_events(&self) -> &[OutputEvent] {
         self.output_events
     }
 
     /// The current horizontal position, or `None` if we're finished.
-    pub fn x(&self) -> Option<&F> {
+    pub fn x(&self) -> Option<f64> {
         match (
             self.bufs.active_horizontals.first(),
             self.output_events().first(),
         ) {
             (None, None) => None,
             (None, Some(pos)) => Some(pos.smaller_x()),
-            (Some(h), None) => Some(&h.end),
-            (Some(h), Some(pos)) => Some((&h.end).min(pos.smaller_x())),
+            (Some(h), None) => Some(h.end),
+            (Some(h), Some(pos)) => Some((h.end).min(pos.smaller_x())),
         }
     }
 
-    fn positions_at_x<'c, 'b: 'c>(
-        &'b self,
-        x: &'c F,
-    ) -> impl Iterator<Item = &'b OutputEvent<F>> + 'c {
+    fn positions_at_x<'c, 'b: 'c>(&'b self, x: f64) -> impl Iterator<Item = &'b OutputEvent> + 'c {
         self.output_events()
             .iter()
             .take_while(move |p| p.smaller_x() == x)
@@ -214,15 +211,15 @@ impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
     /// at the current `x` position. In particular, if you alternate between
     /// calling [`SweepLineRange::increase_x`] and this method, you'll
     /// receive non-overlapping batches of output events.
-    pub fn events(&mut self) -> Option<Vec<OutputEvent<F>>> {
-        let next_x = self.x()?.clone();
+    pub fn events(&mut self) -> Option<Vec<OutputEvent>> {
+        let next_x = self.x()?;
 
         let mut ret = Vec::new();
         for h in &self.bufs.active_horizontals {
             // unwrap: on the first event of this sweep line, active_horizontals is empty. So
             // we only get here after last_x is populated.
-            let x0 = self.last_x.clone().unwrap();
-            let x1 = next_x.clone().min(h.end.clone());
+            let x0 = self.last_x.unwrap();
+            let x1 = next_x.min(h.end);
             let connected_end = x1 == h.end && h.connected_at_end;
             let connected_start = x0 == h.start && h.connected_at_start;
             if h.enter_first {
@@ -250,12 +247,12 @@ impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
 
         // Drain the active horizontals, throwing away horizontal segments that end before
         // the new x position.
-        self.drain_active_horizontals(&next_x);
+        self.drain_active_horizontals(next_x);
 
         // Move along to the next horizontal position, processing the x events at the current
         // position and either emitting them immediately or saving them as horizontals.
         while let Some(ev) = self.output_events.first() {
-            if ev.smaller_x() > &next_x {
+            if ev.smaller_x() > next_x {
                 break;
             }
             self.output_events = &self.output_events[1..];
@@ -270,18 +267,20 @@ impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
                 self.bufs.active_horizontals.push(hseg);
             }
         }
-        self.bufs.active_horizontals.sort();
+        self.bufs
+            .active_horizontals
+            .sort_by_key(|a| CheapOrderedFloat::from(a.end));
         self.last_x = Some(next_x);
         Some(ret)
     }
 
     /// Move along to the next horizontal position.
     pub fn increase_x(&mut self) {
-        if let Some(x) = self.x().cloned() {
-            self.drain_active_horizontals(&x);
+        if let Some(x) = self.x() {
+            self.drain_active_horizontals(x);
 
             while let Some(ev) = self.output_events.first() {
-                if ev.smaller_x() > &x {
+                if ev.smaller_x() > x {
                     break;
                 }
                 self.output_events = &self.output_events[1..];
@@ -291,15 +290,17 @@ impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
                 }
             }
         }
-        self.bufs.active_horizontals.sort();
+        self.bufs
+            .active_horizontals
+            .sort_by_key(|a| CheapOrderedFloat::from(a.end));
     }
 
-    fn drain_active_horizontals(&mut self, x: &F) {
+    fn drain_active_horizontals(&mut self, x: f64) {
         let new_start = self
             .bufs
             .active_horizontals
             .iter()
-            .position(|h| h.end > *x)
+            .position(|h| h.end > x)
             .unwrap_or(self.bufs.active_horizontals.len());
         self.bufs.active_horizontals.drain(..new_start);
     }
@@ -310,7 +311,7 @@ impl<'bufs, 'state, 'segs, F: Float> SweepLineRange<'bufs, 'state, 'segs, F> {
     }
 
     /// The sweep line that this is a range of.
-    pub fn line(&self) -> &SweepLine<'_, '_, 'segs, F> {
+    pub fn line(&self) -> &SweepLine<'_, '_, 'segs> {
         self.line
     }
 }
@@ -353,7 +354,8 @@ impl SegmentsConnectedAtX {
 /// Save on re-allocation by allocating this once and reusing it in multiple calls to
 /// [`SweepLine::next_range`].
 #[derive(Clone, Debug)]
-pub struct SweepLineRangeBuffers<F: Float> {
+#[derive(Default)]
+pub struct SweepLineRangeBuffers {
     /// All the horizontal segments overlapping with the sweep-line-range's current
     /// horizontal position, ordered by ending position.
     ///
@@ -362,18 +364,11 @@ pub struct SweepLineRangeBuffers<F: Float> {
     /// advance the horizontal position and iterate over this entire collection.
     /// Therefore, there's no asymptotic run-time to be gained by having a fast
     /// way to insert/delete a single element.
-    active_horizontals: Vec<HFrag<F>>,
+    active_horizontals: Vec<HFrag>,
 }
 
-impl<F: Float> Default for SweepLineRangeBuffers<F> {
-    fn default() -> Self {
-        SweepLineRangeBuffers {
-            active_horizontals: Vec::new(),
-        }
-    }
-}
 
-impl<F: Float> SweepLineRangeBuffers<F> {
+impl SweepLineRangeBuffers {
     pub(crate) fn clear(&mut self) {
         self.active_horizontals.clear();
     }

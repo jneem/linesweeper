@@ -1,6 +1,6 @@
 use crate::{
     geom::{Point, Segment},
-    num::Float,
+    num::CheapOrderedFloat,
 };
 
 /// An index into our segment arena.
@@ -24,8 +24,9 @@ impl std::fmt::Debug for SegIdx {
 ///
 /// Segments are indexed by [`SegIdx`] and can be retrieved by indexing (i.e. with square brackets).
 #[derive(Debug, Clone)]
-pub struct Segments<F: Float> {
-    segs: Vec<Segment<F>>,
+#[derive(Default)]
+pub struct Segments {
+    segs: Vec<Segment>,
     contour_prev: Vec<Option<SegIdx>>,
     contour_next: Vec<Option<SegIdx>>,
     /// For each segment, stores true if the sweep-line order (small y to big y)
@@ -34,24 +35,12 @@ pub struct Segments<F: Float> {
 
     /// All the entrance heights, of segments, ordered by height.
     /// This includes horizontal segments.
-    enter: Vec<(F, SegIdx)>,
+    enter: Vec<(f64, SegIdx)>,
     /// All the exit heights of segments, ordered by height.
     /// This does not include horizontal segments.
-    exit: Vec<(F, SegIdx)>,
+    exit: Vec<(f64, SegIdx)>,
 }
 
-impl<F: Float> Default for Segments<F> {
-    fn default() -> Self {
-        Self {
-            segs: Default::default(),
-            contour_prev: Default::default(),
-            contour_next: Default::default(),
-            orientation: Default::default(),
-            enter: Vec::new(),
-            exit: Vec::new(),
-        }
-    }
-}
 
 fn cyclic_pairs<T>(xs: &[T]) -> impl Iterator<Item = (&T, &T)> {
     pairs(xs).chain(xs.last().zip(xs.first()))
@@ -61,7 +50,7 @@ fn pairs<T>(xs: &[T]) -> impl Iterator<Item = (&T, &T)> {
     xs.windows(2).map(|pair| (&pair[0], &pair[1]))
 }
 
-impl<F: Float> Segments<F> {
+impl Segments {
     /// The number of line segments in this arena.
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
@@ -74,7 +63,7 @@ impl<F: Float> Segments<F> {
     }
 
     /// Iterate over all segments in this arena.
-    pub fn segments(&self) -> impl Iterator<Item = &Segment<F>> {
+    pub fn segments(&self) -> impl Iterator<Item = &Segment> {
         self.segs.iter()
     }
 
@@ -84,7 +73,7 @@ impl<F: Float> Segments<F> {
     /// order (i.e. `start` has the smaller `y` coordinate), regardless of the
     /// original orientation of the segment. Use this method to retrieve the
     /// segment's original start point.
-    pub fn oriented_start(&self, idx: SegIdx) -> &Point<F> {
+    pub fn oriented_start(&self, idx: SegIdx) -> &Point {
         if self.orientation[idx.0] {
             &self[idx].start
         } else {
@@ -98,7 +87,7 @@ impl<F: Float> Segments<F> {
     /// order (i.e. `start` has the smaller `y` coordinate), regardless of the
     /// original orientation of the segment. Use this method to retrieve the
     /// segment's original end point.
-    pub fn oriented_end(&self, idx: SegIdx) -> &Point<F> {
+    pub fn oriented_end(&self, idx: SegIdx) -> &Point {
         if self.orientation[idx.0] {
             &self[idx].end
         } else {
@@ -132,7 +121,7 @@ impl<F: Float> Segments<F> {
     }
 
     /// Add a (non-closed) polyline to this arena.
-    pub fn add_points<P: Into<Point<F>>>(&mut self, ps: impl IntoIterator<Item = P>) {
+    pub fn add_points<P: Into<Point>>(&mut self, ps: impl IntoIterator<Item = P>) {
         let old_len = self.segs.len();
 
         let ps: Vec<_> = ps.into_iter().map(|p| p.into()).collect();
@@ -162,7 +151,7 @@ impl<F: Float> Segments<F> {
     /// Add a collection of closed polylines to this arena.
     ///
     /// This can be much faster than calling `add_cycles` repeatedly.
-    pub fn add_cycles<P: Into<Point<F>>>(
+    pub fn add_cycles<P: Into<Point>>(
         &mut self,
         ps: impl IntoIterator<Item = impl IntoIterator<Item = P>>,
     ) {
@@ -174,13 +163,13 @@ impl<F: Float> Segments<F> {
     }
 
     /// Add a closed polyline to this arena.
-    pub fn add_cycle<P: Into<Point<F>>>(&mut self, ps: impl IntoIterator<Item = P>) {
+    pub fn add_cycle<P: Into<Point>>(&mut self, ps: impl IntoIterator<Item = P>) {
         let old_len = self.segs.len();
         self.add_cycle_without_updating_enter_exit(ps);
         self.update_enter_exit(old_len);
     }
 
-    fn add_cycle_without_updating_enter_exit<P: Into<Point<F>>>(
+    fn add_cycle_without_updating_enter_exit<P: Into<Point>>(
         &mut self,
         ps: impl IntoIterator<Item = P>,
     ) {
@@ -209,7 +198,7 @@ impl<F: Float> Segments<F> {
     }
 
     /// Construct a segment arena from a single closed polyline.
-    pub fn from_closed_cycle<P: Into<Point<F>>>(ps: impl IntoIterator<Item = P>) -> Self {
+    pub fn from_closed_cycle<P: Into<Point>>(ps: impl IntoIterator<Item = P>) -> Self {
         let mut ret = Self::default();
         ret.add_cycle(ps);
         ret
@@ -220,9 +209,9 @@ impl<F: Float> Segments<F> {
             let seg_idx = SegIdx(idx);
             let seg = &self.segs[seg_idx.0];
 
-            self.enter.push((seg.start.y.clone(), seg_idx));
+            self.enter.push((seg.start.y, seg_idx));
             if !seg.is_horizontal() {
-                self.exit.push((seg.end.y.clone(), seg_idx));
+                self.exit.push((seg.end.y, seg_idx));
             }
         }
 
@@ -230,29 +219,35 @@ impl<F: Float> Segments<F> {
         // start position so that they're fairly likely to get inserted in the
         // sweep-line in order (which makes the indexing fix-ups faster).
         self.enter.sort_by(|(y1, seg1), (y2, seg2)| {
-            y1.cmp(y2)
-                .then_with(|| self.segs[seg1.0].at_y(y1).cmp(&self.segs[seg2.0].at_y(y1)))
+            CheapOrderedFloat::from(*y1)
+                .cmp(&CheapOrderedFloat::from(*y2))
+                .then_with(|| {
+                    CheapOrderedFloat::from(self.segs[seg1.0].at_y(*y1))
+                        .cmp(&CheapOrderedFloat::from(self.segs[seg2.0].at_y(*y1)))
+                })
         });
-        self.exit.sort_by(|(y1, _), (y2, _)| y1.cmp(y2));
+        self.exit.sort_by(|(y1, _), (y2, _)| {
+            CheapOrderedFloat::from(*y1).cmp(&CheapOrderedFloat::from(*y2))
+        });
     }
 
     /// All the entrance heights of segments, ordered by height.
     ///
     /// Includes horizontal segments.
-    pub fn entrances(&self) -> &[(F, SegIdx)] {
+    pub fn entrances(&self) -> &[(f64, SegIdx)] {
         &self.enter
     }
 
     /// All the exit heights of segments, ordered by height.
     ///
     /// Does not include horizontal segments.
-    pub fn exits(&self) -> &[(F, SegIdx)] {
+    pub fn exits(&self) -> &[(f64, SegIdx)] {
         &self.exit
     }
 }
 
-impl<F: Float> std::ops::Index<SegIdx> for Segments<F> {
-    type Output = Segment<F>;
+impl std::ops::Index<SegIdx> for Segments {
+    type Output = Segment;
 
     fn index(&self, index: SegIdx) -> &Self::Output {
         &self.segs[index.0]

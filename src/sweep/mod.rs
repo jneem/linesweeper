@@ -13,23 +13,19 @@ pub use output_event::OutputEvent;
 pub use range::{SegmentsConnectedAtX, SweepLineRange, SweepLineRangeBuffers};
 pub use sweep_line::{ChangedInterval, SweepLine, SweepLineBuffers, Sweeper};
 
-use crate::{num::Float, Segments};
+use crate::Segments;
 
 /// Runs the sweep-line algorithm, calling the provided callback on every output point.
-pub fn sweep<F: Float, C: FnMut(F, OutputEvent<F>)>(
-    segments: &Segments<F>,
-    eps: &F,
-    mut callback: C,
-) {
-    let mut state = Sweeper::new(segments, eps.clone());
+pub fn sweep<C: FnMut(f64, OutputEvent)>(segments: &Segments, eps: f64, mut callback: C) {
+    let mut state = Sweeper::new(segments, eps);
     let mut range_bufs = SweepLineRangeBuffers::default();
     let mut line_bufs = SweepLineBuffers::default();
     while let Some(mut line) = state.next_line(&mut line_bufs) {
-        let y = line.y().clone();
+        let y = line.y();
         while let Some(mut range) = line.next_range(&mut range_bufs, segments, eps) {
             while let Some(events) = range.events() {
                 for ev in events {
-                    callback(y.clone(), ev);
+                    callback(y, ev);
                 }
             }
         }

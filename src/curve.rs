@@ -131,18 +131,36 @@ fn solve_cubic_in_unit_interval(c0: f64, c1: f64, c2: f64, c3: f64) -> ArrayVec<
     }
     let mut roots = solve_cubic(c0, c1, new_c2, new_c3);
 
-    // Do a Newton step to increase accuracy. Also, we do this with the original
-    // parameters, which helps reduce the error that we may have introduced.
+    // Do a few Newton steps to increase accuracy. Also, we do this with the
+    // original parameters, which helps reduce the error that we may have
+    // introduced.
     //dbg!(c0, c1, c2, c3);
     for x in &mut roots {
-        let val = c3 * *x * *x * *x + c2 * *x * *x + c1 * *x + c0;
+        let mut val = c3 * *x * *x * *x + c2 * *x * *x + c1 * *x + c0;
         //dbg!(*x, val);
-        let deriv = 3.0 * c3 * *x * *x + 2.0 * c2 * *x + c1;
+        let mut deriv = 3.0 * c3 * *x * *x + 2.0 * c2 * *x + c1;
+        for _ in 0..3 {
+            if val.abs() <= 1e-14 {
+                break;
+            }
 
-        if val.abs() > 1e-14 && deriv.abs() > val.abs() {
-            *x -= val / deriv;
-            //let val_after = c3 * *x * *x * *x + c2 * *x * *x + c1 * *x + c0;
-            //dbg!(val, val_after);
+            let step = val / deriv;
+            // Truncate the step size, because of an annoying case. If the original
+            // equation was (x - 1)^2 + eps * x^3, We'll perturb it and find that
+            // perfect double-root at x = 1. But when we add back in eps * x^3, the
+            // Newton step will be giant (independent of eps). We should restrict
+            // it to more like sqrt(eps).
+            //
+            // Is there a more principled way to handle this?
+            let step = step.abs().min(val.abs().sqrt()).copysign(step);
+            //dbg!(c0, c1, c2, c3, *x);
+            *x -= step;
+            // let val_after = c3 * *x * *x * *x + c2 * *x * *x + c1 * *x + c0;
+            // let deriv_after = 3.0 * c3 * *x * *x + 2.0 * c2 * *x + c1;
+            // dbg!(*x, step, val, deriv, val_after, deriv_after);
+
+            val = c3 * *x * *x * *x + c2 * *x * *x + c1 * *x + c0;
+            deriv = 3.0 * c3 * *x * *x + 2.0 * c2 * *x + c1;
         }
     }
     roots
@@ -417,7 +435,7 @@ impl EstParab {
             dmax = dmax.max(x);
         }
 
-        // let t = 0.2980852;
+        // let t = 0.9392882704660391;
         // let p = c.eval(t);
         // let x = dbg!(p.x) - dbg!(self.eval(dbg!(p.y)));
         // dbg!(x);
@@ -457,7 +475,7 @@ fn intersect_cubics_rec(
     eps: f64,
     out: &mut CurveOrder,
 ) {
-    //eprintln!("recursing {y0:.7}..{y1:.7}");
+    //eprintln!("recursing {y0}..{y1}");
     let c0 = orig_c0.subsegment(solve_t_for_y(orig_c0, y0)..solve_t_for_y(orig_c0, y1));
     let c1 = orig_c1.subsegment(solve_t_for_y(orig_c1, y0)..solve_t_for_y(orig_c1, y1));
 
@@ -508,8 +526,11 @@ fn intersect_cubics_rec(
         // dbg!(solve_x_for_y(orig_c0, new_y1));
         // dbg!(solve_x_for_y(orig_c1, new_y1));
         // dbg!(solve_t_for_y(orig_c0, new_y1));
-        // let t = solve_t_for_y(orig_c0, new_y1);
-        // dbg!(ep0.eval(dbg!(orig_c0.eval(t).y)));
+        // let t = solve_t_for_y(orig_c1, new_y1);
+        // dbg!(ep0.eval(dbg!(orig_c1.eval(t).y)));
+        // dbg!(orig_c1);
+        // let t = solve_t_for_y(c0, new_y0);
+        // dbg!(t);
         if order == Ternary::Greater {
             debug_assert!(solve_x_for_y(orig_c0, new_y0) < solve_x_for_y(orig_c1, new_y0));
             debug_assert!(solve_x_for_y(orig_c0, new_y1) < solve_x_for_y(orig_c1, new_y1));
@@ -557,4 +578,39 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
         intersect_cubics_rec(c0, c1, y0, y1, eps, &mut ret);
     }
     ret
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn solve_for_t_accuracy() {
+        let c = CubicBez {
+            p0: (0.5, 0.0).into(),
+            p1: (0.19531249655301508, 0.6666666864572713).into(),
+            p2: (0.00781250000181899, 1.0).into(),
+            p3: (0.0, 1.0).into(),
+        };
+        let y0 = 0.0;
+        let y1 = 0.9999999406281859;
+        let c0 = c.subsegment(solve_t_for_y(c, y0)..solve_t_for_y(c, y1));
+        assert!((dbg!(c0.p3.y) - dbg!(y1)).abs() < 1e-8);
+        let y1 = 0.9999999;
+        let c0 = c.subsegment(solve_t_for_y(c, y0)..solve_t_for_y(c, y1));
+        assert!((dbg!(c0.p3.y) - dbg!(y1)).abs() < 1e-8);
+    }
+
+    #[test]
+    fn solve_for_t_accuracy2() {
+        let c = CubicBez {
+            p0: (0.9999999406281859, 0.0).into(),
+            p1: (0.011764705882352941, 0.011764705882352941).into(),
+            p2: (0.011764705882352941, 0.023391003460207612).into(),
+            p3: (0.011764705882352941, 0.03488052106655811).into(),
+        };
+        let y = 0.012468608207852864;
+        let t = solve_t_for_y(c, y);
+        assert!(dbg!(c.eval(t).y) - y.abs() < 1e-8);
+    }
 }

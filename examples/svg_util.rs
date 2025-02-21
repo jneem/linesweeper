@@ -1,18 +1,15 @@
 //! Utilities for the examples that work with svg.
 
 use linesweeper::Point;
-use ordered_float::NotNan;
 
-type Float = NotNan<f64>;
-
-pub fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point<Float>>> {
+pub fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
     let mut ret = Vec::new();
 
     fn pt(p: usvg::tiny_skia_path::Point) -> kurbo::Point {
         kurbo::Point::new(p.x as f64, p.y as f64)
     }
 
-    fn add_group(group: &usvg::Group, ret: &mut Vec<Vec<Point<Float>>>) {
+    fn add_group(group: &usvg::Group, ret: &mut Vec<Vec<Point>>) {
         for child in group.children() {
             match child {
                 usvg::Node::Group(group) => add_group(group, ret),
@@ -34,19 +31,17 @@ pub fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point<Float>>> {
                         usvg::tiny_skia_path::PathSegment::Close => kurbo::PathEl::ClosePath,
                     });
 
-                    let mut points = Vec::<Point<Float>>::new();
+                    let mut points = Vec::<Point>::new();
                     kurbo::flatten(kurbo_els, 1e-6, |el| match el {
                         kurbo::PathEl::MoveTo(p) => {
                             // Even if it wasn't closed in the svg, we close it.
                             if !points.is_empty() {
                                 ret.push(points.split_off(0));
                             }
-                            points
-                                .push(Point::new(p.x.try_into().unwrap(), p.y.try_into().unwrap()));
+                            points.push(Point::new(p.x, p.y));
                         }
                         kurbo::PathEl::LineTo(p) => {
-                            points
-                                .push(Point::new(p.x.try_into().unwrap(), p.y.try_into().unwrap()));
+                            points.push(Point::new(p.x, p.y));
                         }
                         kurbo::PathEl::ClosePath => {
                             let p = points.first().cloned();

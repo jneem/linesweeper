@@ -1,19 +1,15 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use linesweeper::{
-    boolean_op, num::CheapOrderedFloat, topology::Topology, BooleanOp, FillRule, Point, Segments,
-};
+use linesweeper::{boolean_op, topology::Topology, BooleanOp, FillRule, Point, Segments};
 
-type Float = CheapOrderedFloat;
-
-fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point<Float>>> {
+fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
     let mut ret = Vec::new();
 
     fn pt(p: usvg::tiny_skia_path::Point) -> kurbo::Point {
         kurbo::Point::new(p.x as f64, p.y as f64)
     }
 
-    fn add_group(group: &usvg::Group, ret: &mut Vec<Vec<Point<Float>>>) {
+    fn add_group(group: &usvg::Group, ret: &mut Vec<Vec<Point>>) {
         for child in group.children() {
             match child {
                 usvg::Node::Group(group) => add_group(group, ret),
@@ -35,17 +31,17 @@ fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point<Float>>> {
                         usvg::tiny_skia_path::PathSegment::Close => kurbo::PathEl::ClosePath,
                     });
 
-                    let mut points = Vec::<Point<Float>>::new();
+                    let mut points = Vec::<Point>::new();
                     kurbo::flatten(kurbo_els, 1e-6, |el| match el {
                         kurbo::PathEl::MoveTo(p) => {
                             // Even if it wasn't closed in the svg, we close it.
                             if !points.is_empty() {
                                 ret.push(points.split_off(0));
                             }
-                            points.push(Point::new(p.x.into(), p.y.into()));
+                            points.push(Point::new(p.x, p.y));
                         }
                         kurbo::PathEl::LineTo(p) => {
-                            points.push(Point::new(p.x.into(), p.y.into()));
+                            points.push(Point::new(p.x, p.y));
                         }
                         kurbo::PathEl::ClosePath => {
                             let p = points.first().cloned();
@@ -77,14 +73,13 @@ fn just_the_sweep(c: &mut Criterion) {
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
     let contours = svg_to_contours(&tree);
 
-    let eps = CheapOrderedFloat::from(0.01f64);
     let mut segs = Segments::default();
     for c in contours {
         segs.add_cycle(c);
     }
 
     c.bench_function("logo: just the sweep", |b| {
-        b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
+        b.iter(|| linesweeper::sweep::sweep(&segs, 0.01, |_, _| {}))
     });
 }
 
@@ -93,12 +88,10 @@ fn build_topology(c: &mut Criterion) {
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
     let contours = svg_to_contours(&tree);
 
-    let eps = CheapOrderedFloat::from(0.01f64);
-
-    const EMPTY: [[Point<Float>; 0]; 0] = [];
+    const EMPTY: [[Point; 0]; 0] = [];
 
     c.bench_function("logo: build topology", |b| {
-        b.iter(|| black_box(Topology::new(contours.clone(), EMPTY, &eps)));
+        b.iter(|| black_box(Topology::new(contours.clone(), EMPTY, 0.01)));
     });
 }
 
@@ -107,14 +100,10 @@ fn xor(c: &mut Criterion) {
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
     let contours = svg_to_contours(&tree);
 
-    let to_floats = |contours: Vec<Vec<Point<CheapOrderedFloat>>>| -> Vec<Vec<_>> {
+    let to_floats = |contours: Vec<Vec<Point>>| -> Vec<Vec<_>> {
         contours
             .into_iter()
-            .map(|ps| {
-                ps.into_iter()
-                    .map(|p| (p.x.into_inner(), p.y.into_inner()))
-                    .collect()
-            })
+            .map(|ps| ps.into_iter().map(|p| (p.x, p.y)).collect())
             .collect()
     };
 
