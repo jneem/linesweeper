@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use crate::{
+    curve::CurveOrder,
     geom::{Point, Segment},
     num::CheapOrderedFloat,
 };
@@ -23,8 +26,7 @@ impl std::fmt::Debug for SegIdx {
 /// An arena of line segments.
 ///
 /// Segments are indexed by [`SegIdx`] and can be retrieved by indexing (i.e. with square brackets).
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Segments {
     segs: Vec<Segment>,
     contour_prev: Vec<Option<SegIdx>>,
@@ -40,7 +42,6 @@ pub struct Segments {
     /// This does not include horizontal segments.
     exit: Vec<(f64, SegIdx)>,
 }
-
 
 fn cyclic_pairs<T>(xs: &[T]) -> impl Iterator<Item = (&T, &T)> {
     pairs(xs).chain(xs.last().zip(xs.first()))
@@ -75,9 +76,9 @@ impl Segments {
     /// segment's original start point.
     pub fn oriented_start(&self, idx: SegIdx) -> &Point {
         if self.orientation[idx.0] {
-            &self[idx].start
+            &self[idx].p0
         } else {
-            &self[idx].end
+            &self[idx].p0
         }
     }
 
@@ -89,9 +90,9 @@ impl Segments {
     /// segment's original end point.
     pub fn oriented_end(&self, idx: SegIdx) -> &Point {
         if self.orientation[idx.0] {
-            &self[idx].end
+            &self[idx].p3
         } else {
-            &self[idx].start
+            &self[idx].p0
         }
     }
 
@@ -131,7 +132,7 @@ impl Segments {
 
         for (p, q) in pairs(&ps) {
             let (a, b, orient) = if p < q { (p, q, true) } else { (q, p, false) };
-            self.segs.push(Segment::new(a.clone(), b.clone()));
+            self.segs.push(Segment::straight(a.clone(), b.clone()));
             self.orientation.push(orient);
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
@@ -169,6 +170,8 @@ impl Segments {
         self.update_enter_exit(old_len);
     }
 
+    // TODO: add a constructor for curves
+
     fn add_cycle_without_updating_enter_exit<P: Into<Point>>(
         &mut self,
         ps: impl IntoIterator<Item = P>,
@@ -182,7 +185,7 @@ impl Segments {
 
         for (p, q) in cyclic_pairs(&ps) {
             let (a, b, orient) = if p < q { (p, q, true) } else { (q, p, false) };
-            self.segs.push(Segment::new(a.clone(), b.clone()));
+            self.segs.push(Segment::straight(a.clone(), b.clone()));
             self.orientation.push(orient);
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
@@ -209,9 +212,9 @@ impl Segments {
             let seg_idx = SegIdx(idx);
             let seg = &self.segs[seg_idx.0];
 
-            self.enter.push((seg.start.y, seg_idx));
+            self.enter.push((seg.p0.y, seg_idx));
             if !seg.is_horizontal() {
-                self.exit.push((seg.end.y, seg_idx));
+                self.exit.push((seg.p3.y, seg_idx));
             }
         }
 

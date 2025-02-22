@@ -9,6 +9,19 @@ struct CurveOrderEntry {
     order: Ternary,
 }
 
+impl CurveOrderEntry {
+    fn flip(&self) -> Self {
+        Self {
+            end: self.end,
+            order: match self.order {
+                Ternary::Less => Ternary::Greater,
+                Ternary::Ish => Ternary::Ish,
+                Ternary::Greater => Ternary::Less,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CurveOrder {
     start: f64,
@@ -68,6 +81,43 @@ impl CurveOrder {
             next: self.start,
             iter: self.cmps.iter(),
         }
+    }
+
+    pub fn flip(&self) -> Self {
+        Self {
+            start: self.start,
+            cmps: self.cmps.iter().map(CurveOrderEntry::flip).collect(),
+        }
+    }
+
+    // FIXME: we need a way to distinguish between "touching" and going back
+    // and crossing. Only the latter should get an intersection event
+    pub fn next_less_after(&self, y: f64) -> Option<f64> {
+        let mut iter = self.iter().skip_while(|(_start, end, _order)| end <= &y);
+        let (before_y, after_y, order_at_y) = iter.next()?;
+
+        match order_at_y {
+            Ternary::Less => Some(y),
+            Ternary::Ish => Some((after_y + before_y) / 2.0),
+
+            // Even if there's an "ish" interval after the current one,
+            // we'll decline to find an intersection if it's the last
+            // interval.
+            Ternary::Greater => match iter.next().and_then(|x| iter.next().map(|y| (x, y))) {
+                None => None,
+                Some(((ish_start, ish_end, ish_order), _)) => {
+                    debug_assert_eq!(ish_order, Ternary::Ish);
+                    Some((ish_end + ish_start) / 2.0)
+                }
+            },
+        }
+    }
+
+    pub fn order_at(&self, y: f64) -> Ternary {
+        self.iter()
+            .find(|(_start, end, _order)| end >= &y)
+            .unwrap()
+            .2
     }
 }
 

@@ -2,9 +2,12 @@
 //!
 //! This algorithm is documented in `docs/sweep.typ`.
 
+use std::collections::HashMap;
+
 use malachite::Rational;
 
 use crate::{
+    curve::{self, CurveOrder, Ternary},
     geom::Segment,
     num::CheapOrderedFloat,
     segments::{SegIdx, Segments},
@@ -98,8 +101,8 @@ pub(crate) struct SegmentOrderEntry {
 
 impl SegmentOrderEntry {
     fn new(seg: SegIdx, segments: &Segments, eps: f64) -> Self {
-        let x0 = segments[seg].start.x;
-        let x1 = segments[seg].end.x;
+        let x0 = segments[seg].min_x();
+        let x1 = segments[seg].max_x();
         Self {
             seg,
             exit: false,
@@ -279,6 +282,8 @@ pub struct Sweeper<'a> {
     // inserting all the new segments.
     segs_needing_positions: Vec<usize>,
     changed_intervals: Vec<ChangedInterval>,
+
+    comparisons: HashMap<(SegIdx, SegIdx), CurveOrder>,
 }
 
 impl<'segs> Sweeper<'segs> {
@@ -295,7 +300,27 @@ impl<'segs> Sweeper<'segs> {
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
             horizontals: Vec::new(),
+            comparisons: HashMap::new(),
         }
+    }
+
+    // FIXME: less cloning
+    fn compare_segments(&mut self, i: SegIdx, j: SegIdx) -> CurveOrder {
+        if let Some(order) = self.comparisons.get(&(i, j)) {
+            return order.clone();
+        }
+
+        let segi = &self.segments[i];
+        let segj = &self.segments[j];
+
+        let forward = curve::intersect_cubics(segi.to_kurbo(), segj.to_kurbo(), self.eps);
+        let reverse = forward.flip();
+        self.comparisons.insert((j, i), reverse);
+        self.comparisons
+            .entry((i, j))
+            .insert_entry(forward)
+            .get()
+            .clone()
     }
 
     /// Moves the sweep forward, returning the next sweep line.
@@ -371,85 +396,79 @@ impl<'segs> Sweeper<'segs> {
     }
 
     fn intersection_scan_right(&mut self, start_idx: usize) {
-        let seg = &self.segments[self.line.seg(start_idx)];
+        let seg_idx = self.line.seg(start_idx);
         let y = self.y;
-        let two_eps = self.eps * 2.0;
 
         // We're allowed to take a potentially-smaller height bound by taking
         // into account the current queue. A larger height bound is still ok,
         // just a little slower.
-        let mut height_bound = seg.end.y;
+        // let mut height_bound = seg.end.y;
 
+        // TODO: reinstate early-exit
         for j in (start_idx + 1)..self.line.segs.len() {
             if self.line.is_exit(j) {
                 continue;
             }
-            let other = &self.segments[self.line.seg(j)];
-            if seg.quick_left_of(other, two_eps) {
-                break;
-            }
-            height_bound = height_bound.min(other.end.y);
+            let other_idx = self.line.seg(j);
+            //let other = &self.segments[other_idx];
+            // if seg.quick_left_of(other, two_eps) {
+            //     break;
+            // }
+            // height_bound = height_bound.min(other.end.y);
 
-            if let Some(int_y) = seg.crossing_y(other, &self.eps) {
+            // TODO: there's a choice to be made here: do we distinguish
+            // in the event queue between actual intersections and near-intersections
+            // that need to be recorded? For now, no. We will distinguish them
+            // in handle_intersection
+
+            let cmp = self.compare_segments(seg_idx, other_idx);
+            dbg!(&cmp, seg_idx, other_idx);
+            dbg!(&self.segments[seg_idx], &self.segments[other_idx]);
+
+            if let Some(int_y) = cmp.next_less_after(y) {
+                dbg!(int_y);
                 let int_y = int_y.max(y);
                 self.events.push(IntersectionEvent {
                     y: int_y.max(y),
                     left: self.line.seg(start_idx),
                     right: self.line.seg(j),
                 });
-                height_bound = int_y.min(height_bound);
+                //height_bound = int_y.min(height_bound);
             }
 
             // For the early stopping, we need to check whether `seg` is less than `other`'s lower
             // bound on the whole interesting `y` interval. Since they're lines, it's enough to check
             // at the two interval endpoints.
-            let y1 = height_bound;
-            let threshold = self.eps / 4.0;
-            let scaled_eps = other.scaled_eps(self.eps);
-            if threshold <= other.lower_with_scaled_eps(y, self.eps, scaled_eps) - seg.at_y(y)
-                && threshold <= other.lower_with_scaled_eps(y1, self.eps, scaled_eps) - seg.at_y(y1)
-            {
-                break;
-            }
+            // let y1 = height_bound;
+            // let threshold = self.eps / 4.0;
+            // let scaled_eps = other.scaled_eps(self.eps);
+            // if threshold <= other.lower_with_scaled_eps(y, self.eps, scaled_eps) - seg.at_y(y)
+            //     && threshold <= other.lower_with_scaled_eps(y1, self.eps, scaled_eps) - seg.at_y(y1)
+            // {
+            //     break;
+            // }
         }
     }
 
     fn intersection_scan_left(&mut self, start_idx: usize) {
-        let seg = &self.segments[self.line.seg(start_idx)];
+        let seg_idx = self.line.seg(start_idx);
         let y = self.y;
-        let two_eps = self.eps * 2.0;
-
-        let mut height_bound = seg.end.y;
 
         for j in (0..start_idx).rev() {
             if self.line.is_exit(j) {
                 continue;
             }
-            let other = &self.segments[self.line.seg(j)];
-            if other.quick_left_of(seg, two_eps) {
-                break;
-            }
-            height_bound = height_bound.min(other.end.y);
-            if let Some(int_y) = other.crossing_y(seg, &self.eps) {
+            let other_idx = self.line.seg(j);
+
+            let cmp = self.compare_segments(other_idx, seg_idx);
+            dbg!(seg_idx, other_idx, &cmp);
+            if let Some(int_y) = cmp.next_less_after(y) {
                 let int_y = int_y.max(y);
-                self.events.push(IntersectionEvent {
+                self.events.push(dbg!(IntersectionEvent {
                     left: self.line.seg(j),
                     right: self.line.seg(start_idx),
                     y: int_y.max(self.y),
-                });
-                height_bound = int_y.min(height_bound);
-            }
-
-            // For the early stopping, we need to check whether `seg` is greater than `other`'s upper
-            // bound on the whole interesting `y` interval. Since they're lines, it's enough to check
-            // at the two interval endpoints.
-            let y1 = height_bound;
-            let scaled_eps = other.scaled_eps(self.eps);
-            let threshold = self.eps / 4.0;
-            if seg.at_y(y) - other.upper_with_scaled_eps(y, self.eps, scaled_eps) > threshold
-                && seg.at_y(y1) - other.upper_with_scaled_eps(y1, self.eps, scaled_eps) > threshold
-            {
-                break;
+                }));
             }
         }
     }
@@ -484,7 +503,7 @@ impl<'segs> Sweeper<'segs> {
             self.segments.contour_next(seg_idx)
         };
         if let Some(contour_prev) = contour_prev {
-            if self.segments[contour_prev].start.y < self.y {
+            if self.segments[contour_prev].p0.y < self.y {
                 if pos < self.line.segs.len() && self.line.segs[pos].seg == contour_prev {
                     self.handle_contour_continuation(seg_idx, new_seg, pos);
                     return;
@@ -533,8 +552,8 @@ impl<'segs> Sweeper<'segs> {
     // A special case of handle-enter, in which the entering segment is
     // continuing the contour of an exiting segment.
     fn handle_contour_continuation(&mut self, seg_idx: SegIdx, seg: &Segment, pos: usize) {
-        let x0 = seg.start.x;
-        let x1 = seg.end.x;
+        let x0 = seg.p0.x;
+        let x1 = seg.p3.x;
         self.line.segs[pos].old_seg = Some(self.line.segs[pos].seg);
         self.line.segs[pos].seg = seg_idx;
         self.line.segs[pos].enter = true;
@@ -564,6 +583,7 @@ impl<'segs> Sweeper<'segs> {
     }
 
     fn handle_intersection(&mut self, left: SegIdx, right: SegIdx) {
+        dbg!(&self.y, &self.line.segs, left, right);
         let left_idx = self
             .line
             .position(left, self.segments, self.y, self.eps)
@@ -580,23 +600,20 @@ impl<'segs> Sweeper<'segs> {
                 }
             }
 
-            let left_seg = &self.segments[left];
-            let eps = self.eps;
-            let y = self.y;
-
             // We're going to put `left_seg` after `right_seg` in the
             // sweep line, and while doing so we need to "push" along
             // all segments that are strictly bigger than `left_seg`
             // (slight false positives are allowed; no false negatives).
             let mut to_move = vec![(left_idx, self.line.segs[left_idx])];
-            let threshold = eps / -4.0;
             for j in (left_idx + 1)..right_idx {
-                let seg = &self.segments[self.line.seg(j)];
-                if seg.lower(y, eps) - left_seg.upper(y, eps) > threshold {
+                let seg_j_idx = self.line.seg(j);
+                let cmp = self.compare_segments(left, seg_j_idx);
+                if cmp.order_at(self.y) == Ternary::Less {
                     to_move.push((j, self.line.segs[j]));
                 }
             }
 
+            dbg!(&to_move);
             // Remove them in reverse to make indexing easier.
             for &(j, _) in to_move.iter().rev() {
                 self.line.segs.remove(j);
@@ -685,7 +702,7 @@ impl<'segs> Sweeper<'segs> {
 
     fn compute_horizontal_changed_intervals(&mut self) {
         self.horizontals
-            .sort_by_key(|seg_idx| CheapOrderedFloat::from(self.segments[*seg_idx].start.x));
+            .sort_by_key(|seg_idx| CheapOrderedFloat::from(self.segments[*seg_idx].p0.x));
 
         for (idx, &seg_idx) in self.horizontals.iter().enumerate() {
             let seg = &self.segments[seg_idx];
@@ -694,14 +711,18 @@ impl<'segs> Sweeper<'segs> {
             // horizontal segment, but the index before definitely doesn't.
             let start_idx = self.line.segs.partition_point(|other_entry| {
                 let other_seg = &self.segments[other_entry.seg];
-                seg.start.x > other_seg.upper(self.y, self.eps)
+                // FIXME: this is likely to have some numerical issues when the other
+                // segment is almost horizontal. Should have something that allows for eps slack
+                // in y also.
+                seg.p0.x > other_seg.at_y(self.y) + self.eps
             });
 
             let mut end_idx = start_idx;
             for j in start_idx..self.line.segs.len() {
                 let other_entry = &mut self.line.segs[j];
                 let other_seg = &self.segments[other_entry.seg];
-                if other_seg.lower(self.y, self.eps) <= seg.end.x {
+                // FIXME: as above
+                if other_seg.at_y(self.y) - self.eps <= seg.p3.x {
                     // Ensure that every segment in the changed interval has `old_idx` set;
                     // see also `compute_changed_intervals`.
                     self.line.segs[j].set_old_idx_if_unset(j);
@@ -832,14 +853,12 @@ impl SegmentOrder {
         segments: &Segments,
         eps: f64,
     ) -> Option<(SegIdx, SegIdx)> {
-        let eps = Rational::try_from(eps).unwrap();
-        let y = Rational::try_from(y).unwrap();
         for i in 0..self.segs.len() {
             for j in (i + 1)..self.segs.len() {
-                let segi = segments[self.seg(i)].to_exact();
-                let segj = segments[self.seg(j)].to_exact();
+                let segi = &segments[self.seg(i)];
+                let segj = &segments[self.seg(j)];
 
-                if segi.lower(&y, &eps) > segj.upper(&y, &eps) {
+                if segi.lower(y, eps) > segj.upper(y, eps) {
                     return Some((self.seg(i), self.seg(j)));
                 }
             }
@@ -850,7 +869,7 @@ impl SegmentOrder {
 
     // Finds an index into this sweep line where it's ok to insert this new segment.
     fn insertion_idx(&self, y: f64, segments: &Segments, seg: &Segment, eps: f64) -> usize {
-        let seg_x = seg.start.x;
+        let seg_x = seg.p0.x;
 
         // Fast path: we first do a binary search just with the horizontal bounding intervals.
         // `pos` is an index where we're to the left of that segment's right-most point, and
@@ -1172,11 +1191,11 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             let preferred_x = if entry.exit {
                 // The best possible position is the true segment-ending position.
                 // (This could change if we want to be more sophisticated at joining contours.)
-                segments[entry.old_seg()].end.x
+                segments[entry.old_seg()].p3.x
             } else if entry.enter {
                 // The best possible position is the true segment-starting position.
                 // (This could change if we want to be more sophisticated at joining contours.)
-                segments[entry.seg].start.x
+                segments[entry.seg].p0.x
             } else {
                 segments[entry.seg].at_y(self.state.y)
             };
@@ -1246,10 +1265,10 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         for ev in &mut *events {
             let seg = &segments[ev.seg_idx];
             if !ev.connected_above {
-                ev.x0 = seg.start.x;
+                ev.x0 = seg.p0.x;
             }
             if !ev.connected_below {
-                ev.x1 = seg.end.x;
+                ev.x1 = seg.p3.x;
             }
         }
 
@@ -1257,9 +1276,9 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             for &seg_idx in &self.state.horizontals[range.clone()] {
                 let seg = &self.state.segments[seg_idx];
                 events.push(OutputEvent {
-                    x0: seg.start.x,
+                    x0: seg.p0.x,
                     connected_above: false,
-                    x1: seg.end.x,
+                    x1: seg.p3.x,
                     connected_below: false,
                     seg_idx,
                     sweep_idx: None,
@@ -1403,7 +1422,7 @@ mod tests {
             let segs = mk_segs(&xs);
 
             let (x0, x1) = new;
-            let new = Segment::new(Point::new(x0, 0.0), Point::new(x1, 1.0));
+            let new = Segment::straight(Point::new(x0, 0.0), Point::new(x1, 1.0));
 
             let mut line: SegmentOrder = SegmentOrder {
                 segs: (0..(xs.len() - 1))
@@ -1412,7 +1431,8 @@ mod tests {
             };
             let idx = line.insertion_idx(y, &segs, &new, eps);
 
-            assert!(line.find_invalid_order(y, &segs, eps).is_none());
+            dbg!(&line);
+            assert!(dbg!(line.find_invalid_order(y, &segs, eps)).is_none());
             line.segs.insert(
                 idx,
                 SegmentOrderEntry::new(SegIdx(xs.len() - 1), &segs, eps),
