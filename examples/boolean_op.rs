@@ -1,6 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 use clap::{Args, Parser};
+use kurbo::{BezPath, ParamCurve as _};
 use ordered_float::NotNan;
 use svg::Document;
 
@@ -63,19 +64,43 @@ struct Input {
     example: Option<Example>,
 }
 
-fn get_contours(input: &Input) -> anyhow::Result<(Vec<Vec<Point>>, Vec<Vec<Point>>)> {
+fn points_to_bez(ps: Vec<Point>) -> BezPath {
+    let mut ps = ps.into_iter();
+    let mut ret = BezPath::new();
+    if let Some(p) = ps.next() {
+        ret.move_to((p.x, p.y));
+    }
+    for p in ps {
+        ret.line_to((p.x, p.y));
+    }
+    ret.close_path();
+    ret
+}
+
+fn contours_to_bezs(
+    (cs0, cs1): (Vec<Vec<Point>>, Vec<Vec<Point>>),
+) -> (Vec<BezPath>, Vec<BezPath>) {
+    (
+        cs0.into_iter().map(points_to_bez).collect(),
+        cs1.into_iter().map(points_to_bez).collect(),
+    )
+}
+
+fn get_contours(input: &Input) -> anyhow::Result<(Vec<BezPath>, Vec<BezPath>)> {
     match (&input.input, &input.example) {
         (Some(path), None) => {
             let input = std::fs::read_to_string(path)?;
             let tree = usvg::Tree::from_str(&input, &usvg::Options::default())?;
-            let mut contours = svg_util::svg_to_contours(&tree);
+            let mut contours = svg_util::svg_to_bezpaths(&tree);
             let rest = contours.split_off(1);
             Ok((contours, rest))
         }
         (None, Some(example)) => match example {
-            Example::Checkerboard => Ok(generators::checkerboard(10)),
-            Example::SlantedCheckerboard => Ok(generators::slanted_checkerboard(10)),
-            Example::Slanties => Ok(generators::slanties(10)),
+            Example::Checkerboard => Ok(contours_to_bezs(generators::checkerboard(10))),
+            Example::SlantedCheckerboard => {
+                Ok(contours_to_bezs(generators::slanted_checkerboard(10)))
+            }
+            Example::Slanties => Ok(contours_to_bezs(generators::slanties(10))),
         },
         _ => unreachable!(),
     }
@@ -86,28 +111,12 @@ pub fn main() -> anyhow::Result<()> {
     let (shape_a, shape_b) = get_contours(&args.input)?;
 
     let eps = args.epsilon.unwrap_or(0.1);
-    let top = Topology::new(shape_a.clone(), shape_b.clone(), eps);
-    let mut contours = shape_a;
-    contours.extend(shape_b);
-
-    let ys: Vec<_> = contours.iter().flatten().map(|p| p.y).collect();
-    let xs: Vec<_> = contours.iter().flatten().map(|p| p.x).collect();
-    let min_x = xs
-        .iter()
-        .min_by_key(|x| CheapOrderedFloat::from(**x))
-        .unwrap();
-    let max_x = xs
-        .iter()
-        .max_by_key(|x| CheapOrderedFloat::from(**x))
-        .unwrap();
-    let min_y = ys
-        .iter()
-        .min_by_key(|x| CheapOrderedFloat::from(**x))
-        .unwrap();
-    let max_y = ys
-        .iter()
-        .max_by_key(|x| CheapOrderedFloat::from(**x))
-        .unwrap();
+    let top = Topology::from_paths(shape_a.clone(), shape_b.clone(), eps);
+    let bbox = top.bounding_box();
+    let min_x = bbox.min_x();
+    let min_y = bbox.min_y();
+    let max_x = bbox.max_x();
+    let max_y = bbox.max_y();
     let pad = 1.0 + eps;
     let one_width = max_x - min_x + 2.0 * pad;
     let one_height = max_y - min_y + 2.0 * pad;
@@ -118,13 +127,14 @@ pub fn main() -> anyhow::Result<()> {
     );
 
     // Draw the original document.
-    for c in contours {
-        let p = c.first().unwrap();
+    for c in shape_a.into_iter().chain(shape_b) {
+        let p = c.segments().next().unwrap().start();
         let mut data = svg::node::element::path::Data::new();
         data = data.move_to((p.x, p.y));
 
-        for p in &c[1..] {
-            data = data.line_to((p.x, p.y));
+        for s in c.segments() {
+            let c = s.to_cubic();
+            data = data.cubic_curve_to((c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y));
         }
 
         let path = svg::node::element::Path::new()

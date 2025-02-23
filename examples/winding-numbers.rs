@@ -23,7 +23,7 @@ pub fn main() -> anyhow::Result<()> {
     let contours = svg_util::svg_to_contours(&tree);
 
     let eps = args.epsilon.unwrap_or(0.1);
-    let top = Topology::new([contours[0].clone()], contours[1..].iter().cloned(), eps);
+    let top = Topology::from_polylines([contours[0].clone()], contours[1..].iter().cloned(), eps);
 
     let ys: Vec<_> = contours.iter().flatten().map(|p| p.y).collect();
     let xs: Vec<_> = contours.iter().flatten().map(|p| p.x).collect();

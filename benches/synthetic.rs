@@ -39,7 +39,7 @@ fn build_topology(c: &mut Criterion) {
     let eps = CheapOrderedFloat::from(0.01f64);
     c.bench_function("checkerboard: build topology", |b| {
         b.iter(|| {
-            black_box(Topology::new(
+            black_box(Topology::from_polylines(
                 contours_even.clone(),
                 contours_odd.clone(),
                 &eps,
@@ -52,7 +52,7 @@ fn build_topology(c: &mut Criterion) {
     let eps = CheapOrderedFloat::from(0.01f64);
     c.bench_function("slanted_checkerboard: build topology", |b| {
         b.iter(|| {
-            black_box(Topology::new(
+            black_box(Topology::from_polylines(
                 contours_even.clone(),
                 contours_odd.clone(),
                 &eps,

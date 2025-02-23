@@ -1,5 +1,6 @@
 //! Utilities for the examples that work with svg.
 
+use kurbo::{BezPath, ParamCurve as _};
 use linesweeper::Point;
 
 pub fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
@@ -57,6 +58,71 @@ pub fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
 
                     if !points.is_empty() {
                         ret.push(points);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    add_group(tree.root(), &mut ret);
+    ret
+}
+
+pub fn svg_to_bezpaths(tree: &usvg::Tree) -> Vec<BezPath> {
+    let mut ret = Vec::new();
+
+    fn pt(p: usvg::tiny_skia_path::Point) -> kurbo::Point {
+        kurbo::Point::new(p.x as f64, p.y as f64)
+    }
+
+    fn add_group(group: &usvg::Group, ret: &mut Vec<BezPath>) {
+        for child in group.children() {
+            match child {
+                usvg::Node::Group(group) => add_group(group, ret),
+                usvg::Node::Path(path) => {
+                    let data = path.data().clone().transform(path.abs_transform()).unwrap();
+                    let kurbo_els = data.segments().map(|seg| match seg {
+                        usvg::tiny_skia_path::PathSegment::MoveTo(p) => {
+                            kurbo::PathEl::MoveTo(pt(p))
+                        }
+                        usvg::tiny_skia_path::PathSegment::LineTo(p) => {
+                            kurbo::PathEl::LineTo(pt(p))
+                        }
+                        usvg::tiny_skia_path::PathSegment::QuadTo(p0, p1) => {
+                            kurbo::PathEl::QuadTo(pt(p0), pt(p1))
+                        }
+                        usvg::tiny_skia_path::PathSegment::CubicTo(p0, p1, p2) => {
+                            kurbo::PathEl::CurveTo(pt(p0), pt(p1), pt(p2))
+                        }
+                        usvg::tiny_skia_path::PathSegment::Close => kurbo::PathEl::ClosePath,
+                    });
+
+                    let mut path = BezPath::new();
+                    for el in kurbo_els {
+                        match el {
+                            kurbo::PathEl::MoveTo(p) => {
+                                // Even if it wasn't closed in the svg, we close it.
+                                if !path.is_empty() {
+                                    ret.push(std::mem::take(&mut path));
+                                }
+                                path.move_to(p);
+                            }
+                            kurbo::PathEl::ClosePath => {
+                                let p = path.segments().next().map(|s| s.start());
+                                if let Some(p) = p {
+                                    ret.push(std::mem::take(&mut path));
+                                    path.move_to(p);
+                                }
+                            }
+                            el => {
+                                path.push(el);
+                            }
+                        }
+                    }
+
+                    if !path.is_empty() {
+                        ret.push(path);
                     }
                 }
                 _ => {}

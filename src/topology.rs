@@ -5,6 +5,8 @@
 
 use std::collections::VecDeque;
 
+use kurbo::BezPath;
+
 use crate::{
     geom::Point,
     segments::{SegIdx, Segments},
@@ -469,12 +471,26 @@ impl Topology {
         out_idx
     }
 
+    pub fn from_paths(
+        set_a: impl IntoIterator<Item = BezPath>,
+        set_b: impl IntoIterator<Item = BezPath>,
+        eps: f64,
+    ) -> Self {
+        let mut segments = Segments::default();
+        let mut shape_a = Vec::new();
+        segments.add_bez_paths(set_a);
+        shape_a.resize(segments.len(), true);
+        segments.add_bez_paths(set_b);
+        shape_a.resize(segments.len(), false);
+        Self::from_segments(segments, shape_a, eps)
+    }
+
     /// Creates a new `Topology` for a collection of segments and a given tolerance.
     ///
     /// The segments must contain only closed polylines. For the purpose of boolean ops,
     /// the first closed polyline determines the first set and all the other polylines determine
     /// the other set. (Obviously this isn't flexible, and it will be changed. TODO)
-    pub fn new(
+    pub fn from_polylines(
         set_a: impl IntoIterator<Item = impl IntoIterator<Item = Point>>,
         set_b: impl IntoIterator<Item = impl IntoIterator<Item = Point>>,
         eps: f64,
@@ -485,7 +501,10 @@ impl Topology {
         shape_a.resize(segments.len(), true);
         segments.add_cycles(set_b);
         shape_a.resize(segments.len(), false);
+        Self::from_segments(segments, shape_a, eps)
+    }
 
+    fn from_segments(segments: Segments, shape_a: Vec<bool>, eps: f64) -> Self {
         let mut ret = Self {
             shape_a,
             open_segs: vec![VecDeque::new(); segments.len()],
@@ -822,8 +841,8 @@ impl Topology {
                         seg_contour[seg.idx.0] = Some(loop_contour_idx);
                     }
                     let mut points = Vec::with_capacity(segs.len() - seg_idx + 1);
-                    points.push(self.points[p].clone());
-                    points.extend(segs[seg_idx..].iter().map(|s| self.point(*s).clone()));
+                    points.push(self.points[p]);
+                    points.extend(segs[seg_idx..].iter().map(|s| *self.point(*s)));
                     ret.contours.push(Contour {
                         points,
                         parent: Some(contour_idx),
@@ -844,11 +863,24 @@ impl Topology {
             for &seg in &segs {
                 seg_contour[seg.idx.0] = Some(contour_idx);
             }
-            ret.contours[contour_idx.0].points =
-                segs.iter().map(|s| self.point(*s).clone()).collect();
+            ret.contours[contour_idx.0].points = segs.iter().map(|s| *self.point(*s)).collect();
         }
 
         ret
+    }
+
+    pub fn bounding_box(&self) -> kurbo::Rect {
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for p in self.points.inner.iter() {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        kurbo::Rect::from_points((min_x, min_y), (max_x, max_y))
     }
 }
 
@@ -1033,7 +1065,7 @@ mod tests {
     fn square() {
         let segs = [[p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]];
         let eps = 0.01;
-        let top = Topology::new(segs, EMPTY, eps);
+        let top = Topology::from_polylines(segs, EMPTY, eps);
         //check_intersections(&top);
 
         insta::assert_ron_snapshot!(top);
@@ -1043,7 +1075,7 @@ mod tests {
     fn diamond() {
         let segs = [[p(0.0, 0.0), p(1.0, 1.0), p(0.0, 2.0), p(-1.0, 1.0)]];
         let eps = 0.01;
-        let top = Topology::new(segs, EMPTY, eps);
+        let top = Topology::from_polylines(segs, EMPTY, eps);
         //check_intersections(&top);
 
         insta::assert_ron_snapshot!(top);
@@ -1054,7 +1086,7 @@ mod tests {
         let square = [[p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]];
         let diamond = [[p(0.0, 0.0), p(1.0, 1.0), p(0.0, 2.0), p(-1.0, 1.0)]];
         let eps = 0.01;
-        let top = Topology::new(square, diamond, eps);
+        let top = Topology::from_polylines(square, diamond, eps);
         //check_intersections(&top);
 
         insta::assert_ron_snapshot!(top);
@@ -1072,7 +1104,7 @@ mod tests {
             p(0.0, 1.0),
         ]];
         let eps = 0.01;
-        let top = Topology::new(segs, EMPTY, eps);
+        let top = Topology::from_polylines(segs, EMPTY, eps);
         //check_intersections(&top);
 
         insta::assert_ron_snapshot!(top);
@@ -1083,7 +1115,7 @@ mod tests {
         let outer = [[p(-2.0, -2.0), p(2.0, -2.0), p(2.0, 2.0), p(-2.0, 2.0)]];
         let inner = [[p(-1.0, -1.0), p(1.0, -1.0), p(1.0, 1.0), p(-1.0, 1.0)]];
         let eps = 0.01;
-        let top = Topology::new(outer, inner, eps);
+        let top = Topology::from_polylines(outer, inner, eps);
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
         insta::assert_ron_snapshot!((top, contours));
@@ -1097,7 +1129,7 @@ mod tests {
             [p(-0.1, 0.0), p(0.0, 2.0), p(0.1, 0.0)],
         ];
         let eps = 0.01;
-        let top = Topology::new(outer, inners, eps);
+        let top = Topology::from_polylines(outer, inners, eps);
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
         insta::assert_ron_snapshot!((top, contours));
@@ -1148,7 +1180,7 @@ mod tests {
             .map(|p| realize_perturbation(&base, p))
             .collect::<Vec<_>>();
         let eps = 0.1;
-        let _top = Topology::new(perturbed_polylines, EMPTY, eps);
+        let _top = Topology::from_polylines(perturbed_polylines, EMPTY, eps);
         //check_intersections(&top);
     }
 

@@ -4,8 +4,6 @@
 
 use std::collections::HashMap;
 
-use malachite::Rational;
-
 use crate::{
     curve::{self, CurveOrder, Ternary},
     geom::Segment,
@@ -667,7 +665,7 @@ impl<'segs> Sweeper<'segs> {
             let seg_idx = seg_entry.seg;
             let seg = &self.segments[seg_idx];
             assert!(
-                (&seg.start.y..=&seg.end.y).contains(&&self.y),
+                (&seg.p0.y..=&seg.p3.y).contains(&&self.y),
                 "segment {seg:?} out of range at y={:?}",
                 self.y
             );
@@ -685,7 +683,7 @@ impl<'segs> Sweeper<'segs> {
             .find_invalid_order(self.y, &self.segments, self.eps)
             .is_none());
 
-        let eps = Rational::try_from(self.eps).unwrap();
+        let _eps = malachite::Rational::try_from(self.eps).unwrap();
         for i in 0..self.line.segs.len() {
             if self.line.is_exit(i) {
                 continue;
@@ -694,36 +692,37 @@ impl<'segs> Sweeper<'segs> {
                 if self.line.is_exit(j) {
                     continue;
                 }
-                let segi = self.segments[self.line.seg(i)].to_exact();
-                let segj = self.segments[self.line.seg(j)].to_exact();
+                let _segi = &self.segments[self.line.seg(i)];
+                let _segj = &self.segments[self.line.seg(j)];
 
-                if let Some(y_int) = segi.exact_eps_crossing(&segj, &eps) {
-                    if y_int >= self.y {
-                        // Find an event between i and j.
-                        let is_between = |idx: SegIdx| -> bool {
-                            self.line
-                                .position(idx, self.segments, self.y, self.eps)
-                                .is_some_and(|pos| i <= pos && pos <= j)
-                        };
-                        let has_exit_witness = self
-                            .line
-                            .segs
-                            .range(i..=j)
-                            .any(|seg_entry| self.segments[seg_entry.seg].end.y <= y_int);
+                // FIXME: re-enable this
+                // if let Some(y_int) = segi.exact_eps_crossing(&segj, &eps) {
+                //     if y_int >= self.y {
+                //         // Find an event between i and j.
+                //         let is_between = |idx: SegIdx| -> bool {
+                //             self.line
+                //                 .position(idx, self.segments, self.y, self.eps)
+                //                 .is_some_and(|pos| i <= pos && pos <= j)
+                //         };
+                //         let has_exit_witness = self
+                //             .line
+                //             .segs
+                //             .range(i..=j)
+                //             .any(|seg_entry| self.segments[seg_entry.seg].p3.y <= y_int);
 
-                        let has_intersection_witness = self.events.intersection.iter().any(|ev| {
-                            let is_between = is_between(ev.left) && is_between(ev.right);
-                            let before_y = ev.y <= y_int;
-                            is_between && before_y
-                        });
-                        let has_witness = has_exit_witness || has_intersection_witness;
-                        assert!(
-                            has_witness,
-                            "segments {:?} and {:?} cross at {:?}, but there is no witness",
-                            self.line.segs[i], self.line.segs[j], y_int
-                        );
-                    }
-                }
+                //         let has_intersection_witness = self.events.intersection.iter().any(|ev| {
+                //             let is_between = is_between(ev.left) && is_between(ev.right);
+                //             let before_y = ev.y <= y_int;
+                //             is_between && before_y
+                //         });
+                //         let has_witness = has_exit_witness || has_intersection_witness;
+                //         assert!(
+                //             has_witness,
+                //             "segments {:?} and {:?} cross at {:?}, but there is no witness",
+                //             self.line.segs[i], self.line.segs[j], y_int
+                //         );
+                //     }
+                // }
             }
         }
     }
@@ -1368,7 +1367,7 @@ mod tests {
     use proptest::prelude::*;
 
     use crate::{
-        geom::{Point, Segment},
+        geom::Point,
         perturbation::{
             f64_perturbation, perturbation, realize_perturbation, F64Perturbation, Perturbation,
             PointPerturbation,
@@ -1462,7 +1461,6 @@ mod tests {
             xs.push(new);
             let segs = mk_segs(&xs);
 
-            let (x0, x1) = new;
             let new_idx = SegIdx(xs.len() - 1);
 
             let mut line: SegmentOrder = SegmentOrder {

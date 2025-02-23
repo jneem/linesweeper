@@ -1,6 +1,9 @@
 //! Geometric primitives, like points and lines.
 
-use crate::curve::{solve_t_for_y, solve_x_for_y};
+use arrayvec::ArrayVec;
+use kurbo::{CubicBez, ParamCurve as _};
+
+use crate::curve::{monic_quadratic_roots, solve_x_for_y};
 use crate::num::CheapOrderedFloat;
 
 /// A two-dimensional point.
@@ -82,6 +85,18 @@ impl From<(f64, f64)> for Point {
     }
 }
 
+impl From<Point> for kurbo::Point {
+    fn from(p: Point) -> Self {
+        kurbo::Point::new(p.x, p.y)
+    }
+}
+
+impl From<kurbo::Point> for Point {
+    fn from(p: kurbo::Point) -> Self {
+        Point::new(p.x, p.y)
+    }
+}
+
 /// A contour segment, in sweep-line order.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Segment {
@@ -134,6 +149,76 @@ fn monotonic_cubic(p0: &Point, p1: &Point, p2: &Point, p3: &Point) -> bool {
     // (q2 q0 - q1^2) / (q0 - q1 + q2 - q1). We've already checked that the
     // denominator is positive.
     q2 * q0 >= q1 * q1
+}
+
+pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
+    let mut ret = ArrayVec::new();
+    let q0 = cub.p1.y - cub.p0.y;
+    let q1 = cub.p2.y - cub.p1.y;
+    let q2 = cub.p3.y - cub.p2.y;
+
+    // Convert to the representation a t^2 + b t + c.
+    let c = q0;
+    let b = (q1 - q0) * 2.0;
+    let a = q0 - q1 * 2.0 + q2;
+
+    // Convert to the monic representation t^2 + b t + c.
+    let scaled_c = c * a.recip();
+    let scaled_b = b * a.recip();
+
+    let mut roots: ArrayVec<f64, 3> = ArrayVec::new();
+    if scaled_c.is_infinite() || scaled_b.is_infinite() {
+        // A was small; treat it as a linear equation.
+        // We could use scaled_c here, but the originals should be more accurate.
+        roots.push(-c / b)
+    } else {
+        let (r0, r1) = monic_quadratic_roots(scaled_b, scaled_c);
+        roots.push(r0);
+        if r1 != r0 {
+            roots.push(r1);
+        }
+    }
+
+    let mut last_r = 0.0;
+    //dbg!(&roots);
+    // TODO: better handling for roots that are very close to 0.0 or 1.0
+    for r in roots {
+        if r > 0.0 && r < 1.0 {
+            let mut piece_before = cub.subsegment(last_r..r);
+            // Thanks to numerical errors, we could end up with tangents that
+            // are just barely pointing in the wrong direction. Fix them up.
+            if piece_before.p0.y < piece_before.p3.y {
+                piece_before.p1.y = piece_before.p0.y.max(piece_before.p1.y);
+                piece_before.p2.y = piece_before.p3.y.min(piece_before.p2.y);
+                ret.push(piece_before);
+            } else if piece_before.p3.y < piece_before.p0.y {
+                piece_before.p1.y = piece_before.p0.y.min(piece_before.p1.y);
+                piece_before.p2.y = piece_before.p3.y.max(piece_before.p2.y);
+                ret.push(piece_before);
+            } else if piece_before.p0 != piece_before.p3 {
+                ret.push(piece_before);
+            }
+            last_r = r;
+        }
+    }
+
+    // TODO: c/p
+    let mut piece_before = cub.subsegment(last_r..1.0);
+    // Thanks to numerical errors, we could end up with tangents that
+    // are just barely pointing in the wrong direction. Fix them up.
+    if piece_before.p0.y < piece_before.p3.y {
+        piece_before.p1.y = piece_before.p0.y.max(piece_before.p1.y);
+        piece_before.p2.y = piece_before.p3.y.min(piece_before.p2.y);
+        ret.push(piece_before);
+    } else if piece_before.p3.y < piece_before.p0.y {
+        piece_before.p1.y = piece_before.p0.y.min(piece_before.p1.y);
+        piece_before.p2.y = piece_before.p3.y.max(piece_before.p2.y);
+        ret.push(piece_before);
+    } else if piece_before.p0 != piece_before.p3 {
+        ret.push(piece_before);
+    }
+
+    ret
 }
 
 impl Segment {
@@ -202,6 +287,9 @@ impl Segment {
         // FIXME: this allows for some slack in y, but it's super
         // hacky. Basically, we want a lower bound on the smallest
         // x position in a small y-neigborhood
+        //
+        // Actually, it would be better to remove this function altogether
+        // and rely on the ordering analysis for everything.
         self.at_y(y)
             .min(self.at_y((y - eps).max(self.p0.y)))
             .min(self.at_y((y + eps).min(self.p3.y)))

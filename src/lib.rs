@@ -100,7 +100,7 @@ pub fn boolean_op(
 
     // unwrap: the conversions only fail for NaN, and we already checked that our points
     // don't have any of those.
-    let top = Topology::new(
+    let top = Topology::from_polylines(
         set_a.iter().map(|ps| ps.iter().map(pt)),
         set_b.iter().map(|ps| ps.iter().map(pt)),
         eps,

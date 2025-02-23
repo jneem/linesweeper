@@ -91,7 +91,7 @@ fn build_topology(c: &mut Criterion) {
     const EMPTY: [[Point; 0]; 0] = [];
 
     c.bench_function("logo: build topology", |b| {
-        b.iter(|| black_box(Topology::new(contours.clone(), EMPTY, 0.01)));
+        b.iter(|| black_box(Topology::from_polylines(contours.clone(), EMPTY, 0.01)));
     });
 }
 

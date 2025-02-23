@@ -1,8 +1,7 @@
-use std::collections::HashMap;
+use kurbo::BezPath;
 
 use crate::{
-    curve::CurveOrder,
-    geom::{Point, Segment},
+    geom::{monotonic_pieces, Point, Segment},
     num::CheapOrderedFloat,
 };
 
@@ -78,7 +77,7 @@ impl Segments {
         if self.orientation[idx.0] {
             &self[idx].p0
         } else {
-            &self[idx].p0
+            &self[idx].p3
         }
     }
 
@@ -132,7 +131,7 @@ impl Segments {
 
         for (p, q) in pairs(&ps) {
             let (a, b, orient) = if p < q { (p, q, true) } else { (q, p, false) };
-            self.segs.push(Segment::straight(a.clone(), b.clone()));
+            self.segs.push(Segment::straight(*a, *b));
             self.orientation.push(orient);
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
@@ -170,7 +169,42 @@ impl Segments {
         self.update_enter_exit(old_len);
     }
 
-    // TODO: add a constructor for curves
+    pub fn add_bez_paths(&mut self, ps: impl IntoIterator<Item = BezPath>) {
+        let old_len = self.segs.len();
+        for p in ps {
+            self.add_path_without_updating_enter_exit(&p);
+        }
+        self.update_enter_exit(old_len);
+    }
+
+    fn add_path_without_updating_enter_exit(&mut self, p: &BezPath) {
+        let old_len = self.segs.len();
+        for seg in p.segments() {
+            // TODO: could have a fast path for line segments
+            let cubic = seg.to_cubic();
+            let cubics = monotonic_pieces(cubic);
+            for c in cubics {
+                let (p0, p1, p2, p3, orient) = if c.p0.y <= c.p3.y {
+                    (c.p0, c.p1, c.p2, c.p3, true)
+                } else {
+                    (c.p3, c.p2, c.p1, c.p0, false)
+                };
+                self.segs
+                    .push(Segment::new(p0.into(), p1.into(), p2.into(), p3.into()));
+                self.orientation.push(orient);
+                self.contour_prev
+                    .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
+                self.contour_next.push(Some(SegIdx(self.segs.len())));
+            }
+        }
+
+        if let Some(first) = self.contour_prev.get_mut(old_len) {
+            *first = Some(SegIdx(self.segs.len() - 1));
+        }
+        if let Some(last) = self.contour_next.last_mut() {
+            *last = Some(SegIdx(old_len));
+        }
+    }
 
     fn add_cycle_without_updating_enter_exit<P: Into<Point>>(
         &mut self,
@@ -185,7 +219,7 @@ impl Segments {
 
         for (p, q) in cyclic_pairs(&ps) {
             let (a, b, orient) = if p < q { (p, q, true) } else { (q, p, false) };
-            self.segs.push(Segment::straight(a.clone(), b.clone()));
+            self.segs.push(Segment::straight(*a, *b));
             self.orientation.push(orient);
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
