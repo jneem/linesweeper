@@ -33,6 +33,12 @@ pub struct CurveOrderIter<'a> {
     iter: std::slice::Iter<'a, CurveOrderEntry>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NextTouch {
+    Cross(f64),
+    Touch(f64),
+}
+
 impl Iterator for CurveOrderIter<'_> {
     type Item = (f64, f64, Ternary);
 
@@ -90,26 +96,32 @@ impl CurveOrder {
         }
     }
 
-    // FIXME: we need a way to distinguish between "touching" and going back
-    // and crossing. Only the latter should get an intersection event
-    pub fn next_less_after(&self, y: f64) -> Option<f64> {
-        let mut iter = self.iter().skip_while(|(_start, end, _order)| end <= &y);
+    pub fn next_touch_after(&self, y: f64) -> Option<NextTouch> {
+        let mut iter = self
+            .iter()
+            .skip_while(|(_start, end, _order)| end <= &y)
+            .skip_while(|(_start, _end, order)| *order == Ternary::Greater);
         let (before_y, after_y, order_at_y) = iter.next()?;
 
         match order_at_y {
-            Ternary::Less => Some(y),
-            Ternary::Ish => Some((after_y + before_y) / 2.0),
-
-            // Even if there's an "ish" interval after the current one,
-            // we'll decline to find an intersection if it's the last
-            // interval.
-            Ternary::Greater => match iter.next().and_then(|x| iter.next().map(|y| (x, y))) {
-                None => None,
-                Some(((ish_start, ish_end, ish_order), _)) => {
-                    debug_assert_eq!(ish_order, Ternary::Ish);
-                    Some((ish_end + ish_start) / 2.0)
+            Ternary::Less => Some(NextTouch::Cross(y)),
+            Ternary::Ish => {
+                // If this interval is the last one, we'll say there's no touch.
+                // It will get handled at the endpoint anyway.
+                let (_, _, next_order) = iter.next()?;
+                let cross_y = (after_y + before_y) / 2.0;
+                if next_order == Ternary::Less {
+                    Some(NextTouch::Cross(cross_y))
+                } else {
+                    debug_assert!(next_order == Ternary::Greater);
+                    Some(NextTouch::Touch(cross_y))
                 }
-            },
+            }
+
+            Ternary::Greater => {
+                // We skipped over these already.
+                unreachable!()
+            }
         }
     }
 
@@ -118,6 +130,13 @@ impl CurveOrder {
             .find(|(_start, end, _order)| end >= &y)
             .unwrap()
             .2
+    }
+
+    pub fn order_after(&self, y: f64) -> Ternary {
+        self.iter()
+            .skip_while(|(_start, end, _order)| end <= &y)
+            .find(|(_start, _end, order)| *order != Ternary::Ish)
+            .map_or(Ternary::Ish, |(_start, _end, order)| order)
     }
 }
 
@@ -626,6 +645,25 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
     let mut ret = CurveOrder::new(y0);
     if y0 < y1 {
         intersect_cubics_rec(c0, c1, y0, y1, eps, &mut ret);
+    } else if y0 == y1 {
+        // Neither of the curves should be purely horizontal, so it must be
+        // that they just overlap at a single point.
+        debug_assert!(c0.p0.y == c1.p3.y || c0.p3.y == c1.p0.y);
+
+        let (x0, x1) = if c0.p0.y == c1.p3.y {
+            (c0.p0.x, c1.p3.x)
+        } else {
+            (c0.p3.x, c1.p0.x)
+        };
+        let order = if x0 < x1 - eps {
+            Ternary::Greater
+        } else if x0 > x1 + eps {
+            Ternary::Less
+        } else {
+            Ternary::Ish
+        };
+
+        ret.push(y1, order);
     }
     ret
 }

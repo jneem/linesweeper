@@ -259,6 +259,34 @@ pub struct SweepLineBuffers {
     output_events: Vec<OutputEvent>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ComparisonCache {
+    inner: HashMap<(SegIdx, SegIdx), CurveOrder>,
+}
+
+impl ComparisonCache {
+    // FIXME: less cloning
+    fn compare_segments(
+        &mut self,
+        segments: &Segments,
+        i: SegIdx,
+        j: SegIdx,
+        eps: f64,
+    ) -> CurveOrder {
+        if let Some(order) = self.inner.get(&(i, j)) {
+            return order.clone();
+        }
+
+        let segi = &segments[i];
+        let segj = &segments[j];
+
+        let forward = curve::intersect_cubics(segi.to_kurbo(), segj.to_kurbo(), eps);
+        let reverse = forward.flip();
+        self.inner.insert((j, i), reverse);
+        self.inner.entry((i, j)).insert_entry(forward).get().clone()
+    }
+}
+
 /// Encapsulates the state of the sweep-line algorithm and allows iterating over sweep lines.
 #[derive(Clone, Debug)]
 pub struct Sweeper<'a> {
@@ -283,7 +311,7 @@ pub struct Sweeper<'a> {
     segs_needing_positions: Vec<usize>,
     changed_intervals: Vec<ChangedInterval>,
 
-    comparisons: HashMap<(SegIdx, SegIdx), CurveOrder>,
+    comparisons: ComparisonCache,
 }
 
 impl<'segs> Sweeper<'segs> {
@@ -300,27 +328,13 @@ impl<'segs> Sweeper<'segs> {
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
             horizontals: Vec::new(),
-            comparisons: HashMap::new(),
+            comparisons: ComparisonCache::default(),
         }
     }
 
-    // FIXME: less cloning
     fn compare_segments(&mut self, i: SegIdx, j: SegIdx) -> CurveOrder {
-        if let Some(order) = self.comparisons.get(&(i, j)) {
-            return order.clone();
-        }
-
-        let segi = &self.segments[i];
-        let segj = &self.segments[j];
-
-        let forward = curve::intersect_cubics(segi.to_kurbo(), segj.to_kurbo(), self.eps);
-        let reverse = forward.flip();
-        self.comparisons.insert((j, i), reverse);
         self.comparisons
-            .entry((i, j))
-            .insert_entry(forward)
-            .get()
-            .clone()
+            .compare_segments(self.segments, i, j, self.eps)
     }
 
     /// Moves the sweep forward, returning the next sweep line.
@@ -363,6 +377,7 @@ impl<'segs> Sweeper<'segs> {
         }
 
         self.compute_changed_intervals();
+        //dbg!(self.y, &self.line);
         Some(SweepLine {
             state: self,
             next_changed_interval: 0,
@@ -422,17 +437,25 @@ impl<'segs> Sweeper<'segs> {
             // in handle_intersection
 
             let cmp = self.compare_segments(seg_idx, other_idx);
-            dbg!(&cmp, seg_idx, other_idx);
-            dbg!(&self.segments[seg_idx], &self.segments[other_idx]);
 
-            if let Some(int_y) = cmp.next_less_after(y) {
-                dbg!(int_y);
-                let int_y = int_y.max(y);
-                self.events.push(IntersectionEvent {
-                    y: int_y.max(y),
-                    left: self.line.seg(start_idx),
-                    right: self.line.seg(j),
-                });
+            if let Some(touch) = cmp.next_touch_after(y) {
+                let int = match touch {
+                    curve::NextTouch::Cross(cross_y) => Some((y.max(cross_y), start_idx, j)),
+                    curve::NextTouch::Touch(touch_y) => {
+                        (touch_y > y).then_some((touch_y, j, start_idx))
+                    }
+                };
+                // TODO: the ordering of left/right is a little confusing here, because IntersectionEvent
+                // was originally designed under the assumption that every intersection is a crossing.
+                // Maybe the naming would be better if `IntersectionEvent::left` was the segment on the
+                // left after intersecting?
+                if let Some((int_y, left_idx, right_idx)) = int {
+                    self.events.push(IntersectionEvent {
+                        y: int_y,
+                        left: self.line.seg(left_idx),
+                        right: self.line.seg(right_idx),
+                    });
+                }
                 //height_bound = int_y.min(height_bound);
             }
 
@@ -461,14 +484,20 @@ impl<'segs> Sweeper<'segs> {
             let other_idx = self.line.seg(j);
 
             let cmp = self.compare_segments(other_idx, seg_idx);
-            dbg!(seg_idx, other_idx, &cmp);
-            if let Some(int_y) = cmp.next_less_after(y) {
-                let int_y = int_y.max(y);
-                self.events.push(dbg!(IntersectionEvent {
-                    left: self.line.seg(j),
-                    right: self.line.seg(start_idx),
-                    y: int_y.max(self.y),
-                }));
+            if let Some(touch) = cmp.next_touch_after(y) {
+                let int = match touch {
+                    curve::NextTouch::Cross(cross_y) => Some((y.max(cross_y), j, start_idx)),
+                    curve::NextTouch::Touch(touch_y) => {
+                        (touch_y > y).then_some((touch_y, start_idx, j))
+                    }
+                };
+                if let Some((int_y, left_idx, right_idx)) = int {
+                    self.events.push(IntersectionEvent {
+                        y: int_y,
+                        left: self.line.seg(left_idx),
+                        right: self.line.seg(right_idx),
+                    });
+                }
             }
         }
     }
@@ -494,9 +523,13 @@ impl<'segs> Sweeper<'segs> {
             return;
         }
 
-        let pos = self
-            .line
-            .insertion_idx(self.y, self.segments, new_seg, self.eps);
+        let pos = self.line.insertion_idx(
+            self.y,
+            self.segments,
+            seg_idx,
+            self.eps,
+            &mut self.comparisons,
+        );
         let contour_prev = if self.segments.positively_oriented(seg_idx) {
             self.segments.contour_prev(seg_idx)
         } else {
@@ -583,7 +616,6 @@ impl<'segs> Sweeper<'segs> {
     }
 
     fn handle_intersection(&mut self, left: SegIdx, right: SegIdx) {
-        dbg!(&self.y, &self.line.segs, left, right);
         let left_idx = self
             .line
             .position(left, self.segments, self.y, self.eps)
@@ -613,7 +645,6 @@ impl<'segs> Sweeper<'segs> {
                 }
             }
 
-            dbg!(&to_move);
             // Remove them in reverse to make indexing easier.
             for &(j, _) in to_move.iter().rev() {
                 self.line.segs.remove(j);
@@ -868,7 +899,16 @@ impl SegmentOrder {
     }
 
     // Finds an index into this sweep line where it's ok to insert this new segment.
-    fn insertion_idx(&self, y: f64, segments: &Segments, seg: &Segment, eps: f64) -> usize {
+    fn insertion_idx(
+        &self,
+        y: f64,
+        segments: &Segments,
+        seg_idx: SegIdx,
+        eps: f64,
+        comparer: &mut ComparisonCache,
+    ) -> usize {
+        dbg!(self, seg_idx);
+        let seg = &segments[seg_idx];
         let seg_x = seg.p0.x;
 
         // Fast path: we first do a binary search just with the horizontal bounding intervals.
@@ -885,27 +925,22 @@ impl SegmentOrder {
         } else if pos + 1 >= self.segs.len() || self.segs[pos + 1].lower_bound >= seg_x {
             // At this point, the segment before pos is definitely to our left, and the segment
             // after pos is definitely to our right (or there is no such segment). That means
-            // we can insert either before or after `pos`. We'll choose based on the position.
+            // we can insert either before or after `pos`. We'll choose based on what the order
+            // will be in the future, so as to minimize swapping.
             // (We could also try checking whether the new segment is a contour neighbor of
             // the segment at pos. That should be a pretty common case.)
-            let other = &segments[self.segs[pos].seg];
-            if seg_x < other.at_y(y) {
-                return pos;
-            } else {
-                return pos + 1;
-            }
+            let cmp = comparer.compare_segments(segments, seg_idx, self.segs[pos].seg, eps);
+            return match cmp.order_after(y) {
+                Ternary::Less => pos + 1,
+                Ternary::Ish => pos,
+                Ternary::Greater => pos,
+            };
         }
 
-        // Horizontal evaluation is accurate to within eps / 8, so if we want to compare
-        // two different horizontal coordinates, we need a slack of eps / 4.
-        let slack = eps / 4.0;
-
-        // A predicate that tests `other.upper(y) <= seg(y)` with no false positives.
-        // This is called `p` in the write-up.
+        // A predicate that tests whether `other` is definitely to the left of `seg` at `y`.
         let lower_pred = |other: &SegmentOrderEntry| -> bool {
-            let other = &segments[other.seg];
-            // This is `other.upper(y, eps) < seg_y - slack`, but rearranged for better accuracy.
-            seg_x - other.upper(y, eps) > slack
+            let cmp = comparer.compare_segments(segments, other.seg, seg_idx, eps);
+            cmp.order_at(y) == Ternary::Greater
         };
 
         // The rust stdlib docs say that we're not allowed to do this, because
@@ -918,18 +953,24 @@ impl SegmentOrder {
         // where the predicate returns false.
         let search_start = self.segs.partition_point(lower_pred);
         let mut idx = search_start;
-        // A predicate that tests `other.lower(y) <= seg(y)`, with no false negatives (and
-        // also some guarantees for the false positives). This is called `q` in the write-up.
-        let upper_pred = |other: &SegmentOrderEntry| -> bool {
-            let other = &segments[other.seg];
-            // This is `other.lower(y, eps) < seg(y) + slack`, but rearranged for accuracy
-            other.lower(y, eps) - seg_x < slack
-        };
         for i in search_start..self.segs.len() {
-            if upper_pred(&self.segs[i]) {
-                idx = i + 1;
-            } else {
-                break;
+            let cmp = comparer.compare_segments(segments, self.segs[i].seg, seg_idx, eps);
+            match cmp.order_at(y) {
+                Ternary::Less => {
+                    // The segment at i is definitely to the right of the new one.
+                    break;
+                }
+                Ternary::Ish => {
+                    // We could go either way, and we'll update our preference based on the
+                    // future ordering.
+                    if cmp.order_after(y) == Ternary::Greater {
+                        idx = i + 1;
+                    }
+                }
+                Ternary::Greater => {
+                    // The segment at i is definitely to the left of the new one.
+                    idx = i + 1;
+                }
             }
         }
         idx
@@ -1422,14 +1463,15 @@ mod tests {
             let segs = mk_segs(&xs);
 
             let (x0, x1) = new;
-            let new = Segment::straight(Point::new(x0, 0.0), Point::new(x1, 1.0));
+            let new_idx = SegIdx(xs.len() - 1);
 
             let mut line: SegmentOrder = SegmentOrder {
                 segs: (0..(xs.len() - 1))
                     .map(|i| SegmentOrderEntry::new(SegIdx(i), &segs, eps))
                     .collect(),
             };
-            let idx = line.insertion_idx(y, &segs, &new, eps);
+            let mut comparer = ComparisonCache::default();
+            let idx = line.insertion_idx(y, &segs, new_idx, eps, &mut comparer);
 
             dbg!(&line);
             assert!(dbg!(line.find_invalid_order(y, &segs, eps)).is_none());
