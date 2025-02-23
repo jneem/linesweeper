@@ -32,7 +32,7 @@ pub fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
                     });
 
                     let mut points = Vec::<Point>::new();
-                    kurbo::flatten(kurbo_els, 1e-6, |el| match el {
+                    kurbo::flatten(kurbo_els, 1e-3, |el| match el {
                         kurbo::PathEl::MoveTo(p) => {
                             // Even if it wasn't closed in the svg, we close it.
                             if !points.is_empty() {

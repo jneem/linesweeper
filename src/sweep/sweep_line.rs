@@ -907,7 +907,7 @@ impl SegmentOrder {
         eps: f64,
         comparer: &mut ComparisonCache,
     ) -> usize {
-        dbg!(self, seg_idx);
+        //dbg!(self, seg_idx);
         let seg = &segments[seg_idx];
         let seg_x = seg.p0.x;
 

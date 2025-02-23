@@ -1,8 +1,8 @@
 //! Utilities for generating examples, benchmarks, and test cases.
 
-use crate::{num::Float, Point};
+use crate::Point;
 
-type Contours<F> = Vec<Vec<Point<F>>>;
+type Contours = Vec<Vec<Point>>;
 
 /// Generate a bunch of squares, arranged in a grid.
 ///
@@ -12,12 +12,12 @@ type Contours<F> = Vec<Vec<Point<F>>>;
 ///
 /// If `slant` is non-zero, generates parallelograms instead of squares: the
 /// right-hand side of each square gets translated down by `slant`.
-fn squares<F: Float>((x0, y0): (F, F), size: F, offset: F, slant: F, count: usize) -> Contours<F> {
+fn squares((x0, y0): (f64, f64), size: f64, offset: f64, slant: f64, count: usize) -> Contours {
     let mut ret = Vec::new();
     for i in 0..count {
-        let x = x0.clone() + F::from_f32(i as f32) * offset.clone();
+        let x = x0.clone() + i as f64 * offset.clone();
         for j in 0..count {
-            let y = y0.clone() + F::from_f32(j as f32) * offset.clone();
+            let y = y0.clone() + j as f64 * offset.clone();
             ret.push(vec![
                 Point::new(x.clone(), y.clone()),
                 Point::new(x.clone(), y.clone() + size.clone()),
@@ -54,11 +54,10 @@ fn squares<F: Float>((x0, y0): (F, F), size: F, offset: F, slant: F, count: usiz
 /// We return the pattern in two parts: the outer collection of `n x n`
 /// non-overlapping squares, and the inner collection of `(n - 1) x (n - 1)`
 /// non-overlapping squares.
-pub fn checkerboard<F: Float>(n: usize) -> (Contours<F>, Contours<F>) {
-    let f = F::from_f32;
+pub fn checkerboard(n: usize) -> (Contours, Contours) {
     (
-        squares((f(0.0), f(0.0)), f(30.0), f(40.0), f(0.0), n),
-        squares((f(20.0), f(20.0)), f(30.0), f(40.0), f(0.0), n - 1),
+        squares((0.0, 0.0), 30.0, 40.0, 0.0, n),
+        squares((20.0, 20.0), 30.0, 40.0, 0.0, n - 1),
     )
 }
 
@@ -66,36 +65,34 @@ pub fn checkerboard<F: Float>(n: usize) -> (Contours<F>, Contours<F>) {
 ///
 /// Horizontal lines have special handling in the sweep-line algorithm, so
 /// their presence or absence can affect performance.
-pub fn slanted_checkerboard<F: Float>(n: usize) -> (Contours<F>, Contours<F>) {
-    let f = F::from_f32;
+pub fn slanted_checkerboard(n: usize) -> (Contours, Contours) {
     (
-        squares((f(0.0), f(0.0)), f(30.0), f(40.0), f(1.0), n),
-        squares((f(20.0), f(20.0)), f(30.0), f(40.0), f(1.0), n - 1),
+        squares((0.0, 0.0), 30.0, 40.0, 1.0, n),
+        squares((20.0, 20.0), 30.0, 40.0, 1.0, n - 1),
     )
 }
 
 /// The "evens" are a bunch of long, skinny parallelograms going from top-left
 /// to bottom-right. The "odds" go from top-right to bottom-left.
-pub fn slanties<F: Float>(n: usize) -> (Contours<F>, Contours<F>) {
-    let f = F::from_f32;
-    let h = f(20.0) * f(n as f32);
+pub fn slanties(n: usize) -> (Contours, Contours) {
+    let h = 20.0 * n as f64;
 
     let mut even = Vec::new();
     let mut odd = Vec::new();
     for i in 0..n {
-        let x_off = f(20.0) * f(i as f32);
+        let x_off = 20.0 * i as f64;
         even.push(vec![
-            Point::new(x_off.clone(), f(0.0)),
-            Point::new(x_off.clone() + h.clone(), h.clone()),
-            Point::new(x_off.clone() + h.clone() + f(10.0), h.clone()),
-            Point::new(x_off.clone() + f(10.0), f(0.0)),
+            Point::new(x_off, 0.0),
+            Point::new(x_off + h, h),
+            Point::new(x_off + h + 10.0, h),
+            Point::new(x_off + 10.0, 0.0),
         ]);
 
         odd.push(vec![
-            Point::new(x_off.clone() + h.clone(), f(0.0)),
-            Point::new(x_off.clone(), h.clone()),
-            Point::new(x_off.clone() + f(10.0), h.clone()),
-            Point::new(x_off.clone() + h.clone() + f(10.0), f(0.0)),
+            Point::new(x_off + h, 0.0),
+            Point::new(x_off, h),
+            Point::new(x_off + 10.0, h),
+            Point::new(x_off + h + 10.0, 0.0),
         ]);
     }
 

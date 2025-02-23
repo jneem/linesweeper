@@ -4,9 +4,7 @@ use clap::{Args, Parser};
 use ordered_float::NotNan;
 use svg::Document;
 
-use linesweeper::{generators, topology::Topology, Point};
-
-type Float = NotNan<f64>;
+use linesweeper::{generators, num::CheapOrderedFloat, topology::Topology, Point};
 
 mod svg_util;
 
@@ -43,6 +41,7 @@ enum Example {
 
 #[derive(Parser)]
 struct Cli {
+    #[arg(long)]
     output: PathBuf,
 
     #[command(flatten)]
@@ -55,7 +54,7 @@ struct Cli {
     epsilon: Option<f64>,
 }
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 #[group(required = true, multiple = false)]
 struct Input {
     input: Option<PathBuf>,
@@ -64,7 +63,7 @@ struct Input {
     example: Option<Example>,
 }
 
-fn get_contours(input: &Input) -> anyhow::Result<(Vec<Vec<Point<Float>>>, Vec<Vec<Point<Float>>>)> {
+fn get_contours(input: &Input) -> anyhow::Result<(Vec<Vec<Point>>, Vec<Vec<Point>>)> {
     match (&input.input, &input.example) {
         (Some(path), None) => {
             let input = std::fs::read_to_string(path)?;
@@ -86,18 +85,30 @@ pub fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     let (shape_a, shape_b) = get_contours(&args.input)?;
 
-    let eps = args.epsilon.unwrap_or(0.1).try_into().unwrap();
-    let top = Topology::new(shape_a.clone(), shape_b.clone(), &eps);
+    let eps = args.epsilon.unwrap_or(0.1);
+    let top = Topology::new(shape_a.clone(), shape_b.clone(), eps);
     let mut contours = shape_a;
     contours.extend(shape_b);
 
     let ys: Vec<_> = contours.iter().flatten().map(|p| p.y).collect();
     let xs: Vec<_> = contours.iter().flatten().map(|p| p.x).collect();
-    let min_x = xs.iter().min().unwrap().into_inner();
-    let max_x = xs.iter().max().unwrap().into_inner();
-    let min_y = ys.iter().min().unwrap().into_inner();
-    let max_y = ys.iter().max().unwrap().into_inner();
-    let pad = 1.0 + eps.into_inner();
+    let min_x = xs
+        .iter()
+        .min_by_key(|x| CheapOrderedFloat::from(**x))
+        .unwrap();
+    let max_x = xs
+        .iter()
+        .max_by_key(|x| CheapOrderedFloat::from(**x))
+        .unwrap();
+    let min_y = ys
+        .iter()
+        .min_by_key(|x| CheapOrderedFloat::from(**x))
+        .unwrap();
+    let max_y = ys
+        .iter()
+        .max_by_key(|x| CheapOrderedFloat::from(**x))
+        .unwrap();
+    let pad = 1.0 + eps;
     let one_width = max_x - min_x + 2.0 * pad;
     let one_height = max_y - min_y + 2.0 * pad;
     let stroke_width = (max_y - min_y).max(max_x - max_y) / 512.0;
@@ -110,10 +121,10 @@ pub fn main() -> anyhow::Result<()> {
     for c in contours {
         let p = c.first().unwrap();
         let mut data = svg::node::element::path::Data::new();
-        data = data.move_to((p.x.into_inner(), p.y.into_inner()));
+        data = data.move_to((p.x, p.y));
 
         for p in &c[1..] {
-            data = data.line_to((p.x.into_inner(), p.y.into_inner()));
+            data = data.line_to((p.x, p.y));
         }
 
         let path = svg::node::element::Path::new()
@@ -182,7 +193,7 @@ fn add_op(
     mut doc: Document,
     op: Op,
     non_zero: bool,
-    top: &Topology<Float>,
+    top: &Topology,
     x_off: f64,
     y_off: f64,
     stroke_width: f64,
@@ -220,10 +231,10 @@ fn add_op(
                 continue;
             };
 
-            let (x, y) = (p.x.into_inner(), p.y.into_inner());
+            let (x, y) = (p.x, p.y);
             data = data.move_to((x + x_off, y + y_off));
             for p in contour {
-                let (x, y) = (p.x.into_inner(), p.y.into_inner());
+                let (x, y) = (p.x, p.y);
                 data = data.line_to((x + x_off, y + y_off));
             }
             data = data.close();
