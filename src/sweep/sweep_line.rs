@@ -2,7 +2,7 @@
 //!
 //! This algorithm is documented in `docs/sweep.typ`.
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use kurbo::{ParamCurve as _, ParamCurveNearest};
 
@@ -311,7 +311,7 @@ pub struct Sweeper<'a> {
     segs_needing_positions: Vec<usize>,
     changed_intervals: Vec<ChangedInterval>,
 
-    comparisons: ComparisonCache,
+    comparisons: RefCell<ComparisonCache>,
 }
 
 impl<'segs> Sweeper<'segs> {
@@ -328,12 +328,13 @@ impl<'segs> Sweeper<'segs> {
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
             horizontals: Vec::new(),
-            comparisons: ComparisonCache::default(),
+            comparisons: RefCell::new(ComparisonCache::default()),
         }
     }
 
-    fn compare_segments(&mut self, i: SegIdx, j: SegIdx) -> CurveOrder {
+    fn compare_segments(&self, i: SegIdx, j: SegIdx) -> CurveOrder {
         self.comparisons
+            .borrow_mut()
             .compare_segments(self.segments, i, j, self.eps)
     }
 
@@ -528,7 +529,7 @@ impl<'segs> Sweeper<'segs> {
             self.segments,
             seg_idx,
             self.eps,
-            &mut self.comparisons,
+            &mut self.comparisons.borrow_mut(),
         );
         let contour_prev = if self.segments.positively_oriented(seg_idx) {
             self.segments.contour_prev(seg_idx)
@@ -796,15 +797,6 @@ impl<'segs> Sweeper<'segs> {
         debug_assert!(self.changed_intervals.is_empty());
         self.compute_horizontal_changed_intervals();
 
-        let y = self.y;
-
-        // We compare horizontal positions to decide when to stop iterating. Those positions
-        // are each accurate to eps / 8, so we compare them with slack eps / 4 to ensure no
-        // false negatives.
-        let eps = self.eps;
-        let segments = &self.segments;
-        let slack = eps / 4.0;
-
         for &idx in &self.segs_needing_positions {
             if self.line.segs[idx].in_changed_interval {
                 continue;
@@ -816,19 +808,17 @@ impl<'segs> Sweeper<'segs> {
             self.line.segs[idx].set_old_idx_if_unset(idx);
 
             self.line.segs[idx].in_changed_interval = true;
-            let seg_idx = self.line.segs[idx].seg;
             let mut start_idx = idx;
             let mut end_idx = idx + 1;
-            let mut seg_min = segments[seg_idx].lower(y, eps);
-            let mut seg_max = segments[seg_idx].upper(y, eps);
 
             for i in (idx + 1)..self.line.segs.len() {
+                let seg_idx = self.line.seg(i - 1);
                 let next_seg_idx = self.line.seg(i);
-                let next_seg = &segments[next_seg_idx];
-                if next_seg.lower(y, eps) - seg_max > slack {
+                let cmp = self.compare_segments(seg_idx, next_seg_idx);
+                if cmp.order_at(self.y) == Ternary::Greater {
                     break;
                 } else {
-                    seg_max = next_seg.upper(y, eps);
+                    debug_assert_eq!(cmp.order_at(self.y), Ternary::Ish);
                     self.line.segs[i].in_changed_interval = true;
                     self.line.segs[i].set_old_idx_if_unset(i);
 
@@ -838,11 +828,12 @@ impl<'segs> Sweeper<'segs> {
 
             for i in (0..start_idx).rev() {
                 let prev_seg_idx = self.line.seg(i);
-                let prev_seg = &segments[prev_seg_idx];
-                if seg_min - prev_seg.upper(y, eps) > slack {
+                let seg_idx = self.line.seg(i + 1);
+                let cmp = self.compare_segments(prev_seg_idx, seg_idx);
+                if cmp.order_at(self.y) == Ternary::Greater {
                     break;
                 } else {
-                    seg_min = prev_seg.lower(y, eps);
+                    debug_assert_eq!(cmp.order_at(self.y), Ternary::Ish);
                     self.line.segs[i].in_changed_interval = true;
                     self.line.segs[i].set_old_idx_if_unset(i);
 

@@ -320,11 +320,13 @@ fn push_quadratic_signs(
 ) {
     debug_assert!(lower < upper);
 
-    let mut push = |end: f64, order: Ternary| {
+    let mut push = |end: f64, order: Ternary, last: bool| {
         let end = if order == Ternary::Ish {
             end + slop
-        } else {
+        } else if !last {
             end - slop
+        } else {
+            end
         };
         if end > x0
             && out
@@ -345,22 +347,22 @@ fn push_quadratic_signs(
         let root1 = -(c - upper) / b;
         if root0.is_finite() && root1.is_finite() {
             if b > 0.0 {
-                push(root0, Ternary::Less);
-                push(root1, Ternary::Ish);
-                push(x1, Ternary::Greater);
+                push(root0, Ternary::Less, false);
+                push(root1, Ternary::Ish, false);
+                push(x1, Ternary::Greater, true);
             } else {
-                push(root1, Ternary::Greater);
-                push(root0, Ternary::Ish);
-                push(x1, Ternary::Less);
+                push(root1, Ternary::Greater, false);
+                push(root0, Ternary::Ish, false);
+                push(x1, Ternary::Less, true);
             }
         } else if c < lower {
             // It's basically a constant, so we just need to check where
             // the constant is in comparison to our targets.
-            push(x1, Ternary::Less);
+            push(x1, Ternary::Less, true);
         } else if c > upper {
-            push(x1, Ternary::Greater);
+            push(x1, Ternary::Greater, true);
         } else {
-            push(x1, Ternary::Ish);
+            push(x1, Ternary::Ish, true);
         }
         return;
     }
@@ -373,20 +375,20 @@ fn push_quadratic_signs(
         debug_assert!(r_upper <= r_lower || r_lower.is_infinite());
         debug_assert!(s_lower <= s_upper);
 
-        push(r_upper, Ternary::Greater);
-        push(r_lower, Ternary::Ish);
-        push(s_lower, Ternary::Less);
-        push(s_upper, Ternary::Ish);
-        push(x1, Ternary::Greater);
+        push(r_upper, Ternary::Greater, false);
+        push(r_lower, Ternary::Ish, false);
+        push(s_lower, Ternary::Less, false);
+        push(s_upper, Ternary::Ish, false);
+        push(x1, Ternary::Greater, true);
     } else {
         debug_assert!(r_upper >= r_lower || r_upper.is_infinite());
         debug_assert!(s_lower >= s_upper);
 
-        push(r_lower, Ternary::Less);
-        push(r_upper, Ternary::Ish);
-        push(s_upper, Ternary::Greater);
-        push(s_lower, Ternary::Ish);
-        push(x1, Ternary::Less);
+        push(r_lower, Ternary::Less, false);
+        push(r_upper, Ternary::Ish, false);
+        push(s_upper, Ternary::Greater, false);
+        push(s_lower, Ternary::Ish, false);
+        push(x1, Ternary::Less, true);
     }
 }
 
@@ -665,6 +667,7 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
 
         ret.push(y1, order);
     }
+    debug_assert_eq!(ret.cmps.last().unwrap().end, y1);
     ret
 }
 
