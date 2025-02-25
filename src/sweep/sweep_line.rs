@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+use kurbo::{ParamCurve as _, ParamCurveNearest};
+
 use crate::{
     curve::{self, CurveOrder, Ternary},
     geom::Segment,
@@ -741,18 +743,34 @@ impl<'segs> Sweeper<'segs> {
             // horizontal segment, but the index before definitely doesn't.
             let start_idx = self.line.segs.partition_point(|other_entry| {
                 let other_seg = &self.segments[other_entry.seg];
-                // FIXME: this is likely to have some numerical issues when the other
-                // segment is almost horizontal. Should have something that allows for eps slack
-                // in y also.
-                seg.p0.x > other_seg.at_y(self.y) + self.eps
+
+                // We test using Euclidean distance instead of just comparing
+                // x coordinates because if other_seg is almost horizontal then
+                // a tiny error in solving it for y will make a big error in
+                // its x coordinate.
+                let p = kurbo::Point::new(seg.p0.x, seg.p0.y);
+                let other_seg = other_seg.to_kurbo();
+                let nearest = other_seg.nearest(p, self.eps / 2.0);
+
+                // "other's nearest point to p is to the left of p" is a reasonable
+                // and robust proxy for "other crosses self.y to the left of p", because
+                // "other" is monotonic in y
+                nearest.distance_sq > 4.0 * self.eps * self.eps
+                    && other_seg.eval(nearest.t).x < seg.p0.x
             });
 
             let mut end_idx = start_idx;
             for j in start_idx..self.line.segs.len() {
                 let other_entry = &mut self.line.segs[j];
                 let other_seg = &self.segments[other_entry.seg];
-                // FIXME: as above
-                if other_seg.at_y(self.y) - self.eps <= seg.p3.x {
+
+                let p = kurbo::Point::new(seg.p3.x, seg.p3.y);
+                let other_seg = other_seg.to_kurbo();
+                let nearest = other_seg.nearest(p, self.eps / 2.0);
+
+                if nearest.distance_sq <= 4.0 * self.eps * self.eps
+                    || other_seg.eval(nearest.t).x < seg.p3.x
+                {
                     // Ensure that every segment in the changed interval has `old_idx` set;
                     // see also `compute_changed_intervals`.
                     self.line.segs[j].set_old_idx_if_unset(j);
