@@ -314,7 +314,6 @@ fn push_quadratic_signs(
     upper: f64,
     x0: f64,
     x1: f64,
-    // TODO: explain this slop
     slop: f64,
     out: &mut CurveOrder,
 ) {
@@ -639,6 +638,36 @@ fn intersect_cubics_rec(
     }
 }
 
+fn bboxes_disjoint(c0: CubicBez, c1: CubicBez, y0: f64, y1: f64, eps: f64) -> bool {
+    let c0 = c0.subsegment(solve_t_for_y(c0, y0)..solve_t_for_y(c0, y1));
+    let c1 = c1.subsegment(solve_t_for_y(c1, y0)..solve_t_for_y(c1, y1));
+    let b0 = Shape::bounding_box(&c0);
+    let b1 = Shape::bounding_box(&c1);
+    b0.max_x() + eps < b1.min_x() || b1.min_x() + eps < b0.max_x()
+}
+
+// TODO: docme
+fn fix_up_endpoints(order: &mut CurveOrder, c0: CubicBez, c1: CubicBez, eps: f64) {
+    if order.cmps.len() <= 1 {
+        return;
+    }
+
+    let first = order.cmps.first().unwrap();
+    if first.order == Ternary::Ish && bboxes_disjoint(c0, c1, order.start, first.end, eps) {
+        order.cmps.remove(0);
+    }
+
+    if order.cmps.len() <= 1 {
+        return;
+    }
+    let last = order.cmps.last().unwrap();
+    let prev = order.cmps.len() - 2;
+    if last.order == Ternary::Ish && bboxes_disjoint(c0, c1, order.cmps[prev].end, last.end, eps) {
+        order.cmps[prev].end = last.end;
+        order.cmps.pop();
+    }
+}
+
 pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
     // dbg!(c0, c1);
     let y0 = c0.p0.y.max(c1.p0.y);
@@ -667,6 +696,7 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
 
         ret.push(y1, order);
     }
+    fix_up_endpoints(&mut ret, c0, c1, eps);
     debug_assert_eq!(ret.cmps.last().unwrap().end, y1);
     ret
 }
@@ -703,5 +733,17 @@ mod test {
         let y = 0.012468608207852864;
         let t = solve_t_for_y(c, y);
         assert!(dbg!(c.eval(t).y) - y.abs() < 1e-8);
+    }
+
+    #[test]
+    fn non_touching() {
+        let eps = 0.01;
+        let a = Line::new((-1e6, 0.0), (0.0, 1.0));
+        let b = Line::new((2.5 * eps, 0.0), (2.5 * eps, 1.0));
+        let a = PathSeg::Line(a).to_cubic();
+        let b = PathSeg::Line(b).to_cubic();
+
+        let cmp = intersect_cubics(a, b, eps);
+        assert_eq!(cmp.order_at(1.0), Ternary::Greater);
     }
 }

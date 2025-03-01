@@ -704,7 +704,12 @@ impl<'segs> Sweeper<'segs> {
 
         assert!(self
             .line
-            .find_invalid_order(self.y, &self.segments, self.eps)
+            .find_invalid_order(
+                self.y,
+                &self.segments,
+                self.comparisons.borrow_mut().deref_mut(),
+                self.eps
+            )
             .is_none());
 
         let _eps = malachite::Rational::try_from(self.eps).unwrap();
@@ -716,37 +721,47 @@ impl<'segs> Sweeper<'segs> {
                 if self.line.is_exit(j) {
                     continue;
                 }
-                let _segi = &self.segments[self.line.seg(i)];
-                let _segj = &self.segments[self.line.seg(j)];
+                let segi = self.line.seg(i);
+                let segj = self.line.seg(j);
 
-                // FIXME: re-enable this
-                // if let Some(y_int) = segi.exact_eps_crossing(&segj, &eps) {
-                //     if y_int >= self.y {
-                //         // Find an event between i and j.
-                //         let is_between = |idx: SegIdx| -> bool {
-                //             self.line
-                //                 .position(idx, self.segments, self.y, self.eps)
-                //                 .is_some_and(|pos| i <= pos && pos <= j)
-                //         };
-                //         let has_exit_witness = self
-                //             .line
-                //             .segs
-                //             .range(i..=j)
-                //             .any(|seg_entry| self.segments[seg_entry.seg].p3.y <= y_int);
+                if let Some(next_touch) = self.compare_segments(segi, segj).next_touch_after(self.y)
+                {
+                    let (y_int, really) = match next_touch {
+                        curve::NextTouch::Cross(y) => (y, true),
+                        curve::NextTouch::Touch(y) => (y, y > self.y),
+                    };
+                    if y_int >= self.y && really {
+                        // Find an event between i and j.
+                        let is_between = |idx: SegIdx| -> bool {
+                            self.line
+                                .position(
+                                    idx,
+                                    self.segments,
+                                    self.comparisons.borrow_mut().deref_mut(),
+                                    self.y,
+                                    self.eps,
+                                )
+                                .is_some_and(|pos| i <= pos && pos <= j)
+                        };
+                        let has_exit_witness = self
+                            .line
+                            .segs
+                            .range(i..=j)
+                            .any(|seg_entry| self.segments[seg_entry.seg].p3.y <= y_int);
 
-                //         let has_intersection_witness = self.events.intersection.iter().any(|ev| {
-                //             let is_between = is_between(ev.left) && is_between(ev.right);
-                //             let before_y = ev.y <= y_int;
-                //             is_between && before_y
-                //         });
-                //         let has_witness = has_exit_witness || has_intersection_witness;
-                //         assert!(
-                //             has_witness,
-                //             "segments {:?} and {:?} cross at {:?}, but there is no witness",
-                //             self.line.segs[i], self.line.segs[j], y_int
-                //         );
-                //     }
-                // }
+                        let has_intersection_witness = self.events.intersection.iter().any(|ev| {
+                            let is_between = is_between(ev.left) && is_between(ev.right);
+                            let before_y = ev.y <= y_int;
+                            is_between && before_y
+                        });
+                        let has_witness = has_exit_witness || has_intersection_witness;
+                        assert!(
+                            has_witness,
+                            "segments {:?} and {:?} cross at {:?}, but there is no witness. y={}, intersections={:?}",
+                            self.line.segs[i].seg, self.line.segs[j].seg, y_int, self.y, self.events.intersection
+                        );
+                    }
+                }
             }
         }
     }
@@ -911,15 +926,17 @@ impl SegmentOrder {
         &self,
         y: f64,
         segments: &Segments,
+        cmp: &mut ComparisonCache,
         eps: f64,
     ) -> Option<(SegIdx, SegIdx)> {
         for i in 0..self.segs.len() {
             for j in (i + 1)..self.segs.len() {
-                let segi = &segments[self.seg(i)];
-                let segj = &segments[self.seg(j)];
+                let segi = self.seg(i);
+                let segj = self.seg(j);
 
-                if segi.lower(y, eps) > segj.upper(y, eps) {
-                    return Some((self.seg(i), self.seg(j)));
+                let order = cmp.compare_segments(segments, segi, segj, eps);
+                if order.order_at(y) == Ternary::Less {
+                    return Some((segi, segj));
                 }
             }
         }
@@ -1451,7 +1468,8 @@ mod tests {
                     .collect(),
             };
 
-            line.find_invalid_order(y, &segs, eps)
+            let mut cmp = ComparisonCache::default();
+            line.find_invalid_order(y, &segs, &mut cmp, eps)
                 .map(|(a, b)| (a.0, b.0))
         }
 
@@ -1461,7 +1479,7 @@ mod tests {
         assert!(check_order(crossing, 0.5, eps).is_none());
         assert_eq!(check_order(crossing, 1.0, eps), Some((0, 1)));
 
-        let not_quite_crossing = &[(-0.75 * eps, 0.75 * eps), (0.75 * eps, -0.75 * eps)];
+        let not_quite_crossing = &[(-0.5 * eps, 0.5 * eps), (0.5 * eps, -0.5 * eps)];
         assert!(check_order(not_quite_crossing, 0.0, eps).is_none());
         assert!(check_order(not_quite_crossing, 0.5, eps).is_none());
         assert!(check_order(not_quite_crossing, 1.0, eps).is_none());
@@ -1471,7 +1489,7 @@ mod tests {
         assert!(check_order(barely_crossing, 0.5, eps).is_none());
         assert_eq!(check_order(barely_crossing, 1.0, eps), Some((0, 1)));
 
-        let non_adj_crossing = &[(-1.5 * eps, 1.5 * eps), (0.0, 0.0), (1.5 * eps, -1.5 * eps)];
+        let non_adj_crossing = &[(-eps, eps), (0.0, 0.0), (eps, -eps)];
         assert!(check_order(non_adj_crossing, 0.0, eps).is_none());
         assert!(check_order(non_adj_crossing, 0.5, eps).is_none());
         assert_eq!(check_order(non_adj_crossing, 1.0, eps), Some((0, 2)));
@@ -1505,12 +1523,14 @@ mod tests {
             let idx = line.insertion_idx(y, &segs, new_idx, eps, &mut comparer);
 
             dbg!(&line);
-            assert!(dbg!(line.find_invalid_order(y, &segs, eps)).is_none());
+            assert!(dbg!(line.find_invalid_order(y, &segs, &mut comparer, eps)).is_none());
             line.segs.insert(
                 idx,
                 SegmentOrderEntry::new(SegIdx(xs.len() - 1), &segs, eps),
             );
-            assert!(line.find_invalid_order(y, &segs, eps).is_none());
+            assert!(line
+                .find_invalid_order(y, &segs, &mut comparer, eps)
+                .is_none());
             idx
         }
 
