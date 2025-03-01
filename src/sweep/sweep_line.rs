@@ -2,7 +2,7 @@
 //!
 //! This algorithm is documented in `docs/sweep.typ`.
 
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, ops::DerefMut};
 
 use kurbo::{ParamCurve as _, ParamCurveNearest};
 
@@ -602,12 +602,21 @@ impl<'segs> Sweeper<'segs> {
     /// Marks a segment as needing to exit, but doesn't actually remove it
     /// from the sweep-line. See `SegmentOrderEntry::exit` for an explanation.
     fn handle_exit(&mut self, seg_idx: SegIdx) {
-        let Some(pos) = self.line.position(seg_idx, self.segments, self.y, self.eps) else {
-            // It isn't an error if we don't find the segment that's exiting: it
-            // might have been marked as a contour continuation, in which case
-            // it's now the `old_seg` of some sweep-line entry and not the `seg`.
+        let pos = self
+            .line
+            .position(
+                seg_idx,
+                self.segments,
+                self.comparisons.borrow_mut().deref_mut(),
+                self.y,
+                self.eps,
+            )
+            .unwrap();
+
+        if self.line.segs[pos].old_seg == Some(seg_idx) {
             return;
-        };
+        }
+
         // It's important that this goes before `scan_for_removal`, so that
         // the scan doesn't get confused by the segment that should be marked
         // for exit.
@@ -619,11 +628,23 @@ impl<'segs> Sweeper<'segs> {
     fn handle_intersection(&mut self, left: SegIdx, right: SegIdx) {
         let left_idx = self
             .line
-            .position(left, self.segments, self.y, self.eps)
+            .position(
+                left,
+                self.segments,
+                self.comparisons.borrow_mut().deref_mut(),
+                self.y,
+                self.eps,
+            )
             .unwrap();
         let right_idx = self
             .line
-            .position(right, self.segments, self.y, self.eps)
+            .position(
+                right,
+                self.segments,
+                self.comparisons.borrow_mut().deref_mut(),
+                self.y,
+                self.eps,
+            )
             .unwrap();
         if left_idx < right_idx {
             self.segs_needing_positions.extend(left_idx..=right_idx);
@@ -985,52 +1006,49 @@ impl SegmentOrder {
     }
 
     // Find the position of the given segment in our array.
-    fn position(&self, seg_idx: SegIdx, segments: &Segments, y: f64, eps: f64) -> Option<usize> {
+    //
+    // Returns an index pointing to a `SegmentOrderEntry` for which
+    // `seg_idx` is either the `seg` or the `old_seg`.
+    fn position(
+        &self,
+        seg_idx: SegIdx,
+        segments: &Segments,
+        comparer: &mut ComparisonCache,
+        y: f64,
+        eps: f64,
+    ) -> Option<usize> {
         if self.segs.len() <= 32 {
-            return self.segs.iter().position(|x| x.seg == seg_idx);
+            return self
+                .segs
+                .iter()
+                .position(|x| x.seg == seg_idx || x.old_seg == Some(seg_idx));
         }
 
-        let seg = &segments[seg_idx];
-        let seg_lower = seg.lower(y, eps);
-        let seg_upper = seg.upper(y, eps);
+        // start_idx points to a segment that might be close to our segment (or
+        // could even be our segment). But the segment at `start_idx - 1` is
+        // definitely to our right.
+        let start_idx = self.segs.partition_point(|entry| {
+            comparer
+                .compare_segments(segments, entry.seg, seg_idx, eps)
+                .order_at(y)
+                == Ternary::Greater
+        });
 
-        // start_idx points to a segment whose upper bound is bigger than `seg`'s start
-        // position (so it could potentially be `seg`). But the segment at `start_idx - 1`
-        // has an upper bound less than `seg`'s start position, so `seg` cannot be at
-        // `start_idx - 1` or anywhere before it.
-        let mut start_idx = self
-            .segs
-            .partition_point(|entry| entry.upper_bound <= seg_lower);
-
-        // end_idx points to something that's definitely after `seg`.
-        let mut end_idx = self
-            .segs
-            .partition_point(|entry| entry.lower_bound <= seg_upper);
+        // end_idx points to something that's definitely after us.
+        let end_idx = self.segs.partition_point(|entry| {
+            comparer
+                .compare_segments(segments, entry.seg, seg_idx, eps)
+                .order_at(y)
+                != Ternary::Less
+        });
 
         if end_idx <= start_idx {
             return None;
         }
 
-        // If the bounds are reasonable, we'll just do a linear search between them.
-        // If they're too far apart, try to refine them first.
-        if end_idx - start_idx > 32 {
-            start_idx = self.segs.partition_point(|entry| {
-                let other_seg = &segments[entry.seg];
-                other_seg.upper(y, eps) <= seg_lower
-            });
-
-            end_idx = self.segs.partition_point(|entry| {
-                let other_seg = &segments[entry.seg];
-                other_seg.lower(y, eps) <= seg_upper
-            });
-        }
-
-        if end_idx <= start_idx {
-            return None;
-        }
         self.segs
             .range(start_idx..)
-            .position(|x| x.seg == seg_idx)
+            .position(|x| x.seg == seg_idx || x.old_seg == Some(seg_idx))
             .map(|i| i + start_idx)
     }
 }
@@ -1642,5 +1660,23 @@ mod tests {
         run_perturbation(perturbations);
     }
 
+    }
+
+    #[test]
+    fn bug() {
+        use Perturbation::*;
+        let perturbations: Vec<Perturbation<F64Perturbation>> = vec![
+            Base { idx: 0 },
+            Superimposition {
+                left: Box::new(Base { idx: 0 }),
+                right: Box::new(Base { idx: 0 }),
+            },
+            Base { idx: 0 },
+            Superimposition {
+                left: Box::new(Base { idx: 0 }),
+                right: Box::new(Base { idx: 0 }),
+            },
+        ];
+        run_perturbation(perturbations);
     }
 }
