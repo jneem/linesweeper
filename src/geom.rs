@@ -1,9 +1,9 @@
 //! Geometric primitives, like points and lines.
 
 use arrayvec::ArrayVec;
-use kurbo::{CubicBez, ParamCurve as _};
+use kurbo::{CubicBez, ParamCurve, ParamCurveExtrema};
 
-use crate::curve::{monic_quadratic_roots, solve_x_for_y};
+use crate::curve::{monic_quadratic_roots, solve_t_for_y, solve_x_for_y};
 use crate::num::CheapOrderedFloat;
 
 /// A two-dimensional point.
@@ -283,25 +283,23 @@ impl Segment {
         }
     }
 
+    fn local_bbox(&self, y: f64, eps: f64) -> kurbo::Rect {
+        let start_y = (y - eps).max(self.p0.y);
+        let end_y = (y + eps).min(self.p3.y);
+
+        let c = self.to_kurbo();
+        let t_min = solve_t_for_y(c, start_y);
+        let t_max = solve_t_for_y(c, end_y);
+
+        c.subsegment(t_min..t_max).bounding_box()
+    }
+
     pub fn lower(&self, y: f64, eps: f64) -> f64 {
-        // FIXME: this allows for some slack in y, but it's super
-        // hacky. Basically, we want a lower bound on the smallest
-        // x position in a small y-neigborhood
-        //
-        // Actually, it would be better to remove this function altogether
-        // and rely on the ordering analysis for everything.
-        self.at_y(y)
-            .min(self.at_y((y - eps).max(self.p0.y)))
-            .min(self.at_y((y + eps).min(self.p3.y)))
-            - eps
+        self.local_bbox(y, eps).min_x() - eps
     }
 
     pub fn upper(&self, y: f64, eps: f64) -> f64 {
-        // FIXME: as above
-        self.at_y(y)
-            .max(self.at_y((y - eps).max(self.p0.y)))
-            .max(self.at_y((y + eps).min(self.p3.y)))
-            + eps
+        self.local_bbox(y, eps).max_x() + eps
     }
 
     /// Returns true if this segment is exactly horizontal.

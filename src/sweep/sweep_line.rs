@@ -1034,7 +1034,16 @@ impl SegmentOrder {
             .map(|i| i + start_idx)
     }
 }
-/// Computes the allowable x positions for a slice of segments.
+
+/// Finds a feasible `x` position for each segment.
+///
+/// The point is that we've decided on a horizontal ordering of the segments, but
+/// their numerical positions might not completely agree with that ordering. For
+/// each segment, this function computes a range of `x` coordinates with the
+/// guarantee that if you go from left to right (or right to left) and assign
+/// each segment an `x` coordinate within its range then you won't paint
+/// yourself into a corner: subsequent points can be positioned with the right
+/// ordering *and* within the designated range.
 fn horizontal_positions<G: Fn(&SegmentOrderEntry) -> SegIdx>(
     entries: &[SegmentOrderEntry],
     entry_seg: G,
@@ -1044,31 +1053,28 @@ fn horizontal_positions<G: Fn(&SegmentOrderEntry) -> SegIdx>(
     out: &mut Vec<(SegmentOrderEntry, f64, f64)>,
 ) {
     out.clear();
-    let mut max_so_far = entries
-        .first()
-        .map(|entry| segments[entry_seg(entry)].lower(y, eps))
-        // If `self.segs` is empty our y doesn't matter; we're going to return
-        // an empty vec.
-        .unwrap_or(0.0);
+    let mut max_so_far = f64::NEG_INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    let mut min = f64::INFINITY;
 
     for entry in entries {
-        let x = segments[entry_seg(entry)].lower(y, eps);
-        max_so_far = max_so_far.max(x);
+        let seg = &segments[entry_seg(entry)];
+        max_so_far = max_so_far.max(seg.lower(y, eps));
         // Fill out the minimum allowed positions, with a placeholder for the maximum.
-        out.push((*entry, max_so_far, 0.0))
+        out.push((*entry, max_so_far, 0.0));
+
+        let x = seg.at_y(y);
+        max = max.max(x);
+        min = min.min(x);
     }
 
-    let mut min_so_far = entries
-        .last()
-        .map(|entry| segments[entry_seg(entry)].upper(y, eps))
-        // If `self.segs` is empty our y doesn't matter; we're going to return
-        // an empty vec.
-        .unwrap_or(0.0);
+    let mut min_so_far = f64::INFINITY;
 
-    for (entry, _, max_allowed) in out.iter_mut().rev() {
+    for (entry, min_allowed, max_allowed) in out.iter_mut().rev() {
         let x = segments[entry_seg(entry)].upper(y, eps);
         min_so_far = min_so_far.min(x);
-        *max_allowed = min_so_far;
+        *max_allowed = min_so_far.min(max);
+        *min_allowed = min_allowed.max(min);
     }
 }
 
