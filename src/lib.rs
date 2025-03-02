@@ -1,9 +1,11 @@
 //#![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+pub mod arbitrary;
 pub mod curve;
 mod geom;
 pub mod num;
+pub mod order;
 mod segments;
 pub mod sweep;
 pub mod topology;

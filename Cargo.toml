@@ -13,6 +13,7 @@ generators = []
 default = []
 
 [dependencies]
+arbitrary = { version = "1.4.1", features = ["derive"] }
 arrayvec = { version = "0.7.6", features = ["serde"] }
 malachite = "0.4.5"
 ordered-float = { version = "4.2.0", features = ["serde"] }
@@ -21,7 +22,6 @@ kurbo = "0.11.1"
 
 [dev-dependencies]
 anyhow = "1.0.80"
-arbitrary = { version = "1.4.1", features = ["derive"] }
 assert_matches = "1.5.0"
 clap = { version = "4.5.1", features = ["derive"] }
 criterion = "0.5.1"

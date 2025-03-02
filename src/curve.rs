@@ -95,6 +95,7 @@ impl CurveOrder {
                     last.end = end;
                 }
                 (Order::Right, Order::Left) | (Order::Left, Order::Right) => {
+                    dbg!(self);
                     panic!("no no no");
                 }
                 _ => {
@@ -160,6 +161,8 @@ impl CurveOrder {
         }
     }
 
+    // TODO: add unit tests
+    // (and docs)
     pub fn with_y_slop(self, slop: f64) -> CurveOrder {
         let mut ret = Vec::new();
 
@@ -174,7 +177,7 @@ impl CurveOrder {
         for (start, end, order) in self.iter() {
             let new_end = if end == last_end { end } else { end - slop };
             if order != Order::Ish && start + slop < new_end {
-                if ret.is_empty() {
+                if start == self.start {
                     ret.push(CurveOrderEntry {
                         end: new_end,
                         order,
@@ -202,6 +205,17 @@ impl CurveOrder {
         CurveOrder {
             start: self.start,
             cmps: ret,
+        }
+    }
+
+    pub fn check_invariants(&self) {
+        let mut cmps = self.cmps.iter();
+        let mut last = cmps.next().unwrap();
+        for cmp in cmps {
+            assert!(last.end < cmp.end);
+            assert!(last.order != cmp.order);
+            assert!(last.order == Order::Ish || cmp.order == Order::Ish);
+            last = cmp;
         }
     }
 
@@ -388,7 +402,7 @@ pub(crate) fn monic_quadratic_roots(b: f64, c: f64) -> (f64, f64) {
 
 /// Analyze the sign of a quadratic.
 ///
-/// Consider the quadratic equation `a x^2 + b x + c` for `x` between `x0` and `x1`, and some
+/// Consider the quadratic equation `a y^2 + b y + c` for `y` between `y0` and `y1`, and some
 /// thresholds `lower < upper`. We consider the quadratic "less" if it's smaller than `lower`,
 /// "greater" if it's bigger than `upper`, and "ish" if it's between the two thresholds.
 /// We push the results of this sign analysis to `out`.
@@ -399,21 +413,22 @@ fn push_quadratic_signs(
     c: f64,
     lower: f64,
     upper: f64,
-    x0: f64,
-    x1: f64,
+    y0: f64,
+    y1: f64,
+    endpoint_eps: f64,
     out: &mut CurveOrder,
 ) {
     debug_assert!(lower < upper);
 
     let mut push = |end: f64, order: Order| {
-        let end = if order == Order::Ish { end } else { end };
-        if end > x0
+        //dbg!(end, order);
+        if end > y0
             && out
                 .cmps
                 .last()
-                .is_none_or(|last| last.end < x1 && last.end < end)
+                .is_none_or(|last| last.end < y1 && last.end < end)
         {
-            out.push(end.min(x1), order);
+            out.push(end.min(y1), order);
         }
     };
 
@@ -428,20 +443,20 @@ fn push_quadratic_signs(
             if b > 0.0 {
                 push(root0, Order::Right);
                 push(root1, Order::Ish);
-                push(x1, Order::Left);
+                push(y1, Order::Left);
             } else {
                 push(root1, Order::Left);
                 push(root0, Order::Ish);
-                push(x1, Order::Right);
+                push(y1, Order::Right);
             }
         } else if c < lower {
             // It's basically a constant, so we just need to check where
             // the constant is in comparison to our targets.
-            push(x1, Order::Right);
+            push(y1, Order::Right);
         } else if c > upper {
-            push(x1, Order::Left);
+            push(y1, Order::Left);
         } else {
-            push(x1, Order::Ish);
+            push(y1, Order::Ish);
         }
         return;
     }
@@ -458,7 +473,7 @@ fn push_quadratic_signs(
         push(r_lower, Order::Ish);
         push(s_lower, Order::Right);
         push(s_upper, Order::Ish);
-        push(x1, Order::Left);
+        push(y1, Order::Left);
     } else {
         debug_assert!(r_upper >= r_lower || r_upper.is_infinite());
         debug_assert!(s_lower >= s_upper);
@@ -467,7 +482,7 @@ fn push_quadratic_signs(
         push(r_upper, Order::Ish);
         push(s_upper, Order::Left);
         push(s_lower, Order::Ish);
-        push(x1, Order::Right);
+        push(y1, Order::Right);
     }
 }
 
@@ -652,7 +667,15 @@ fn intersect_cubics_rec(
     // println!("making ep1");
     let ep1 = EstParab::from_cubic(c1);
     // println!("done with ep1");
-    let dep = ep1 - ep0;
+    let mut dep = ep1 - ep0;
+
+    // If the quadratic coefficient is too large (which happens for
+    // almost-horizontal pieces), we can't really trust the accuracy estimates,
+    // so pad them a little.
+    let max_coeff = dep.c0.abs().max(dep.c1.abs()).max(dep.c2.abs());
+    let err = max_coeff * 1e-12;
+    dep.dmax += err;
+    dep.dmin -= err;
     // dbg!(ep0);
     // dbg!(ep1);
     // dbg!(dep);
@@ -666,11 +689,16 @@ fn intersect_cubics_rec(
         -dep.dmin + tolerance,
         y0,
         y1,
+        accuracy,
         &mut scratch,
     );
 
-    for (new_y0, new_y1, order) in scratch.iter() {
-        // dbg!(new_y0, new_y1, order);
+    //dbg!(&orig_c0, &orig_c1, dep, &scratch);
+    // As an extra debug check, we do some point evaluations of our curves and
+    // check that they agree with the orders we've assigned. First, add some error
+    // bars in the y direction.
+    for (new_y0, new_y1, order) in scratch.clone().with_y_slop(accuracy).iter() {
+        //dbg!(new_y0, new_y1, order);
         // dbg!(ep0.eval(new_y1));
         // dbg!(ep1.eval(new_y1));
         // dbg!(solve_x_for_y(orig_c0, new_y1));
@@ -692,6 +720,7 @@ fn intersect_cubics_rec(
 
     //println!("ep1 - ep0 = {:?}", dep);
     for (new_y0, new_y1, order) in scratch.iter() {
+        //dbg!(new_y0, new_y1, order);
         if order == Order::Ish {
             let mid = 0.5 * (new_y0 + new_y1);
 
