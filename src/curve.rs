@@ -6,7 +6,7 @@ use kurbo::{common::solve_cubic, CubicBez, Line, ParamCurve as _, PathSeg, QuadB
 #[derive(Clone, Debug)]
 struct CurveOrderEntry {
     end: f64,
-    order: Ternary,
+    order: Order,
 }
 
 impl CurveOrderEntry {
@@ -14,14 +14,41 @@ impl CurveOrderEntry {
         Self {
             end: self.end,
             order: match self.order {
-                Ternary::Less => Ternary::Greater,
-                Ternary::Ish => Ternary::Ish,
-                Ternary::Greater => Ternary::Less,
+                Order::Right => Order::Left,
+                Order::Ish => Order::Ish,
+                Order::Left => Order::Right,
             },
         }
     }
 }
 
+/// The outcome of analyzing two curves for horizontal ordering.
+///
+/// We assume that the two curves are monotonic in y, and we partition their
+/// common y extent into sub-intervals, each of which gets assigned an order.
+///
+/// For example, consider the curves c0 and c1 below.
+///
+/// ```text
+///       c0     c1
+/// y=0    \      /
+///         \    /
+///          |  /
+/// y=1     ─┼─
+///        / │
+///       /  │
+/// y=2  /   │
+/// ```
+///
+/// They start out with c0 to the left, cross over, and end up with c0 to the
+/// right. We might represent this situation with a `CurveOrder` that says
+///
+/// - `Order::Left` on the interval `[0, 0.99]`
+/// - `Order::Ish` in the interval `[0.99, 1.01]`, and
+/// - `Order::Right` on the interval `[1.01, 2]`.
+///
+/// Note that this representation has some slack around the intersection point,
+/// because we do everything numerically and there might be some errors.
 #[derive(Clone, Debug)]
 pub struct CurveOrder {
     start: f64,
@@ -40,7 +67,7 @@ pub enum NextTouch {
 }
 
 impl Iterator for CurveOrderIter<'_> {
-    type Item = (f64, f64, Ternary);
+    type Item = (f64, f64, Order);
 
     fn next(&mut self) -> Option<Self::Item> {
         let next_entry = self.iter.next()?;
@@ -58,16 +85,16 @@ impl CurveOrder {
         }
     }
 
-    fn push(&mut self, end: f64, order: Ternary) {
+    fn push(&mut self, end: f64, order: Order) {
         if let Some(last) = self.cmps.last_mut() {
             match (last.order, order) {
-                (Ternary::Less, Ternary::Less)
-                | (Ternary::Greater, Ternary::Greater)
-                | (Ternary::Ish, Ternary::Ish) => {
+                (Order::Right, Order::Right)
+                | (Order::Left, Order::Left)
+                | (Order::Ish, Order::Ish) => {
                     debug_assert!(end >= last.end);
                     last.end = end;
                 }
-                (Ternary::Less, Ternary::Greater) | (Ternary::Greater, Ternary::Less) => {
+                (Order::Right, Order::Left) | (Order::Left, Order::Right) => {
                     panic!("no no no");
                 }
                 _ => {
@@ -82,6 +109,7 @@ impl CurveOrder {
         }
     }
 
+    /// Returns an iterator over the ordering intervals.
     pub fn iter(&self) -> CurveOrderIter<'_> {
         CurveOrderIter {
             next: self.start,
@@ -89,6 +117,7 @@ impl CurveOrder {
         }
     }
 
+    /// Returns a `CurveOrder` with all the orderings flipped.
     pub fn flip(&self) -> Self {
         Self {
             start: self.start,
@@ -96,47 +125,109 @@ impl CurveOrder {
         }
     }
 
+    /// Imagine that our curve is to the left of the other curve at height `y`.
+    /// What's the next height at which they touch?
+    ///
+    /// We "imagine" that our curve is to the left, but we don't actually insist
+    /// on it: if our curve is actually to the right at `y` we just say that
+    /// they cross immediately.
     pub fn next_touch_after(&self, y: f64) -> Option<NextTouch> {
         let mut iter = self
             .iter()
             .skip_while(|(_start, end, _order)| end <= &y)
-            .skip_while(|(_start, _end, order)| *order == Ternary::Greater);
+            .skip_while(|(_start, _end, order)| *order == Order::Left);
         let (before_y, after_y, order_at_y) = iter.next()?;
 
         match order_at_y {
-            Ternary::Less => Some(NextTouch::Cross(y)),
-            Ternary::Ish => {
+            Order::Right => Some(NextTouch::Cross(y)),
+            Order::Ish => {
                 // If this interval is the last one, we'll say there's no touch.
                 // It will get handled at the endpoint anyway.
                 let (_, _, next_order) = iter.next()?;
                 let cross_y = (after_y + before_y) / 2.0;
-                if next_order == Ternary::Less {
+                if next_order == Order::Right {
                     Some(NextTouch::Cross(cross_y))
                 } else {
-                    debug_assert!(next_order == Ternary::Greater);
+                    debug_assert!(next_order == Order::Left);
                     Some(NextTouch::Touch(cross_y))
                 }
             }
 
-            Ternary::Greater => {
+            Order::Left => {
                 // We skipped over these already.
                 unreachable!()
             }
         }
     }
 
-    pub fn order_at(&self, y: f64) -> Ternary {
+    pub fn with_y_slop(self, slop: f64) -> CurveOrder {
+        let mut ret = Vec::new();
+
+        if self.cmps.len() <= 1 {
+            // TODO: think more carefully about corner cases at endpoints.
+            return self;
+        }
+
+        // unwrap: cmps is always non-empty
+        let last_end = self.cmps.last().unwrap().end;
+
+        for (start, end, order) in self.iter() {
+            let new_end = if end == last_end { end } else { end - slop };
+            if order != Order::Ish && start + slop < new_end {
+                if ret.is_empty() {
+                    ret.push(CurveOrderEntry {
+                        end: new_end,
+                        order,
+                    });
+                } else {
+                    ret.push(CurveOrderEntry {
+                        end: start + slop,
+                        order: Order::Ish,
+                    });
+                    ret.push(CurveOrderEntry {
+                        end: new_end,
+                        order,
+                    });
+                }
+            }
+        }
+
+        if ret.last().is_none_or(|last| last.end != last_end) {
+            ret.push(CurveOrderEntry {
+                end: last_end,
+                order: Order::Ish,
+            });
+        }
+
+        CurveOrder {
+            start: self.start,
+            cmps: ret,
+        }
+    }
+
+    /// What's the order at `y`?
+    ///
+    /// If `y` is at the boundary of two intervals, takes the first one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `y` is outside the range of our ordering.
+    pub fn order_at(&self, y: f64) -> Order {
         self.iter()
             .find(|(_start, end, _order)| end >= &y)
             .unwrap()
             .2
     }
 
-    pub fn order_after(&self, y: f64) -> Ternary {
+    /// What's the next definite (`Left` or `Right`) ordering after `y`?
+    ///
+    /// If there is no definite ordering (everything after `y` is just `Ish`),
+    /// returns `Ish`.
+    pub fn order_after(&self, y: f64) -> Order {
         self.iter()
             .skip_while(|(_start, end, _order)| end <= &y)
-            .find(|(_start, _end, order)| *order != Ternary::Ish)
-            .map_or(Ternary::Ish, |(_start, _end, order)| order)
+            .find(|(_start, _end, order)| *order != Order::Ish)
+            .map_or(Order::Ish, |(_start, _end, order)| order)
     }
 }
 
@@ -301,10 +392,6 @@ pub(crate) fn monic_quadratic_roots(b: f64, c: f64) -> (f64, f64) {
 /// thresholds `lower < upper`. We consider the quadratic "less" if it's smaller than `lower`,
 /// "greater" if it's bigger than `upper`, and "ish" if it's between the two thresholds.
 /// We push the results of this sign analysis to `out`.
-///
-/// `slop` expands the "ish" range, in order to be conservative when the quadratic coefficients
-/// are large. In that case, we might be accurate with our root computations but still get the
-/// signs wrong because of our large coefficients.
 #[allow(clippy::too_many_arguments)]
 fn push_quadratic_signs(
     a: f64,
@@ -314,19 +401,12 @@ fn push_quadratic_signs(
     upper: f64,
     x0: f64,
     x1: f64,
-    slop: f64,
     out: &mut CurveOrder,
 ) {
     debug_assert!(lower < upper);
 
-    let mut push = |end: f64, order: Ternary, last: bool| {
-        let end = if order == Ternary::Ish {
-            end + slop
-        } else if !last {
-            end - slop
-        } else {
-            end
-        };
+    let mut push = |end: f64, order: Order| {
+        let end = if order == Order::Ish { end } else { end };
         if end > x0
             && out
                 .cmps
@@ -346,22 +426,22 @@ fn push_quadratic_signs(
         let root1 = -(c - upper) / b;
         if root0.is_finite() && root1.is_finite() {
             if b > 0.0 {
-                push(root0, Ternary::Less, false);
-                push(root1, Ternary::Ish, false);
-                push(x1, Ternary::Greater, true);
+                push(root0, Order::Right);
+                push(root1, Order::Ish);
+                push(x1, Order::Left);
             } else {
-                push(root1, Ternary::Greater, false);
-                push(root0, Ternary::Ish, false);
-                push(x1, Ternary::Less, true);
+                push(root1, Order::Left);
+                push(root0, Order::Ish);
+                push(x1, Order::Right);
             }
         } else if c < lower {
             // It's basically a constant, so we just need to check where
             // the constant is in comparison to our targets.
-            push(x1, Ternary::Less, true);
+            push(x1, Order::Right);
         } else if c > upper {
-            push(x1, Ternary::Greater, true);
+            push(x1, Order::Left);
         } else {
-            push(x1, Ternary::Ish, true);
+            push(x1, Order::Ish);
         }
         return;
     }
@@ -374,28 +454,28 @@ fn push_quadratic_signs(
         debug_assert!(r_upper <= r_lower || r_lower.is_infinite());
         debug_assert!(s_lower <= s_upper);
 
-        push(r_upper, Ternary::Greater, false);
-        push(r_lower, Ternary::Ish, false);
-        push(s_lower, Ternary::Less, false);
-        push(s_upper, Ternary::Ish, false);
-        push(x1, Ternary::Greater, true);
+        push(r_upper, Order::Left);
+        push(r_lower, Order::Ish);
+        push(s_lower, Order::Right);
+        push(s_upper, Order::Ish);
+        push(x1, Order::Left);
     } else {
         debug_assert!(r_upper >= r_lower || r_upper.is_infinite());
         debug_assert!(s_lower >= s_upper);
 
-        push(r_lower, Ternary::Less, false);
-        push(r_upper, Ternary::Ish, false);
-        push(s_upper, Ternary::Greater, false);
-        push(s_lower, Ternary::Ish, false);
-        push(x1, Ternary::Less, true);
+        push(r_lower, Order::Right);
+        push(r_upper, Order::Ish);
+        push(s_upper, Order::Left);
+        push(s_lower, Order::Ish);
+        push(x1, Order::Right);
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Ternary {
-    Less,
+pub enum Order {
+    Right,
     Ish,
-    Greater,
+    Left,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -542,25 +622,26 @@ fn intersect_cubics_rec(
     orig_c1: CubicBez,
     y0: f64,
     y1: f64,
-    eps: f64,
+    tolerance: f64,
+    accuracy: f64,
     out: &mut CurveOrder,
 ) {
     //eprintln!("recursing {y0}..{y1}");
     let c0 = orig_c0.subsegment(solve_t_for_y(orig_c0, y0)..solve_t_for_y(orig_c0, y1));
     let c1 = orig_c1.subsegment(solve_t_for_y(orig_c1, y0)..solve_t_for_y(orig_c1, y1));
 
-    if y1 - y0 < eps {
+    if y1 - y0 < accuracy {
         // For very short intervals there's some numerical instability in constructing the
         // approximating quadratics, so we just do a coarser comparison based on bounding
         // boxes.
         let b0 = Shape::bounding_box(&c0);
         let b1 = Shape::bounding_box(&c1);
-        let order = if b1.min_x() >= b0.max_x() + eps {
-            Ternary::Greater
-        } else if b0.min_x() >= b1.max_x() + eps {
-            Ternary::Less
+        let order = if b1.min_x() >= b0.max_x() + tolerance {
+            Order::Left
+        } else if b0.min_x() >= b1.max_x() + tolerance {
+            Order::Right
         } else {
-            Ternary::Ish
+            Order::Ish
         };
         out.push(y1, order);
         return;
@@ -581,11 +662,10 @@ fn intersect_cubics_rec(
         dep.c2,
         dep.c1,
         dep.c0,
-        -dep.dmax - eps,
-        -dep.dmin + eps,
+        -dep.dmax - tolerance,
+        -dep.dmin + tolerance,
         y0,
         y1,
-        eps,
         &mut scratch,
     );
 
@@ -601,10 +681,10 @@ fn intersect_cubics_rec(
         // dbg!(orig_c1);
         // let t = solve_t_for_y(c0, new_y0);
         // dbg!(t);
-        if order == Ternary::Greater {
+        if order == Order::Left {
             debug_assert!(solve_x_for_y(orig_c0, new_y0) < solve_x_for_y(orig_c1, new_y0));
             debug_assert!(solve_x_for_y(orig_c0, new_y1) < solve_x_for_y(orig_c1, new_y1));
-        } else if order == Ternary::Less {
+        } else if order == Order::Right {
             debug_assert!(solve_x_for_y(orig_c0, new_y0) > solve_x_for_y(orig_c1, new_y0));
             debug_assert!(solve_x_for_y(orig_c0, new_y1) > solve_x_for_y(orig_c1, new_y1));
         }
@@ -612,7 +692,7 @@ fn intersect_cubics_rec(
 
     //println!("ep1 - ep0 = {:?}", dep);
     for (new_y0, new_y1, order) in scratch.iter() {
-        if order == Ternary::Ish {
+        if order == Order::Ish {
             let mid = 0.5 * (new_y0 + new_y1);
 
             // We test the difference between y1 and y0, not new_y1 and new_y0.
@@ -624,13 +704,13 @@ fn intersect_cubics_rec(
             //
             // TODO: investigate fuzz/artifacts/curve_order/crash-bee7187920a9fe9e38bbf40ce6ff8cd80774c7a7
             // more closely. It seems to recurse more than it should...
-            if y1 - y0 <= eps || dep.dmax - dep.dmin <= eps {
+            if y1 - y0 <= accuracy || dep.dmax - dep.dmin <= accuracy {
                 out.push(new_y1, order);
             } else if new_y1 - new_y0 < 0.5 * (y1 - y0) {
-                intersect_cubics_rec(orig_c0, orig_c1, new_y0, new_y1, eps, out);
+                intersect_cubics_rec(orig_c0, orig_c1, new_y0, new_y1, tolerance, accuracy, out);
             } else {
-                intersect_cubics_rec(orig_c0, orig_c1, new_y0, mid, eps, out);
-                intersect_cubics_rec(orig_c0, orig_c1, mid, new_y1, eps, out);
+                intersect_cubics_rec(orig_c0, orig_c1, new_y0, mid, tolerance, accuracy, out);
+                intersect_cubics_rec(orig_c0, orig_c1, mid, new_y1, tolerance, accuracy, out);
             }
         } else {
             out.push(new_y1, order);
@@ -653,7 +733,7 @@ fn fix_up_endpoints(order: &mut CurveOrder, c0: CubicBez, c1: CubicBez, eps: f64
     }
 
     let first = order.cmps.first().unwrap();
-    if first.order == Ternary::Ish && bboxes_disjoint(c0, c1, order.start, first.end, eps) {
+    if first.order == Order::Ish && bboxes_disjoint(c0, c1, order.start, first.end, eps) {
         order.cmps.remove(0);
     }
 
@@ -662,20 +742,21 @@ fn fix_up_endpoints(order: &mut CurveOrder, c0: CubicBez, c1: CubicBez, eps: f64
     }
     let last = order.cmps.last().unwrap();
     let prev = order.cmps.len() - 2;
-    if last.order == Ternary::Ish && bboxes_disjoint(c0, c1, order.cmps[prev].end, last.end, eps) {
+    if last.order == Order::Ish && bboxes_disjoint(c0, c1, order.cmps[prev].end, last.end, eps) {
         order.cmps[prev].end = last.end;
         order.cmps.pop();
     }
 }
 
-pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
-    // dbg!(c0, c1);
+pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, tolerance: f64, accuracy: f64) -> CurveOrder {
+    debug_assert!(tolerance > 0.0 && accuracy > 0.0 && accuracy <= tolerance);
+
     let y0 = c0.p0.y.max(c1.p0.y);
     let y1 = c0.p3.y.min(c1.p3.y);
 
     let mut ret = CurveOrder::new(y0);
     if y0 < y1 {
-        intersect_cubics_rec(c0, c1, y0, y1, eps, &mut ret);
+        intersect_cubics_rec(c0, c1, y0, y1, tolerance, accuracy, &mut ret);
     } else if y0 == y1 {
         // Neither of the curves should be purely horizontal, so it must be
         // that they just overlap at a single point.
@@ -686,17 +767,17 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, eps: f64) -> CurveOrder {
         } else {
             (c0.p3.x, c1.p0.x)
         };
-        let order = if x0 < x1 - eps {
-            Ternary::Greater
-        } else if x0 > x1 + eps {
-            Ternary::Less
+        let order = if x0 < x1 - tolerance {
+            Order::Left
+        } else if x0 > x1 + tolerance {
+            Order::Right
         } else {
-            Ternary::Ish
+            Order::Ish
         };
 
         ret.push(y1, order);
     }
-    fix_up_endpoints(&mut ret, c0, c1, eps);
+    //fix_up_endpoints(&mut ret, c0, c1, eps);
     debug_assert_eq!(ret.cmps.last().unwrap().end, y1);
     ret
 }
@@ -738,12 +819,13 @@ mod test {
     #[test]
     fn non_touching() {
         let eps = 0.01;
+        let tol = 0.02;
         let a = Line::new((-1e6, 0.0), (0.0, 1.0));
         let b = Line::new((2.5 * eps, 0.0), (2.5 * eps, 1.0));
         let a = PathSeg::Line(a).to_cubic();
         let b = PathSeg::Line(b).to_cubic();
 
-        let cmp = intersect_cubics(a, b, eps);
-        assert_eq!(cmp.order_at(1.0), Ternary::Greater);
+        let cmp = intersect_cubics(a, b, tol, eps);
+        assert_eq!(cmp.order_at(1.0), Order::Left);
     }
 }

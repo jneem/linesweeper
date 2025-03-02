@@ -62,53 +62,6 @@ expression: "snapshot_outputs(segs, 0.1)"
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
-          seg: SegIdx(5),
-          exit: false,
-          enter: false,
-          lower_bound: -0.1,
-          upper_bound: 1.1,
-          in_changed_interval: false,
-          old_idx: None,
-          old_seg: None,
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(4),
-          exit: false,
-          enter: false,
-          lower_bound: 0.9,
-          upper_bound: 1.1,
-          in_changed_interval: false,
-          old_idx: None,
-          old_seg: None,
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(1),
-          exit: false,
-          enter: false,
-          lower_bound: 0.9,
-          upper_bound: 1.1,
-          in_changed_interval: false,
-          old_idx: None,
-          old_seg: None,
-        ),
-        SegmentOrderEntry(
-          seg: SegIdx(2),
-          exit: false,
-          enter: false,
-          lower_bound: 0.9,
-          upper_bound: 2.1,
-          in_changed_interval: false,
-          old_idx: None,
-          old_seg: None,
-        ),
-      ],
-    ),
-    changed: [],
-  ),
-  Output(
-    order: SegmentOrder(
-      segs: [
-        SegmentOrderEntry(
           seg: SegIdx(0),
           exit: true,
           enter: true,

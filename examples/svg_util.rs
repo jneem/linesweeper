@@ -109,6 +109,7 @@ pub fn svg_to_bezpaths(tree: &usvg::Tree) -> Vec<BezPath> {
                                 path.move_to(p);
                             }
                             kurbo::PathEl::ClosePath => {
+                                path.close_path();
                                 let p = path.segments().next().map(|s| s.start());
                                 if let Some(p) = p {
                                     ret.push(std::mem::take(&mut path));

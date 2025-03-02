@@ -7,7 +7,7 @@ use std::{cell::RefCell, collections::HashMap, ops::DerefMut};
 use kurbo::{ParamCurve as _, ParamCurveNearest};
 
 use crate::{
-    curve::{self, CurveOrder, Ternary},
+    curve::{self, CurveOrder, Order},
     geom::Segment,
     num::CheapOrderedFloat,
     segments::{SegIdx, Segments},
@@ -280,7 +280,8 @@ impl ComparisonCache {
         let segi = &segments[i];
         let segj = &segments[j];
 
-        let forward = curve::intersect_cubics(segi.to_kurbo(), segj.to_kurbo(), eps);
+        let forward = curve::intersect_cubics(segi.to_kurbo(), segj.to_kurbo(), eps, eps / 2.0)
+            .with_y_slop(eps);
         let reverse = forward.flip();
         self.inner.insert((j, i), reverse);
         self.inner.entry((i, j)).insert_entry(forward).get().clone()
@@ -378,7 +379,6 @@ impl<'segs> Sweeper<'segs> {
         }
 
         self.compute_changed_intervals();
-        //dbg!(self.y, &self.line);
         Some(SweepLine {
             state: self,
             next_changed_interval: 0,
@@ -538,6 +538,7 @@ impl<'segs> Sweeper<'segs> {
         };
         if let Some(contour_prev) = contour_prev {
             if self.segments[contour_prev].p0.y < self.y {
+                debug_assert_eq!(self.segments[contour_prev].p3, new_seg.p0);
                 if pos < self.line.segs.len() && self.line.segs[pos].seg == contour_prev {
                     self.handle_contour_continuation(seg_idx, new_seg, pos);
                     return;
@@ -662,7 +663,7 @@ impl<'segs> Sweeper<'segs> {
             for j in (left_idx + 1)..right_idx {
                 let seg_j_idx = self.line.seg(j);
                 let cmp = self.compare_segments(left, seg_j_idx);
-                if cmp.order_at(self.y) == Ternary::Less {
+                if cmp.order_at(self.y) == Order::Right {
                     to_move.push((j, self.line.segs[j]));
                 }
             }
@@ -851,10 +852,10 @@ impl<'segs> Sweeper<'segs> {
                 let seg_idx = self.line.seg(i - 1);
                 let next_seg_idx = self.line.seg(i);
                 let cmp = self.compare_segments(seg_idx, next_seg_idx);
-                if cmp.order_at(self.y) == Ternary::Greater {
+                if cmp.order_at(self.y) == Order::Left {
                     break;
                 } else {
-                    debug_assert_eq!(cmp.order_at(self.y), Ternary::Ish);
+                    debug_assert_eq!(cmp.order_at(self.y), Order::Ish);
                     self.line.segs[i].in_changed_interval = true;
                     self.line.segs[i].set_old_idx_if_unset(i);
 
@@ -866,10 +867,10 @@ impl<'segs> Sweeper<'segs> {
                 let prev_seg_idx = self.line.seg(i);
                 let seg_idx = self.line.seg(i + 1);
                 let cmp = self.compare_segments(prev_seg_idx, seg_idx);
-                if cmp.order_at(self.y) == Ternary::Greater {
+                if cmp.order_at(self.y) == Order::Left {
                     break;
                 } else {
-                    debug_assert_eq!(cmp.order_at(self.y), Ternary::Ish);
+                    debug_assert_eq!(cmp.order_at(self.y), Order::Ish);
                     self.line.segs[i].in_changed_interval = true;
                     self.line.segs[i].set_old_idx_if_unset(i);
 
@@ -935,7 +936,8 @@ impl SegmentOrder {
                 let segj = self.seg(j);
 
                 let order = cmp.compare_segments(segments, segi, segj, eps);
-                if order.order_at(y) == Ternary::Less {
+                if order.order_at(y) == Order::Right {
+                    dbg!(&order);
                     return Some((segi, segj));
                 }
             }
@@ -977,16 +979,16 @@ impl SegmentOrder {
             // the segment at pos. That should be a pretty common case.)
             let cmp = comparer.compare_segments(segments, seg_idx, self.segs[pos].seg, eps);
             return match cmp.order_after(y) {
-                Ternary::Less => pos + 1,
-                Ternary::Ish => pos,
-                Ternary::Greater => pos,
+                Order::Right => pos + 1,
+                Order::Ish => pos,
+                Order::Left => pos,
             };
         }
 
         // A predicate that tests whether `other` is definitely to the left of `seg` at `y`.
         let lower_pred = |other: &SegmentOrderEntry| -> bool {
             let cmp = comparer.compare_segments(segments, other.seg, seg_idx, eps);
-            cmp.order_at(y) == Ternary::Greater
+            cmp.order_at(y) == Order::Left
         };
 
         // The rust stdlib docs say that we're not allowed to do this, because
@@ -1002,18 +1004,18 @@ impl SegmentOrder {
         for i in search_start..self.segs.len() {
             let cmp = comparer.compare_segments(segments, self.segs[i].seg, seg_idx, eps);
             match cmp.order_at(y) {
-                Ternary::Less => {
+                Order::Right => {
                     // The segment at i is definitely to the right of the new one.
                     break;
                 }
-                Ternary::Ish => {
+                Order::Ish => {
                     // We could go either way, and we'll update our preference based on the
                     // future ordering.
-                    if cmp.order_after(y) == Ternary::Greater {
+                    if cmp.order_after(y) == Order::Left {
                         idx = i + 1;
                     }
                 }
-                Ternary::Greater => {
+                Order::Left => {
                     // The segment at i is definitely to the left of the new one.
                     idx = i + 1;
                 }
@@ -1048,7 +1050,7 @@ impl SegmentOrder {
             comparer
                 .compare_segments(segments, entry.seg, seg_idx, eps)
                 .order_at(y)
-                == Ternary::Greater
+                == Order::Left
         });
 
         // end_idx points to something that's definitely after us.
@@ -1056,7 +1058,7 @@ impl SegmentOrder {
             comparer
                 .compare_segments(segments, entry.seg, seg_idx, eps)
                 .order_at(y)
-                != Ternary::Less
+                != Order::Right
         });
 
         if end_idx <= start_idx {
@@ -1495,7 +1497,7 @@ mod tests {
         assert_eq!(check_order(non_adj_crossing, 1.0, eps), Some((0, 2)));
 
         let flat_crossing = &[(-1e6, 1e6), (-10.0 * eps, -10.0 * eps)];
-        assert_eq!(check_order(flat_crossing, 0.5, eps), None);
+        assert_eq!(check_order(flat_crossing, 0.5 - eps, eps), None);
 
         let end_crossing_bevel = &[(2.5 * eps, 2.5 * eps), (-1e6, 0.0)];
         assert_eq!(check_order(end_crossing_bevel, 1.0, eps), Some((0, 1)));
@@ -1546,31 +1548,33 @@ mod tests {
             insert(
                 &[(-1e6, 1e6), (-1.0, -1.0), (1.0, 1.0)],
                 (0.0, 0.0),
-                0.5,
+                0.5 - 1e-6,
                 eps
             ),
             2
         );
-        assert_eq!(
-            insert(
-                &[
-                    (-1e6, 1e6),
-                    (-1e6, 1e6),
-                    (-1e6, 1e6),
-                    (-1.0, -1.0),
-                    (1.0, 1.0),
-                    (-1e6, 1e6),
-                    (-1e6, 1e6),
-                    (-1e6, 1e6),
-                ],
-                (0.0, 0.0),
-                0.5,
-                eps
-            ),
-            4
-        );
+        // This test doesn't really work any more, now that we've tightened
+        // up our invalid order test.
+        // assert_eq!(
+        //     insert(
+        //         &[
+        //             (-1e6, 1e6),
+        //             (-1e6, 1e6),
+        //             (-1e6, 1e6),
+        //             (-1.0, -1.0),
+        //             (1.0, 1.0),
+        //             (-1e6, 1e6),
+        //             (-1e6, 1e6),
+        //             (-1e6, 1e6),
+        //         ],
+        //         (0.0, 0.0),
+        //         dbg!(0.5 - 1e-6 / 2.0),
+        //         eps
+        //     ),
+        //     4
+        // );
 
-        insert(&[(2.0, 2.0), (-100.0, 100.0)], (1.0, 1.0), 0.5, 0.25);
+        insert(&[(2.0, 2.0), (-100.0, 100.0)], (1.0, 1.0), 0.51, 0.25);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use arbitrary::Unstructured;
 use kurbo::{Affine, CubicBez, ParamCurve, Point};
-use linesweeper::curve::{intersect_cubics, solve_t_for_y, Ternary};
+use linesweeper::curve::{intersect_cubics, solve_t_for_y, Order};
 
 const DATA: &str = r#"
 Trăm năm trong cõi người ta
@@ -119,15 +119,15 @@ fn add_curves(
     c1: CubicBez,
     mut doc: svg::Document,
 ) -> svg::Document {
-    let orders = intersect_cubics(c0, c1, 0.05);
+    let orders = intersect_cubics(c0, c1, 0.05, 0.01);
     let trans = Affine::translate((x, y));
 
     for (y0, y1, order) in orders.iter() {
         let data0 = cubic_svg(trans * c0, y0 + y, y1 + y);
         let color0 = match order {
-            Ternary::Less => "mediumblue",
-            Ternary::Ish => "red",
-            Ternary::Greater => "lightskyblue",
+            Order::Right => "mediumblue",
+            Order::Ish => "red",
+            Order::Left => "lightskyblue",
         };
         let path0 = svg::node::element::Path::new()
             .set("stroke", color0)
@@ -137,9 +137,9 @@ fn add_curves(
 
         let data1 = cubic_svg(trans * c1, y0 + y, y1 + y);
         let color1 = match order {
-            Ternary::Less => "chartreuse",
-            Ternary::Ish => "darkorange",
-            Ternary::Greater => "olivedrab",
+            Order::Right => "chartreuse",
+            Order::Ish => "darkorange",
+            Order::Left => "olivedrab",
         };
         let path1 = svg::node::element::Path::new()
             .set("stroke", color1)
