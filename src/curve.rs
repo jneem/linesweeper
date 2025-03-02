@@ -415,7 +415,6 @@ fn push_quadratic_signs(
     upper: f64,
     y0: f64,
     y1: f64,
-    endpoint_eps: f64,
     out: &mut CurveOrder,
 ) {
     debug_assert!(lower < upper);
@@ -689,7 +688,6 @@ fn intersect_cubics_rec(
         -dep.dmin + tolerance,
         y0,
         y1,
-        accuracy,
         &mut scratch,
     );
 
