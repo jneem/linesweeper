@@ -1,11 +1,13 @@
-use std::any::Any;
-
 use arbitrary::Unstructured;
 use kurbo::{CubicBez, Point};
 
 use crate::geom;
 
-fn float_in_range(start: f64, end: f64, u: &mut Unstructured<'_>) -> Result<f64, arbitrary::Error> {
+pub fn float_in_range(
+    start: f64,
+    end: f64,
+    u: &mut Unstructured<'_>,
+) -> Result<f64, arbitrary::Error> {
     let num: u32 = u.arbitrary()?;
     let t = num as f64 / u32::MAX as f64;
     Ok((1.0 - t) * start + t * end)
@@ -44,7 +46,10 @@ pub fn monotonic_bezier(u: &mut Unstructured<'_>) -> Result<CubicBez, arbitrary:
     let p2 = point_at_most(p3.y, u)?;
 
     let ret = CubicBez::new(p0, p1, p2, p3);
-    Ok(geom::monotonic_pieces(ret).into_iter().next().unwrap())
+    Ok(geom::monotonic_pieces(ret)
+        .into_iter()
+        .next()
+        .unwrap_or(ret))
 }
 
 pub fn another_monotonic_bezier(
@@ -66,5 +71,8 @@ pub fn another_monotonic_bezier(
     let p2 = point_at_most(p3.y, u)?;
 
     let ret = CubicBez::new(p0, p1, p2, p3);
-    Ok(geom::monotonic_pieces(ret).into_iter().next().unwrap())
+    Ok(geom::monotonic_pieces(ret)
+        .into_iter()
+        .next()
+        .unwrap_or(ret))
 }

@@ -37,3 +37,10 @@ path = "fuzz_targets/curve_order.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "strong_comparison"
+path = "fuzz_targets/strong_comparison.rs"
+test = false
+doc = false
+bench = false

@@ -492,6 +492,16 @@ pub enum Order {
     Left,
 }
 
+impl Order {
+    pub fn flip(self) -> Order {
+        match self {
+            Order::Right => Order::Left,
+            Order::Ish => Order::Ish,
+            Order::Left => Order::Right,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct EstParab {
     c0: f64,
@@ -503,8 +513,16 @@ struct EstParab {
 
 impl EstParab {
     // c0 + c1 * y + c2 * y^2 is approx equal to cubic bez
-    fn from_cubic(c: CubicBez) -> Self {
-        //let c = c.subsegment(0.0..0.3);
+    //
+    // Note that this can produce very large coefficients if
+    //
+    // - dy is small
+    // - any of the y coordinates is large
+    //
+    // Maybe the second effect could be mitigated by translation?
+    // (Especially if dy is small *and* the y coordinates are large,
+    // because then translation would make them all small.)
+    fn from_cubic(mut c: CubicBez) -> Self {
         let seg = PathSeg::Cubic(c);
         let close_seg = PathSeg::Line(Line::new(c.p3, c.p0));
         let area = seg.area() + close_seg.area();
@@ -606,6 +624,10 @@ impl EstParab {
 
         eprintln!("dmin {dmin:.7}, dmax {dmax:.7}, min at {which_min:.7}");
     }
+
+    fn max_param(&self) -> f64 {
+        self.c0.abs().max(self.c1.abs()).max(self.c2.abs())
+    }
 }
 
 impl std::ops::Sub for EstParab {
@@ -640,9 +662,8 @@ fn intersect_cubics_rec(
     accuracy: f64,
     out: &mut CurveOrder,
 ) {
-    //eprintln!("recursing {y0}..{y1}");
-    let c0 = orig_c0.subsegment(solve_t_for_y(orig_c0, y0)..solve_t_for_y(orig_c0, y1));
-    let c1 = orig_c1.subsegment(solve_t_for_y(orig_c1, y0)..solve_t_for_y(orig_c1, y1));
+    let mut c0 = orig_c0.subsegment(solve_t_for_y(orig_c0, y0)..solve_t_for_y(orig_c0, y1));
+    let mut c1 = orig_c1.subsegment(solve_t_for_y(orig_c1, y0)..solve_t_for_y(orig_c1, y1));
 
     if y1 - y0 < accuracy {
         // For very short intervals there's some numerical instability in constructing the
@@ -661,7 +682,18 @@ fn intersect_cubics_rec(
         return;
     }
 
-    // println!("making ep0");
+    // If the y coordinates are very off-center, the quadratic coefficients become
+    // large and cause instability. So we re-center and then compensate afterwards.
+    let y_mid = (y0 + y1) / 2.0;
+    c0.p0.y -= y_mid;
+    c0.p1.y -= y_mid;
+    c0.p2.y -= y_mid;
+    c0.p3.y -= y_mid;
+    c1.p0.y -= y_mid;
+    c1.p1.y -= y_mid;
+    c1.p2.y -= y_mid;
+    c1.p3.y -= y_mid;
+
     let ep0 = EstParab::from_cubic(c0);
     // println!("making ep1");
     let ep1 = EstParab::from_cubic(c1);
@@ -671,7 +703,7 @@ fn intersect_cubics_rec(
     // If the quadratic coefficient is too large (which happens for
     // almost-horizontal pieces), we can't really trust the accuracy estimates,
     // so pad them a little.
-    let max_coeff = dep.c0.abs().max(dep.c1.abs()).max(dep.c2.abs());
+    let max_coeff = ep0.max_param().max(ep1.max_param());
     let err = max_coeff * 1e-12;
     dep.dmax += err;
     dep.dmin -= err;
@@ -679,19 +711,26 @@ fn intersect_cubics_rec(
     // dbg!(ep1);
     // dbg!(dep);
     // ep1.brute_force_d(c1);
-    let mut scratch = CurveOrder::new(y0);
+    let mut scratch = CurveOrder::new(y0 - y_mid);
     push_quadratic_signs(
         dep.c2,
         dep.c1,
         dep.c0,
         -dep.dmax - tolerance,
         -dep.dmin + tolerance,
-        y0,
-        y1,
+        y0 - y_mid,
+        y1 - y_mid,
         &mut scratch,
     );
 
-    //dbg!(&orig_c0, &orig_c1, dep, &scratch);
+    // Re-center the roots. It's important that the starting and ending positions
+    // have no rounding error, so deal with them separately.
+    scratch.start = y0;
+    for entry in &mut scratch.cmps {
+        entry.end += y_mid;
+    }
+    scratch.cmps.last_mut().unwrap().end = y1;
+
     // As an extra debug check, we do some point evaluations of our curves and
     // check that they agree with the orders we've assigned. First, add some error
     // bars in the y direction.

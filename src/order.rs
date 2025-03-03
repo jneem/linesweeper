@@ -8,12 +8,12 @@ pub struct Comparison {
     pub order: CurveOrder,
     /// A "sloppier" order between the curves.
     ///
-    /// If `c0` is strictly less than `c1` according to this bound,
+    /// If `c0` is strictly left of `c1` according to this bound,
     /// then
     ///
-    /// - `c0` is strictly less than `c1` according to `order`, but also
-    /// - `c0` is strictly less (according to `order`) than every `c2` that's
-    ///   bigger-than-or-ish-to `c1` (according to `order`).
+    /// - `c0` is strictly left of `c1` according to `order`, but also
+    /// - every `c2` that's to the right-ish (according to `order`) of `c1`
+    ///   will cross to the left of `c1` before it crosses to the left of `c0`.
     ///
     /// As far as the sweep-line is concerned, this means that whenever we
     /// see encounter a strict comparison with this `bound`, we can stop
