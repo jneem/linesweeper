@@ -1,7 +1,9 @@
 #![allow(missing_docs)]
 
 use arrayvec::ArrayVec;
-use kurbo::{common::solve_cubic, CubicBez, Line, ParamCurve as _, PathSeg, QuadBez, Shape, Vec2};
+use kurbo::{
+    common::solve_cubic, Affine, CubicBez, Line, ParamCurve as _, PathSeg, QuadBez, Shape, Vec2,
+};
 
 #[derive(Clone, Debug)]
 struct CurveOrderEntry {
@@ -257,17 +259,18 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
     let c1 = 3.0 * (c.p1.y - c.p0.y);
     let c0 = c.p0.y - y;
 
-    for t in solve_cubic_in_unit_interval(c0, c1, c2, c3) {
-        if (0.0..=1.0).contains(&t) {
-            return t;
-        }
+    let cubic = Cubic { c0, c1, c2, c3 };
+
+    let roots = cubic.roots_between(0.0, 1.0, 1e-10);
+    if !roots.is_empty() {
+        return roots[0];
     }
 
     // The sharp cutoff at the endpoint can miss some legitimate internal
-    // points. The 1e-4 threshold is a bit arbitrary, though.
-    if (y - c.p3.y).abs() < 1e-4 {
+    // points. The 1e-8 threshold is a bit arbitrary, though.
+    if (y - c.p3.y).abs() < 1e-8 {
         return 1.0;
-    } else if (y - c.p0.y).abs() < 1e-4 {
+    } else if (y - c.p0.y).abs() < 1e-8 {
         return 0.0;
     }
     println!("{:?}", c);
@@ -400,6 +403,136 @@ pub(crate) fn monic_quadratic_roots(b: f64, c: f64) -> (f64, f64) {
     }
 }
 
+pub struct QuadraticSigns {
+    smaller_root: f64,
+    bigger_root: f64,
+    initial_sign: f64,
+}
+
+pub(crate) fn quadratic_roots(c2: f64, c1: f64, c0: f64) -> QuadraticSigns {
+    debug_assert!(c2.is_finite() && c1.is_finite() && c0.is_finite());
+
+    let disc = c1 * c1 - 4.0 * c0;
+    if !disc.is_finite() {
+        let scale = 2.0f64.powi(-512);
+        quadratic_roots(c2 * scale, c1 * scale, c0 * scale)
+    } else if disc < 0.0 {
+        QuadraticSigns {
+            initial_sign: c2,
+            smaller_root: f64::NEG_INFINITY,
+            bigger_root: f64::NEG_INFINITY,
+        }
+    } else {
+        let z = c1 + disc.sqrt().copysign(c1);
+        let root1 = -2.0 * c2 / z;
+        let root2 = -z / (2.0 * c0);
+
+        // If z is zero, it means that c1 and disc are both (exactly!) zero,
+        // and so everything is zero.
+        if z == 0.0 {
+            QuadraticSigns {
+                initial_sign: 0.0,
+                smaller_root: f64::NEG_INFINITY,
+                bigger_root: f64::NEG_INFINITY,
+            }
+        } else {
+            // Here z is non-zero, meaning that root1 and root2 are defined
+            // (although possibly infinite).
+            debug_assert!(!root1.is_nan() && !root2.is_nan());
+
+            let initial_sign = if root2.is_infinite() { c1 } else { c2 };
+
+            QuadraticSigns {
+                initial_sign,
+                smaller_root: root1.min(root2),
+                bigger_root: root1.max(root2),
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Quadratic {
+    c2: f64,
+    c1: f64,
+    c0: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Cubic {
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+}
+
+impl Cubic {
+    fn eval(&self, t: f64) -> f64 {
+        self.c3 * t * t * t + self.c2 * t * t + self.c1 * t + self.c0
+    }
+
+    fn deriv_at(&self, t: f64) -> f64 {
+        3.0 * self.c3 * t * t + 2.0 * self.c2 * t + self.c1
+    }
+
+    fn deriv(&self) -> Quadratic {
+        Quadratic {
+            c2: 3.0 * self.c3,
+            c1: 2.0 * self.c2,
+            c0: self.c1,
+        }
+    }
+
+    fn one_root(&self, lower: f64, upper: f64, accuracy: f64) -> f64 {
+        let val_lower = self.eval(lower);
+        let val_upper = self.eval(upper);
+        debug_assert_ne!(val_lower.signum(), val_upper.signum());
+
+        let mut x = (val_upper + val_lower) / 2.0;
+
+        loop {
+            let val_x = self.eval(x);
+            let deriv_x = self.deriv_at(x);
+
+            let step = -val_x / deriv_x;
+            x = (x + step).clamp(lower, upper);
+
+            if step.abs() < accuracy {
+                return x;
+            }
+        }
+    }
+
+    fn roots_between(&self, lower: f64, upper: f64, accuracy: f64) -> ArrayVec<f64, 3> {
+        let q = self.deriv();
+        let q_roots = quadratic_roots(q.c2, q.c1, q.c0);
+
+        let possible_endpoints = [
+            q_roots.smaller_root,
+            (q_roots.smaller_root + q_roots.bigger_root) / 2.0,
+            q_roots.bigger_root,
+            upper,
+        ];
+
+        let mut last = lower;
+        let mut last_sign = self.eval(last).signum();
+        let mut ret = ArrayVec::new();
+
+        for x in possible_endpoints {
+            if x > last && x <= upper {
+                let sign = self.eval(x).signum();
+                if sign != last_sign {
+                    ret.push(self.one_root(last, x, accuracy));
+                }
+
+                last = x;
+                last_sign = sign;
+            }
+        }
+        ret
+    }
+}
+
 /// Analyze the sign of a quadratic.
 ///
 /// Consider the quadratic equation `a y^2 + b y + c` for `y` between `y0` and `y1`, and some
@@ -519,10 +652,11 @@ impl EstParab {
     // - dy is small
     // - any of the y coordinates is large
     //
-    // Maybe the second effect could be mitigated by translation?
-    // (Especially if dy is small *and* the y coordinates are large,
-    // because then translation would make them all small.)
-    fn from_cubic(mut c: CubicBez) -> Self {
+    // The second effect can be mitigated by translation
+    // (especially if dy is small *and* the y coordinates are large,
+    // because then translation would make them all small), and the first
+    // effect can be mitigated by rescaling.
+    fn from_cubic(c: CubicBez) -> Self {
         let seg = PathSeg::Cubic(c);
         let close_seg = PathSeg::Line(Line::new(c.p3, c.p0));
         let area = seg.area() + close_seg.area();
@@ -578,13 +712,26 @@ impl EstParab {
             // let f2 = 2.0 * params.1.y * params.2.y * c2 + 4.0 * params.1.y * params.2.y * c2;
             // let f3 = 4.0 * params.2.y * params.2.y * c2;
             for t in solve_cubic_in_unit_interval(f0, f1, f2, f3) {
-                //dbg!(t);
+                dbg!(t);
                 if (0.0..=1.0).contains(&t) {
                     let p = q.eval(t);
+                    dbg!(p);
+                    dbg!(solve_x_for_y(c, p.y));
                     let x = p.x - (c0 + c1 * p.y + c2 * p.y.powi(2));
                     dmin = dmin.min(x);
                     dmax = dmax.max(x);
                 }
+                //println!("t = {}, pt = {:?}", t, q.eval(t));
+            }
+            for t in [0.7422, 0.74225, 0.7423] {
+                dbg!(t);
+                let p = q.eval(t);
+                dbg!(p);
+                dbg!(c0 + c1 * p.y + c2 * p.y.powi(2));
+                dbg!(solve_x_for_y(c, p.y));
+                dbg!(solve_x_for_y(c, 0.00016929232880729566));
+                let x = p.x - (c0 + c1 * p.y + c2 * p.y.powi(2));
+                dbg!(x);
                 //println!("t = {}, pt = {:?}", t, q.eval(t));
             }
         }
@@ -653,6 +800,83 @@ pub fn quad_parameters(q: QuadBez) -> (Vec2, Vec2, Vec2) {
     (c0, c1, c2)
 }
 
+fn with_rotation(
+    c0: CubicBez,
+    c1: CubicBez,
+    y0: f64,
+    y1: f64,
+    tolerance: f64,
+    accuracy: f64,
+    out: &mut CurveOrder,
+) -> bool {
+    let dx0 = c0.p3.x - c0.p0.x;
+    let dx1 = c1.p3.x - c1.p0.x;
+    let dy = y1 - y0;
+
+    if dx0.signum() != dx1.signum() {
+        return false;
+    }
+    if dx0.abs() < dy * 16.0 || dx1.abs() < dy * 16.0 {
+        return false;
+    }
+
+    let center = kurbo::Point::new((c0.p0.x + c0.p3.x) / 2.0, (y0 + y1) / 2.0);
+    let theta = if dx0 > 0.0 {
+        std::f64::consts::FRAC_PI_4
+    } else {
+        -std::f64::consts::FRAC_PI_4
+    };
+    let transform = Affine::rotate_about(theta, center);
+    let c0_rot = transform * c0;
+    let c1_rot = transform * c1;
+
+    // Check that they're still y-monotonic after rotation (false negatives are allowed).
+    if c0_rot.p1.y < c0_rot.p0.y || c0_rot.p2.y < c0_rot.p1.y || c0_rot.p3.y < c0_rot.p2.y {
+        return false;
+    }
+    if c1_rot.p1.y < c1_rot.p0.y || c1_rot.p2.y < c1_rot.p1.y || c1_rot.p3.y < c1_rot.p2.y {
+        return false;
+    }
+
+    let y0_rot = c0_rot.p0.y.max(c1_rot.p0.y);
+    let y1_rot = c0_rot.p3.y.min(c1_rot.p3.y);
+
+    if y0_rot >= y1_rot {
+        let order = if c0.p0.x < c1.p0.x - tolerance {
+            Order::Left
+        } else if c0.p0.x > c1.p0.x + tolerance {
+            Order::Right
+        } else {
+            Order::Ish
+        };
+        out.push(y1, order);
+        return true;
+    }
+
+    let mut order_rot = CurveOrder::new(y0_rot);
+    dbg!(c0_rot, c1_rot, y0_rot, y1_rot);
+    intersect_cubics_rec(
+        c0_rot,
+        c1_rot,
+        y0_rot,
+        y1_rot,
+        tolerance,
+        accuracy,
+        &mut order_rot,
+    );
+
+    dbg!(&order_rot);
+    for (_new_y0, new_y1, order) in order_rot.iter() {
+        let x1 = (solve_x_for_y(c0_rot, new_y1) + solve_x_for_y(c1_rot, new_y1)) / 2.0;
+        let p1 = transform.inverse() * kurbo::Point::new(x1, new_y1);
+        out.push(p1.y.clamp(y0, y1), order);
+    }
+    dbg!(&out);
+    out.cmps.last_mut().unwrap().end = y1;
+
+    true
+}
+
 fn intersect_cubics_rec(
     orig_c0: CubicBez,
     orig_c1: CubicBez,
@@ -664,6 +888,8 @@ fn intersect_cubics_rec(
 ) {
     let mut c0 = orig_c0.subsegment(solve_t_for_y(orig_c0, y0)..solve_t_for_y(orig_c0, y1));
     let mut c1 = orig_c1.subsegment(solve_t_for_y(orig_c1, y0)..solve_t_for_y(orig_c1, y1));
+    dbg!(c0, orig_c0);
+    dbg!(c1, orig_c1);
 
     if y1 - y0 < accuracy {
         // For very short intervals there's some numerical instability in constructing the
@@ -681,18 +907,25 @@ fn intersect_cubics_rec(
         out.push(y1, order);
         return;
     }
+    if with_rotation(c0, c1, y0, y1, tolerance, accuracy, out) {
+        debug_assert_eq!(out.cmps.last().unwrap().end, y1);
+        return;
+    }
 
     // If the y coordinates are very off-center, the quadratic coefficients become
     // large and cause instability. So we re-center and then compensate afterwards.
     let y_mid = (y0 + y1) / 2.0;
-    c0.p0.y -= y_mid;
-    c0.p1.y -= y_mid;
-    c0.p2.y -= y_mid;
-    c0.p3.y -= y_mid;
-    c1.p0.y -= y_mid;
-    c1.p1.y -= y_mid;
-    c1.p2.y -= y_mid;
-    c1.p3.y -= y_mid;
+    //let y_unscale = (y1 - y0).max(1.0);
+    let y_unscale = 1.0f64;
+    let y_scale = y_unscale.recip();
+    c0.p0.y = (c0.p0.y - y_mid) * y_scale;
+    c0.p1.y = (c0.p1.y - y_mid) * y_scale;
+    c0.p2.y = (c0.p2.y - y_mid) * y_scale;
+    c0.p3.y = (c0.p3.y - y_mid) * y_scale;
+    c1.p0.y = (c1.p0.y - y_mid) * y_scale;
+    c1.p1.y = (c1.p1.y - y_mid) * y_scale;
+    c1.p2.y = (c1.p2.y - y_mid) * y_scale;
+    c1.p3.y = (c1.p3.y - y_mid) * y_scale;
 
     let ep0 = EstParab::from_cubic(c0);
     // println!("making ep1");
@@ -709,7 +942,7 @@ fn intersect_cubics_rec(
     dep.dmin -= err;
     // dbg!(ep0);
     // dbg!(ep1);
-    // dbg!(dep);
+    dbg!(dep);
     // ep1.brute_force_d(c1);
     let mut scratch = CurveOrder::new(y0 - y_mid);
     push_quadratic_signs(
@@ -718,28 +951,43 @@ fn intersect_cubics_rec(
         dep.c0,
         -dep.dmax - tolerance,
         -dep.dmin + tolerance,
-        y0 - y_mid,
-        y1 - y_mid,
+        (y0 - y_mid) * y_scale,
+        (y1 - y_mid) * y_scale,
         &mut scratch,
     );
 
     // Re-center the roots. It's important that the starting and ending positions
     // have no rounding error, so deal with them separately.
+    dbg!(&scratch);
     scratch.start = y0;
     for entry in &mut scratch.cmps {
-        entry.end += y_mid;
+        dbg!(
+            entry.end,
+            ep0.eval(entry.end),
+            solve_x_for_y(c0, entry.end),
+            ep1.eval(entry.end),
+            solve_x_for_y(c1, entry.end)
+        );
+        entry.end = (entry.end * y_unscale + y_mid).clamp(y0, y1);
+        dbg!(
+            entry.end,
+            solve_x_for_y(orig_c0, entry.end),
+            solve_x_for_y(orig_c1, entry.end)
+        );
     }
     scratch.cmps.last_mut().unwrap().end = y1;
+    dbg!(&scratch);
 
     // As an extra debug check, we do some point evaluations of our curves and
     // check that they agree with the orders we've assigned. First, add some error
     // bars in the y direction.
     for (new_y0, new_y1, order) in scratch.clone().with_y_slop(accuracy).iter() {
-        //dbg!(new_y0, new_y1, order);
-        // dbg!(ep0.eval(new_y1));
-        // dbg!(ep1.eval(new_y1));
-        // dbg!(solve_x_for_y(orig_c0, new_y1));
-        // dbg!(solve_x_for_y(orig_c1, new_y1));
+        dbg!(new_y0, new_y1, order);
+        dbg!(ep0.eval(new_y0 - y_mid));
+        dbg!(ep1.eval(new_y0 - y_mid));
+        dbg!(solve_x_for_y(c0, new_y0 - y_mid));
+        dbg!(solve_x_for_y(orig_c0, new_y0));
+        dbg!(solve_x_for_y(orig_c1, new_y0));
         // dbg!(solve_t_for_y(orig_c0, new_y1));
         // let t = solve_t_for_y(orig_c1, new_y1);
         // dbg!(ep0.eval(dbg!(orig_c1.eval(t).y)));
@@ -775,6 +1023,11 @@ fn intersect_cubics_rec(
             } else if new_y1 - new_y0 < 0.5 * (y1 - y0) {
                 intersect_cubics_rec(orig_c0, orig_c1, new_y0, new_y1, tolerance, accuracy, out);
             } else {
+                // eprintln!(
+                //     "recursing because interval didn't shrink: {y0} - {new_y0} - {new_y1} - {y1}, error = {}, scratch {:?}, x slope {}",
+                //     dep.dmax - dep.dmin, scratch,
+                //     (c0.p3.x - c0.p0.x) / (y1 - y0)
+                // );
                 intersect_cubics_rec(orig_c0, orig_c1, new_y0, mid, tolerance, accuracy, out);
                 intersect_cubics_rec(orig_c0, orig_c1, mid, new_y1, tolerance, accuracy, out);
             }
@@ -816,6 +1069,7 @@ fn fix_up_endpoints(order: &mut CurveOrder, c0: CubicBez, c1: CubicBez, eps: f64
 
 pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, tolerance: f64, accuracy: f64) -> CurveOrder {
     debug_assert!(tolerance > 0.0 && accuracy > 0.0 && accuracy <= tolerance);
+    //dbg!(c0, c1);
 
     let y0 = c0.p0.y.max(c1.p0.y);
     let y1 = c0.p3.y.min(c1.p3.y);
@@ -879,7 +1133,21 @@ mod test {
         };
         let y = 0.012468608207852864;
         let t = solve_t_for_y(c, y);
-        assert!(dbg!(c.eval(t).y) - y.abs() < 1e-8);
+        assert!(dbg!(c.eval(t).y - y).abs() < 1e-8);
+    }
+
+    #[test]
+    fn solve_for_t_accuracy3() {
+        let c = CubicBez {
+            p0: (0.1443023801753, -0.00034678801186988073).into(),
+            p1: (0.3760345290602, -0.00011491438194505266).into(),
+            p2: (0.6070068772783, 0.00011680717653411721).into(),
+            p3: (0.8372203215247, 0.0003483767633017387).into(),
+        };
+
+        let y = 0.00016929232880729566;
+        let t = solve_t_for_y(c, y);
+        assert!(dbg!(c.eval(t).y - y).abs() < 1e-8);
     }
 
     #[test]
@@ -893,5 +1161,29 @@ mod test {
 
         let cmp = intersect_cubics(a, b, tol, eps);
         assert_eq!(cmp.order_at(1.0), Order::Left);
+    }
+
+    #[test]
+    fn quad_approximation() {
+        let c = CubicBez {
+            p0: (0.1443023801753, -0.00034678801186988073).into(),
+            p1: (0.3760345290602, -0.00011491438194505266).into(),
+            p2: (0.6070068772783, 0.00011680717653411721).into(),
+            p3: (0.8372203215247, 0.0003483767633017387).into(),
+        };
+
+        let y = 0.00016929232880729566;
+        let t = solve_t_for_y(c, y);
+        dbg!(t, c.eval(t));
+
+        let ep = EstParab::from_cubic(c);
+        dbg!(y);
+        dbg!(ep);
+        dbg!(ep.eval(y));
+        dbg!(solve_x_for_y(c, y));
+
+        let diff = solve_x_for_y(c, y) - ep.eval(y);
+        assert!(diff <= ep.dmax);
+        assert!(diff >= ep.dmin);
     }
 }
