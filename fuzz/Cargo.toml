@@ -44,3 +44,17 @@ path = "fuzz_targets/strong_comparison.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "quadratic_signs"
+path = "fuzz_targets/quadratic_signs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cubic_roots"
+path = "fuzz_targets/cubic_roots.rs"
+test = false
+doc = false
+bench = false

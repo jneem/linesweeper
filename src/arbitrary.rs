@@ -1,7 +1,10 @@
 use arbitrary::Unstructured;
 use kurbo::{CubicBez, Point};
 
-use crate::geom;
+use crate::{
+    curve::{Cubic, Quadratic},
+    geom,
+};
 
 pub fn float_in_range(
     start: f64,
@@ -23,6 +26,22 @@ fn float_at_least(min: f64, u: &mut Unstructured<'_>) -> Result<f64, arbitrary::
 
 fn float_at_most(max: f64, u: &mut Unstructured<'_>) -> Result<f64, arbitrary::Error> {
     float_in_range(-1e6, max, u)
+}
+
+fn another_float_in_range(
+    orig: f64,
+    start: f64,
+    end: f64,
+    u: &mut Unstructured<'_>,
+) -> Result<f64, arbitrary::Error> {
+    let close: bool = u.arbitrary()?;
+    if close {
+        let ulps: i32 = u.int_in_range(-32..=32)?;
+        let scale = 1.0f64 + ulps as f64 * f64::EPSILON;
+        Ok((orig * scale).clamp(start, end))
+    } else {
+        float_in_range(start, end, u)
+    }
 }
 
 fn point(u: &mut Unstructured<'_>) -> Result<Point, arbitrary::Error> {
@@ -75,4 +94,53 @@ pub fn another_monotonic_bezier(
         .into_iter()
         .next()
         .unwrap_or(ret))
+}
+
+pub fn quadratic(size: f64, u: &mut Unstructured<'_>) -> Result<Quadratic, arbitrary::Error> {
+    let use_coeffs: bool = u.arbitrary()?;
+    if use_coeffs {
+        let c2 = float_in_range(-size, size, u)?;
+        let c1 = another_float_in_range(c2, -size, size, u)?;
+        let c0 = another_float_in_range(c1, -size, size, u)?;
+
+        Ok(Quadratic { c2, c1, c0 })
+    } else {
+        let size = size.sqrt();
+
+        let r1 = float_in_range(-size, size, u)?;
+        let r2 = another_float_in_range(r1, -size, size, u)?;
+        let scale = float_in_range(-size, size, u)?;
+
+        Ok(Quadratic {
+            c2: scale,
+            c1: -scale * (r1 + r2),
+            c0: scale * r1 * r2,
+        })
+    }
+}
+
+pub fn cubic(size: f64, u: &mut Unstructured<'_>) -> Result<Cubic, arbitrary::Error> {
+    let use_coeffs: bool = u.arbitrary()?;
+    if use_coeffs {
+        let c3 = float_in_range(-size, size, u)?;
+        let c2 = another_float_in_range(c3, -size, size, u)?;
+        let c1 = another_float_in_range(c2, -size, size, u)?;
+        let c0 = another_float_in_range(c1, -size, size, u)?;
+
+        Ok(Cubic { c3, c2, c1, c0 })
+    } else {
+        let size = size.sqrt().sqrt();
+
+        let r1 = float_in_range(-size, size, u)?;
+        let r2 = another_float_in_range(r1, -size, size, u)?;
+        let r3 = another_float_in_range(r2, -size, size, u)?;
+        let scale = float_in_range(-size, size, u)?;
+
+        Ok(Cubic {
+            c3: scale,
+            c2: -scale * (r1 + r2 + r3),
+            c1: scale * (r1 * r2 + r1 * r3 + r2 * r3),
+            c0: -scale * r1 * r2 * r3,
+        })
+    }
 }
