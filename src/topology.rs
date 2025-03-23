@@ -524,14 +524,14 @@ impl Topology {
         while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
             while let Some(positions) = line.next_range(&mut range_bufs, &segments, eps) {
                 let range = positions.seg_range();
-                let scan_left_seg = if range.segs.start == 0 {
+                let scan_east_seg = if range.segs.start == 0 {
                     None
                 } else {
                     let prev_seg = positions.line().line_segment(range.segs.start - 1);
                     debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
                     ret.open_segs[prev_seg.0].front().copied()
                 };
-                ret.process_sweep_line_range(positions, &segments, scan_left_seg);
+                ret.process_sweep_line_range(positions, &segments, scan_east_seg);
             }
         }
         ret.merge_coincident();
@@ -542,10 +542,10 @@ impl Topology {
         &mut self,
         mut pos: SweepLineRange,
         segments: &Segments,
-        mut scan_left: Option<OutputSegIdx>,
+        mut scan_east: Option<OutputSegIdx>,
     ) {
         let y = pos.line().y();
-        let mut winding = scan_left
+        let mut winding = scan_east
             .map(|idx| self.winding[idx].counter_clockwise)
             .unwrap_or_default();
 
@@ -596,8 +596,8 @@ impl Topology {
                     counter_clockwise: winding,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, false);
-                self.scan_east[half_seg] = scan_left;
-                scan_left = Some(half_seg);
+                self.scan_east[half_seg] = scan_east;
+                scan_east = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
             }
             self.add_segs_counter_clockwise(
@@ -636,7 +636,7 @@ impl Topology {
                     clockwise: prev_w,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, true);
-                self.scan_east[half_seg] = scan_left;
+                self.scan_east[half_seg] = scan_east;
                 seg_buf.push(half_seg.first_half());
             }
             self.add_segs_counter_clockwise(

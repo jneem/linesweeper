@@ -266,7 +266,7 @@ pub struct ComparisonCache {
 
 impl ComparisonCache {
     // FIXME: less cloning
-    fn compare_segments(
+    pub fn compare_segments(
         &mut self,
         segments: &Segments,
         i: SegIdx,

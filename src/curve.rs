@@ -2,8 +2,15 @@
 
 use arrayvec::ArrayVec;
 use kurbo::{
-    common::solve_cubic, Affine, CubicBez, Line, ParamCurve as _, PathSeg, QuadBez, Shape, Vec2,
+    common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, QuadBez, Shape, Vec2,
 };
+
+pub fn slice_bez(c: CubicBez, y0: f64, y1: f64) -> CubicBez {
+    let mut ret = c.subsegment(solve_t_for_y(c, y0)..solve_t_for_y(c, y1));
+    ret.p0.y = y0;
+    ret.p3.y = y1;
+    ret
+}
 
 #[derive(Clone, Debug)]
 struct CurveOrderEntry {
@@ -683,12 +690,12 @@ impl Order {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct EstParab {
-    c0: f64,
-    c1: f64,
-    c2: f64,
-    dmin: f64,
-    dmax: f64,
+pub struct EstParab {
+    pub c0: f64,
+    pub c1: f64,
+    pub c2: f64,
+    pub dmin: f64,
+    pub dmax: f64,
 }
 
 impl EstParab {
@@ -703,7 +710,7 @@ impl EstParab {
     // (especially if dy is small *and* the y coordinates are large,
     // because then translation would make them all small), and the first
     // effect can be mitigated by rescaling.
-    fn from_cubic(c: CubicBez) -> Self {
+    pub fn from_cubic(c: CubicBez) -> Self {
         let seg = PathSeg::Cubic(c);
         let close_seg = PathSeg::Line(Line::new(c.p3, c.p0));
         let area = seg.area() + close_seg.area();

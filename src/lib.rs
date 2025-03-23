@@ -6,6 +6,7 @@ pub mod curve;
 mod geom;
 pub mod num;
 pub mod order;
+pub mod position;
 mod segments;
 pub mod sweep;
 pub mod topology;
