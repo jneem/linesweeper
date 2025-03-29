@@ -8,10 +8,13 @@ use std::collections::VecDeque;
 use kurbo::BezPath;
 
 use crate::{
+    curve::Order,
     geom::Point,
+    position::SafeIntervals,
     segments::{SegIdx, Segments},
     sweep::{
-        SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
+        OutputEvent, SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers,
+        Sweeper,
     },
 };
 
@@ -330,7 +333,11 @@ pub struct Topology {
     /// The map from a segment to its scan-left neighbor is always strictly decreasing (in the
     /// index). This ensures that a scan will always terminate, and it also means that we can
     /// build the contours in increasing `OutputSegIdx` order.
-    scan_east: OutputSegVec<Option<OutputSegIdx>>,
+    scan_west: OutputSegVec<Option<OutputSegIdx>>,
+    /// Intervals of segments that we know are far away from other segments. In
+    /// these intervals, we can use the original curves and know that there are
+    /// no collisions.
+    safe_intervals: OutputSegVec<Option<(f64, f64)>>,
 }
 
 impl Topology {
@@ -467,7 +474,8 @@ impl Topology {
         self.point_neighbors.end.push(no_nbrs);
         self.winding.inner.push(winding);
         self.deleted.inner.push(false);
-        self.scan_east.inner.push(None);
+        self.scan_west.inner.push(None);
+        self.safe_intervals.inner.push(None);
         out_idx
     }
 
@@ -515,7 +523,8 @@ impl Topology {
             point_idx: HalfOutputSegVec::with_capacity(segments.len()),
             point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
             deleted: OutputSegVec::with_capacity(segments.len()),
-            scan_east: OutputSegVec::with_capacity(segments.len()),
+            scan_west: OutputSegVec::with_capacity(segments.len()),
+            safe_intervals: OutputSegVec::with_capacity(segments.len()),
         };
         let mut sweep_state = Sweeper::new(&segments, eps);
         let mut range_bufs = SweepLineRangeBuffers::default();
@@ -524,14 +533,14 @@ impl Topology {
         while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
             while let Some(positions) = line.next_range(&mut range_bufs, &segments, eps) {
                 let range = positions.seg_range();
-                let scan_east_seg = if range.segs.start == 0 {
+                let scan_west_seg = if range.segs.start == 0 {
                     None
                 } else {
                     let prev_seg = positions.line().line_segment(range.segs.start - 1);
                     debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
                     ret.open_segs[prev_seg.0].front().copied()
                 };
-                ret.process_sweep_line_range(positions, &segments, scan_east_seg);
+                ret.process_sweep_line_range(positions, &segments, scan_west_seg);
             }
         }
         ret.merge_coincident();
@@ -542,10 +551,10 @@ impl Topology {
         &mut self,
         mut pos: SweepLineRange,
         segments: &Segments,
-        mut scan_east: Option<OutputSegIdx>,
+        mut scan_west: Option<OutputSegIdx>,
     ) {
         let y = pos.line().y();
-        let mut winding = scan_east
+        let mut winding = scan_west
             .map(|idx| self.winding[idx].counter_clockwise)
             .unwrap_or_default();
 
@@ -554,6 +563,9 @@ impl Topology {
         // a &mut self reference.
         let mut seg_buf = Vec::new();
         let mut connected_segs = SegmentsConnectedAtX::default();
+        // A pair (SegIdx, OutputSegIdx) where both indices refer to the last segment
+        // we saw that points up from this sweep line.
+        let mut last_connected_up_seg: Option<(SegIdx, OutputSegIdx)> = None;
 
         while let Some(next_x) = pos.x() {
             let p = PointIdx(self.points.inner.len());
@@ -574,6 +586,49 @@ impl Topology {
             seg_buf.clear();
             seg_buf.extend(self.second_half_segs(connected_segs.connected_up()));
             self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), p);
+
+            for (&out_idx, idx) in seg_buf.iter().zip(connected_segs.connected_up()) {
+                if let Some((prev_idx, prev_out_idx)) = last_connected_up_seg {
+                    let cmp = pos.line().compare_segments(prev_idx, idx);
+
+                    // Find the last strongly-ordered interval before (or including) the current y position.
+                    let (y_start, y_end) = if let Some((y_start, y_end, order)) = cmp
+                        .iter()
+                        .filter(|&(y_start, _, order)| order != Order::Ish && y_start < y)
+                        .last()
+                    {
+                        debug_assert_eq!(order, Order::Left);
+                        (y_start, y_end)
+                    } else {
+                        (f64::INFINITY, f64::NEG_INFINITY)
+                    };
+
+                    let point_idx = self.point_idx[out_idx.other_half()];
+                    let seg_start = self.points[point_idx];
+                    let y_start = y_start.max(seg_start.y);
+                    if y_start < y_end {
+                        self.safe_intervals[out_idx.idx] = Some((y_start, y_end));
+                    }
+
+                    if let Some((prev_y_start, prev_y_end)) = self.safe_intervals[prev_out_idx] {
+                        let prev_y_start = prev_y_start.max(y_start);
+                        let prev_y_end = prev_y_end.min(y_end);
+                        if prev_y_start < prev_y_end {
+                            self.safe_intervals[prev_out_idx] = Some((prev_y_start, prev_y_end));
+                        } else {
+                            self.safe_intervals[prev_out_idx] = None;
+                        }
+                    }
+                } else {
+                    // There's nothing just to my left. Mark the whole segment as safe (if there's
+                    // something to my right, it will be handled in the next pass through this
+                    // inner loop.)
+                    let point_idx = self.point_idx[out_idx.other_half()];
+                    let seg_start = self.points[point_idx];
+                    self.safe_intervals[out_idx.idx] = Some((seg_start.y, y));
+                }
+                last_connected_up_seg = Some((idx, out_idx.idx));
+            }
 
             // Then: gather the output segments from half-segments starting here and moving
             // to later sweep-lines. Allocate new output segments for them.
@@ -596,8 +651,8 @@ impl Topology {
                     counter_clockwise: winding,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, false);
-                self.scan_east[half_seg] = scan_east;
-                scan_east = Some(half_seg);
+                self.scan_west[half_seg] = scan_west;
+                scan_west = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
             }
             self.add_segs_counter_clockwise(
@@ -636,7 +691,7 @@ impl Topology {
                     clockwise: prev_w,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, true);
-                self.scan_east[half_seg] = scan_east;
+                self.scan_west[half_seg] = scan_west;
                 seg_buf.push(half_seg.first_half());
             }
             self.add_segs_counter_clockwise(
@@ -746,8 +801,7 @@ impl Topology {
 
         let mut visited = vec![false; self.winding.inner.len()];
         // Keep track of the points that were visited on this walk, so that if we re-visit a
-        // point we can split out an additional contour. This might be more efficient if we
-        // index our points instead of storing them physically.
+        // point we can split out an additional contour.
         let mut last_visit = PointVec::with_capacity(self.points.inner.len());
         last_visit.inner.resize(self.points.inner.len(), None);
         for idx in self.segment_indices() {
@@ -763,31 +817,31 @@ impl Topology {
             // are relative to existing contours.
             let contour_idx = ContourIdx(ret.contours.len());
             let mut contour = Contour::default();
-            let mut east_seg = self.scan_east[idx];
-            while let Some(left) = east_seg {
+            let mut west_seg = self.scan_west[idx];
+            while let Some(left) = west_seg {
                 if self.deleted[left] || !bdy(left) {
-                    east_seg = self.scan_east[left];
+                    west_seg = self.scan_west[left];
                 } else {
                     break;
                 }
             }
-            if let Some(east) = east_seg {
-                if let Some(east_contour) = seg_contour[east.0] {
+            if let Some(west) = west_seg {
+                if let Some(west_contour) = seg_contour[west.0] {
                     // Is the thing just to our left inside or outside the output set?
-                    let outside = !inside(self.winding(east.first_half()).counter_clockwise);
-                    if outside == ret.contours[east_contour.0].outer {
+                    let outside = !inside(self.winding(west.first_half()).counter_clockwise);
+                    if outside == ret.contours[west_contour.0].outer {
                         // They're an outer contour, and there's exterior between us and them,
                         // or they're an inner contour and there's interior between us.
                         // That means they're our sibling.
-                        contour.parent = ret.contours[east_contour.0].parent;
+                        contour.parent = ret.contours[west_contour.0].parent;
                         contour.outer = outside;
                         debug_assert!(outside || contour.parent.is_some());
                     } else {
-                        contour.parent = Some(east_contour);
-                        contour.outer = !ret.contours[east_contour.0].outer;
+                        contour.parent = Some(west_contour);
+                        contour.outer = !ret.contours[west_contour.0].outer;
                     }
                 } else {
-                    panic!("I'm {idx:?}, east is {east:?}. Y u no have contour?");
+                    panic!("I'm {idx:?}, west is {west:?}. Y u no have contour?");
                 }
             };
             // Reserve a space for the unfinished outer contour, as described above.
@@ -828,6 +882,12 @@ impl Topology {
 
                 let p = self.point_idx[nbr];
                 let last_visit_idx = last_visit[p]
+                    // We don't clean up `last_visit` when we finish walking a
+                    // contour because it could be expensive if there are many
+                    // small contours. This means that `last_visit[p]` could be
+                    // a false positive from an earlier contours. We handle this
+                    // by double-checking that it was actually a time when this
+                    // contours visited `p`.
                     .filter(|&idx| idx < segs.len() && self.point_idx[segs[idx].other_half()] == p);
                 if let Some(seg_idx) = last_visit_idx {
                     // We repeated a point, meaning that we've found an inner contour. Extract
@@ -841,6 +901,9 @@ impl Topology {
                         seg_contour[seg.idx.0] = Some(loop_contour_idx);
                     }
                     let mut points = Vec::with_capacity(segs.len() - seg_idx + 1);
+
+                    // FIXME: is it correct that we push a first point and then extend?
+                    // In the non-inner-contour case below we don't seem to push a first point.
                     points.push(self.points[p]);
                     points.extend(segs[seg_idx..].iter().map(|s| *self.point(*s)));
                     ret.contours.push(Contour {
@@ -899,6 +962,7 @@ pub struct Contour {
     /// should be connected to the first point.
     pub points: Vec<Point>,
 
+    // TODO: also gather the output segment indices. (So that we can do positioning)
     /// A contour can have a parent, so that sets with holes can be represented as nested contours.
     /// For example, the shaded set below:
     ///

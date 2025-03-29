@@ -18,7 +18,7 @@ arrayvec = { version = "0.7.6", features = ["serde"] }
 malachite = "0.4.5"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive"] }
-kurbo = "0.11.1"
+kurbo = { version = "0.11.1", features = ["serde"] }
 
 [dev-dependencies]
 anyhow = "1.0.80"

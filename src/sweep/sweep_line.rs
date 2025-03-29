@@ -1144,6 +1144,10 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         self.state.line.segs[idx].seg
     }
 
+    pub fn compare_segments(&self, i: SegIdx, j: SegIdx) -> CurveOrder {
+        self.state.compare_segments(i, j)
+    }
+
     /// Returns the index ranges of segments in this sweep-line that need to be
     /// given explicit positions.
     ///

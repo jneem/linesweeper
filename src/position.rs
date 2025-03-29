@@ -6,6 +6,27 @@ use crate::{
     SegIdx, Segments,
 };
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SafeIntervals {
+    seg: Vec<Vec<(f64, f64)>>,
+}
+
+impl SafeIntervals {
+    pub fn new(n_segs: usize) -> Self {
+        Self {
+            seg: vec![Vec::new(); n_segs],
+        }
+    }
+
+    pub fn insert(&mut self, seg: SegIdx, mut start_y: f64, end_y: f64) {
+        let ivs = &mut self.seg[seg.0];
+        if let Some((_, last_end)) = ivs.last() {
+            start_y = start_y.max(*last_end);
+        }
+        ivs.push((start_y, end_y));
+    }
+}
+
 struct PositionContext<'a> {
     segs: &'a Segments,
     cmp: &'a mut ComparisonCache,

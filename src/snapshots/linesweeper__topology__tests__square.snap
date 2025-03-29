@@ -187,11 +187,19 @@ Topology(
       false,
     ],
   ),
-  scan_east: OutputSegVec(
+  scan_west: OutputSegVec(
     inner: [
       None,
       Some(OutputSegIdx(0)),
       Some(OutputSegIdx(0)),
+      None,
+    ],
+  ),
+  safe_intervals: OutputSegVec(
+    inner: [
+      Some((0.0, 1.0)),
+      None,
+      Some((0.0, 1.0)),
       None,
     ],
   ),

@@ -450,7 +450,7 @@ expression: "(top, contours)"
       false,
     ],
   ),
-  scan_east: OutputSegVec(
+  scan_west: OutputSegVec(
     inner: [
       None,
       Some(OutputSegIdx(0)),
@@ -461,6 +461,21 @@ expression: "(top, contours)"
       Some(OutputSegIdx(3)),
       Some(OutputSegIdx(6)),
       Some(OutputSegIdx(6)),
+      None,
+      None,
+    ],
+  ),
+  safe_intervals: OutputSegVec(
+    inner: [
+      Some((-1.0, 2.0)),
+      None,
+      Some((-1.0, 2.0)),
+      Some((0.0, 1.9677777777755554)),
+      None,
+      Some((0.0, 1.9677777777755554)),
+      Some((0.0, 1.889999999999)),
+      None,
+      Some((0.0, 1.889999999999)),
       None,
       None,
     ],

@@ -300,7 +300,7 @@ Topology(
       false,
     ],
   ),
-  scan_east: OutputSegVec(
+  scan_west: OutputSegVec(
     inner: [
       None,
       Some(OutputSegIdx(0)),
@@ -308,6 +308,17 @@ Topology(
       Some(OutputSegIdx(2)),
       Some(OutputSegIdx(3)),
       Some(OutputSegIdx(3)),
+      None,
+    ],
+  ),
+  safe_intervals: OutputSegVec(
+    inner: [
+      Some((0.0, 1.0)),
+      None,
+      None,
+      None,
+      None,
+      Some((0.0, 1.0)),
       None,
     ],
   ),

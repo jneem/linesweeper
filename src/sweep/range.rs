@@ -1,4 +1,4 @@
-use crate::{num::CheapOrderedFloat, SegIdx};
+use crate::{curve::CurveOrder, num::CheapOrderedFloat, SegIdx};
 
 use super::{ChangedInterval, OutputEvent, SweepLine};
 
@@ -353,8 +353,7 @@ impl SegmentsConnectedAtX {
 ///
 /// Save on re-allocation by allocating this once and reusing it in multiple calls to
 /// [`SweepLine::next_range`].
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SweepLineRangeBuffers {
     /// All the horizontal segments overlapping with the sweep-line-range's current
     /// horizontal position, ordered by ending position.
@@ -366,7 +365,6 @@ pub struct SweepLineRangeBuffers {
     /// way to insert/delete a single element.
     active_horizontals: Vec<HFrag>,
 }
-
 
 impl SweepLineRangeBuffers {
     pub(crate) fn clear(&mut self) {
