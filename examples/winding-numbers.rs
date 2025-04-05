@@ -16,8 +16,6 @@ struct Args {
 }
 
 pub fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-
     let args = Args::parse();
 
     let input = std::fs::read_to_string(&args.input)?;
