@@ -511,10 +511,6 @@ expression: "(top, contours)"
     Contour(
       points: [
         Point(
-          y: 2.0,
-          x: 0.0,
-        ),
-        Point(
           y: -1.0,
           x: -1.5,
         ),

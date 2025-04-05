@@ -902,9 +902,6 @@ impl Topology {
                     }
                     let mut points = Vec::with_capacity(segs.len() - seg_idx + 1);
 
-                    // FIXME: is it correct that we push a first point and then extend?
-                    // In the non-inner-contour case below we don't seem to push a first point.
-                    points.push(self.points[p]);
                     points.extend(segs[seg_idx..].iter().map(|s| *self.point(*s)));
                     ret.contours.push(Contour {
                         points,
