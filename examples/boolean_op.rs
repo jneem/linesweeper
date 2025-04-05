@@ -1,11 +1,17 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 use clap::{Args, Parser};
-use kurbo::{BezPath, ParamCurve as _};
+use kurbo::{BezPath, CubicBez, ParamCurve as _};
 use ordered_float::NotNan;
 use svg::Document;
 
-use linesweeper::{generators, num::CheapOrderedFloat, topology::Topology, Point};
+use linesweeper::{
+    curve::{solve_t_for_y, y_subsegment},
+    generators,
+    num::CheapOrderedFloat,
+    topology::Topology,
+    Point,
+};
 
 mod svg_util;
 
@@ -236,16 +242,44 @@ fn add_op(
         let mut data = svg::node::element::path::Data::new();
 
         for contour_idx in group {
-            let mut contour = contours[contour_idx].points.iter().cloned();
-            let Some(p) = contour.next() else {
-                continue;
-            };
+            let segs = contours[contour_idx].segs.iter().cloned();
+            let mut first = true;
 
-            let (x, y) = (p.x, p.y);
-            data = data.move_to((x + x_off, y + y_off));
-            for p in contour {
-                let (x, y) = (p.x, p.y);
-                data = data.line_to((x + x_off, y + y_off));
+            for seg in segs {
+                let p0 = top.point(seg.other_half());
+                let p1 = top.point(seg);
+
+                if first {
+                    first = !first;
+                    data = data.move_to((p0.x + x_off, p0.y + y_off));
+                }
+
+                if let Some((y0, y1)) = top.safe_intervals[seg] {
+                    let seg_idx = top.orig_seg[seg];
+                    let curve = top.segments[seg_idx].to_kurbo();
+                    let mut curve = y_subsegment(curve, y0, y1);
+
+                    if p0.y > p1.y {
+                        curve = CubicBez::new(curve.p3, curve.p2, curve.p1, curve.p0);
+                    }
+
+                    if curve.p0 != p0.to_kurbo() {
+                        data = data.line_to((curve.p0.x + x_off, curve.p0.y + y_off));
+                    }
+                    data = data.cubic_curve_to((
+                        curve.p1.x + x_off,
+                        curve.p1.y + y_off,
+                        curve.p2.x + x_off,
+                        curve.p2.y + y_off,
+                        curve.p3.x + x_off,
+                        curve.p3.y + y_off,
+                    ));
+                    if curve.p3 != p1.to_kurbo() {
+                        data = data.line_to((p1.x + x_off, p1.y + y_off));
+                    }
+                } else {
+                    data = data.line_to((p1.x + x_off, p1.y + y_off));
+                }
             }
             data = data.close();
         }

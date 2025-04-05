@@ -23,6 +23,7 @@ Contours(
           x: 0.0,
         ),
       ],
+      segs: [],
       parent: None,
       outer: true,
     ),

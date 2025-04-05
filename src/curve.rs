@@ -299,6 +299,16 @@ pub fn solve_x_for_y(c: CubicBez, y: f64) -> f64 {
     c.eval(solve_t_for_y(c, y)).x
 }
 
+pub fn y_subsegment(c: CubicBez, y0: f64, y1: f64) -> CubicBez {
+    debug_assert!(y0 < y1);
+    let t0 = solve_t_for_y(c, y0);
+    let t1 = solve_t_for_y(c, y1);
+    let mut ret = c.subsegment(t0..t1);
+    ret.p0.y = y0;
+    ret.p3.y = y1;
+    ret
+}
+
 // Tries to solve a cubic, but only looks for accurate solutions in the interval [0.0, 1.0].
 //
 // This doesn't actually filter out solutions outside that interval, it only
@@ -926,8 +936,8 @@ fn intersect_cubics_rec(
     accuracy: f64,
     out: &mut CurveOrder,
 ) {
-    let mut c0 = orig_c0.subsegment(solve_t_for_y(orig_c0, y0)..solve_t_for_y(orig_c0, y1));
-    let mut c1 = orig_c1.subsegment(solve_t_for_y(orig_c1, y0)..solve_t_for_y(orig_c1, y1));
+    let mut c0 = y_subsegment(orig_c0, y0, y1);
+    let mut c1 = y_subsegment(orig_c1, y0, y1);
     // dbg!(c0, orig_c0);
     // dbg!(c1, orig_c1);
 

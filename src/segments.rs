@@ -184,7 +184,7 @@ impl Segments {
             let cubic = seg.to_cubic();
             let cubics = monotonic_pieces(cubic);
             for c in cubics {
-                let (p0, p1, p2, p3, orient) = if c.p0.y <= c.p3.y {
+                let (p0, p1, p2, p3, orient) = if (c.p0.y, c.p0.x) <= (c.p3.y, c.p3.x) {
                     (c.p0, c.p1, c.p2, c.p3, true)
                 } else {
                     (c.p3, c.p2, c.p1, c.p0, false)
@@ -280,6 +280,12 @@ impl Segments {
     /// Does not include horizontal segments.
     pub fn exits(&self) -> &[(f64, SegIdx)] {
         &self.exit
+    }
+
+    pub fn check_invariants(&self) {
+        for seg in &self.segs {
+            assert!(seg.p0 <= seg.p3);
+        }
     }
 }
 

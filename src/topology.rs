@@ -10,11 +10,9 @@ use kurbo::BezPath;
 use crate::{
     curve::Order,
     geom::Point,
-    position::SafeIntervals,
     segments::{SegIdx, Segments},
     sweep::{
-        OutputEvent, SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers,
-        Sweeper,
+        SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
     },
 };
 
@@ -110,7 +108,7 @@ pub struct HalfOutputSegIdx {
 }
 
 impl HalfOutputSegIdx {
-    fn other_half(self) -> Self {
+    pub fn other_half(self) -> Self {
         Self {
             idx: self.idx,
             first_half: !self.first_half,
@@ -204,7 +202,7 @@ impl<T> std::ops::IndexMut<HalfOutputSegIdx> for HalfOutputSegVec<T> {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize)]
-struct OutputSegVec<T> {
+pub struct OutputSegVec<T> {
     inner: Vec<T>,
 }
 
@@ -233,6 +231,14 @@ impl<T> std::ops::Index<OutputSegIdx> for OutputSegVec<T> {
 impl<T> std::ops::IndexMut<OutputSegIdx> for OutputSegVec<T> {
     fn index_mut(&mut self, index: OutputSegIdx) -> &mut T {
         &mut self.inner[index.0]
+    }
+}
+
+impl<T> std::ops::Index<HalfOutputSegIdx> for OutputSegVec<T> {
+    type Output = T;
+
+    fn index(&self, index: HalfOutputSegIdx) -> &Self::Output {
+        &self.inner[index.idx.0]
     }
 }
 
@@ -337,7 +343,11 @@ pub struct Topology {
     /// Intervals of segments that we know are far away from other segments. In
     /// these intervals, we can use the original curves and know that there are
     /// no collisions.
-    safe_intervals: OutputSegVec<Option<(f64, f64)>>,
+    pub safe_intervals: OutputSegVec<Option<(f64, f64)>>,
+    pub orig_seg: OutputSegVec<SegIdx>,
+    // TODO: probably don't have this owned
+    #[serde(skip)]
+    pub segments: Segments,
 }
 
 impl Topology {
@@ -476,6 +486,7 @@ impl Topology {
         self.deleted.inner.push(false);
         self.scan_west.inner.push(None);
         self.safe_intervals.inner.push(None);
+        self.orig_seg.inner.push(idx);
         out_idx
     }
 
@@ -490,6 +501,7 @@ impl Topology {
         shape_a.resize(segments.len(), true);
         segments.add_bez_paths(set_b);
         shape_a.resize(segments.len(), false);
+        segments.check_invariants();
         Self::from_segments(segments, shape_a, eps)
     }
 
@@ -525,11 +537,12 @@ impl Topology {
             deleted: OutputSegVec::with_capacity(segments.len()),
             scan_west: OutputSegVec::with_capacity(segments.len()),
             safe_intervals: OutputSegVec::with_capacity(segments.len()),
+            orig_seg: OutputSegVec::with_capacity(segments.len()),
+            segments: Segments::default(),
         };
         let mut sweep_state = Sweeper::new(&segments, eps);
         let mut range_bufs = SweepLineRangeBuffers::default();
         let mut line_bufs = SweepLineBuffers::default();
-        //dbg!(&segments);
         while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
             while let Some(positions) = line.next_range(&mut range_bufs, &segments, eps) {
                 let range = positions.seg_range();
@@ -544,6 +557,7 @@ impl Topology {
             }
         }
         ret.merge_coincident();
+        ret.segments = segments;
         ret
     }
 
@@ -592,7 +606,7 @@ impl Topology {
                     let cmp = pos.line().compare_segments(prev_idx, idx);
 
                     // Find the last strongly-ordered interval before (or including) the current y position.
-                    let (y_start, y_end) = if let Some((y_start, y_end, order)) = cmp
+                    let (mut y_start, y_end) = if let Some((y_start, y_end, order)) = cmp
                         .iter()
                         .filter(|&(y_start, _, order)| order != Order::Ish && y_start < y)
                         .last()
@@ -605,9 +619,22 @@ impl Topology {
 
                     let point_idx = self.point_idx[out_idx.other_half()];
                     let seg_start = self.points[point_idx];
-                    let y_start = y_start.max(seg_start.y);
-                    if y_start < y_end {
-                        self.safe_intervals[out_idx.idx] = Some((y_start, y_end));
+
+                    // The segment comparison only accounts for the y-interval in which both segments
+                    // exist. But if the previous segment started after us or ended before us, that
+                    // extra y interval where we existed and then didn't can be added to the "safe"
+                    // interval. TODO: find some natural utility place to put this.
+                    let prev_seg = &segments[prev_idx];
+                    if y_start == prev_seg.p0.y {
+                        y_start = seg_start.y;
+                    } else if y_start == seg_start.y {
+                        y_start = prev_seg.p0.y
+                    }
+
+                    let my_y_start = y_start.max(seg_start.y);
+                    let my_y_end = y_end.min(y);
+                    if my_y_start < my_y_end {
+                        self.safe_intervals[out_idx.idx] = Some((my_y_start, my_y_end));
                     }
 
                     if let Some((prev_y_start, prev_y_end)) = self.safe_intervals[prev_out_idx] {
@@ -900,11 +927,14 @@ impl Topology {
                     for &seg in &segs[seg_idx..] {
                         seg_contour[seg.idx.0] = Some(loop_contour_idx);
                     }
-                    let mut points = Vec::with_capacity(segs.len() - seg_idx + 1);
-
-                    points.extend(segs[seg_idx..].iter().map(|s| *self.point(*s)));
+                    let points = segs[seg_idx..]
+                        .iter()
+                        .map(|s| *self.point(s.other_half()))
+                        .collect();
+                    let contour_segs = segs[seg_idx..].to_vec();
                     ret.contours.push(Contour {
                         points,
+                        segs: contour_segs,
                         parent: Some(contour_idx),
                         outer: !ret.contours[contour_idx.0].outer,
                     });
@@ -923,7 +953,9 @@ impl Topology {
             for &seg in &segs {
                 seg_contour[seg.idx.0] = Some(contour_idx);
             }
-            ret.contours[contour_idx.0].points = segs.iter().map(|s| *self.point(*s)).collect();
+            ret.contours[contour_idx.0].points =
+                segs.iter().map(|s| *self.point(s.other_half())).collect();
+            ret.contours[contour_idx.0].segs = segs.to_vec();
         }
 
         ret
@@ -958,6 +990,9 @@ pub struct Contour {
     /// If you're drawing a contour with line segments, don't forget to close it: the last point
     /// should be connected to the first point.
     pub points: Vec<Point>,
+
+    /// `segs[i]` is the segment from `points[i]` to `points[(i + 1) % points.len()]`.
+    pub segs: Vec<HalfOutputSegIdx>,
 
     // TODO: also gather the output segment indices. (So that we can do positioning)
     /// A contour can have a parent, so that sets with holes can be represented as nested contours.
@@ -1042,6 +1077,7 @@ impl Default for Contour {
     fn default() -> Self {
         Self {
             points: Vec::default(),
+            segs: Vec::default(),
             outer: true,
             parent: None,
         }

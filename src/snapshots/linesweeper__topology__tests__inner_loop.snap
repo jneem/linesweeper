@@ -480,6 +480,21 @@ expression: "(top, contours)"
       None,
     ],
   ),
+  orig_seg: OutputSegVec(
+    inner: [
+      SegIdx(3),
+      SegIdx(0),
+      SegIdx(1),
+      SegIdx(4),
+      SegIdx(6),
+      SegIdx(5),
+      SegIdx(7),
+      SegIdx(9),
+      SegIdx(8),
+      SegIdx(2),
+      SegIdx(2),
+    ],
+  ),
 ), Contours(
   contours: [
     Contour(
@@ -505,11 +520,16 @@ expression: "(top, contours)"
           x: -2.0,
         ),
       ],
+      segs: [],
       parent: None,
       outer: true,
     ),
     Contour(
       points: [
+        Point(
+          y: 2.0,
+          x: 0.0,
+        ),
         Point(
           y: -1.0,
           x: -1.5,
@@ -518,10 +538,11 @@ expression: "(top, contours)"
           y: -1.0,
           x: 1.5,
         ),
-        Point(
-          y: 2.0,
-          x: 0.0,
-        ),
+      ],
+      segs: [
+        OutputSegIdx(3),
+        OutputSegIdx(4),
+        OutputSegIdx(5),
       ],
       parent: Some(ContourIdx(0)),
       outer: false,
@@ -541,6 +562,7 @@ expression: "(top, contours)"
           x: -0.1,
         ),
       ],
+      segs: [],
       parent: Some(ContourIdx(1)),
       outer: true,
     ),

@@ -203,4 +203,12 @@ Topology(
       Some((1.0, 1.9849999999995)),
     ],
   ),
+  orig_seg: OutputSegVec(
+    inner: [
+      SegIdx(3),
+      SegIdx(0),
+      SegIdx(2),
+      SegIdx(1),
+    ],
+  ),
 )

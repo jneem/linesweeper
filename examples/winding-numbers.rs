@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use linesweeper::{num::CheapOrderedFloat, topology::Topology};
+use linesweeper::topology::Topology;
 
 mod svg_util;
 
@@ -16,34 +16,23 @@ struct Args {
 }
 
 pub fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
     let args = Args::parse();
 
     let input = std::fs::read_to_string(&args.input)?;
     let tree = usvg::Tree::from_str(&input, &usvg::Options::default())?;
-    let contours = svg_util::svg_to_contours(&tree);
+    let contours = svg_util::svg_to_bezpaths(&tree);
 
     let eps = args.epsilon.unwrap_or(0.1);
-    let top = Topology::from_polylines([contours[0].clone()], contours[1..].iter().cloned(), eps);
+    let top = Topology::from_paths([contours[0].clone()], contours[1..].iter().cloned(), eps);
 
-    let ys: Vec<_> = contours.iter().flatten().map(|p| p.y).collect();
-    let xs: Vec<_> = contours.iter().flatten().map(|p| p.x).collect();
-    let min_x = xs
-        .iter()
-        .min_by_key(|x| CheapOrderedFloat::from(**x))
-        .unwrap();
-    let max_x = xs
-        .iter()
-        .max_by_key(|x| CheapOrderedFloat::from(**x))
-        .unwrap();
-    let min_y = ys
-        .iter()
-        .min_by_key(|x| CheapOrderedFloat::from(**x))
-        .unwrap();
-    let max_y = ys
-        .iter()
-        .max_by_key(|x| CheapOrderedFloat::from(**x))
-        .unwrap();
-    let pad = 1.0 + eps;
+    let bbox = top.bounding_box();
+    let min_x = bbox.min_x();
+    let min_y = bbox.min_y();
+    let max_x = bbox.max_x();
+    let max_y = bbox.max_y();
+    let pad = 8.0 + eps;
     let stroke_width = (max_y - min_y).max(max_x - max_y) / 512.0;
     let dot_radius = stroke_width * 1.5;
     let mut document = svg::Document::new().set(
@@ -56,7 +45,7 @@ pub fn main() -> anyhow::Result<()> {
         ),
     );
 
-    let text_size = "1px";
+    let text_size = "8px";
 
     for seg in top.segment_indices() {
         let p0 = &top.point(seg.first_half());
