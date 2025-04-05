@@ -254,7 +254,10 @@ fn add_op(
                     data = data.move_to((p0.x + x_off, p0.y + y_off));
                 }
 
-                if let Some((y0, y1)) = top.safe_intervals[seg] {
+                let (y0, y1) = top.safe_intervals[seg];
+                let y0 = y0.max(p0.y.min(p1.y));
+                let y1 = y1.min(p0.y.max(p1.y));
+                if y0 < y1 {
                     let seg_idx = top.orig_seg[seg];
                     let curve = top.segments[seg_idx].to_kurbo();
                     let mut curve = y_subsegment(curve, y0, y1);

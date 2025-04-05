@@ -467,17 +467,17 @@ expression: "(top, contours)"
   ),
   safe_intervals: OutputSegVec(
     inner: [
-      Some((-1.0, 2.0)),
-      None,
-      Some((-1.0, 2.0)),
-      Some((0.0, 1.9677777777755554)),
-      None,
-      Some((0.0, 1.9677777777755554)),
-      Some((0.0, 1.889999999999)),
-      None,
-      Some((0.0, 1.889999999999)),
-      None,
-      None,
+      (-2.0, 2.0),
+      (-inf, inf),
+      (-2.0, 2.0),
+      (-1.0, 1.9677777777755552),
+      (-inf, inf),
+      (-1.0, 1.9677777777755552),
+      (0.0, 1.889999999999),
+      (-inf, inf),
+      (0.0, 1.889999999999),
+      (-inf, inf),
+      (-inf, inf),
     ],
   ),
   orig_seg: OutputSegVec(
@@ -500,6 +500,10 @@ expression: "(top, contours)"
     Contour(
       points: [
         Point(
+          y: -2.0,
+          x: -2.0,
+        ),
+        Point(
           y: 2.0,
           x: -2.0,
         ),
@@ -515,12 +519,29 @@ expression: "(top, contours)"
           y: -2.0,
           x: 2.0,
         ),
-        Point(
-          y: -2.0,
-          x: -2.0,
+      ],
+      segs: [
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(0),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(9),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(10),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(2),
+          first_half: true,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(1),
+          first_half: true,
         ),
       ],
-      segs: [],
       parent: None,
       outer: true,
     ),
@@ -540,15 +561,28 @@ expression: "(top, contours)"
         ),
       ],
       segs: [
-        OutputSegIdx(3),
-        OutputSegIdx(4),
-        OutputSegIdx(5),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(3),
+          first_half: true,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(4),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(5),
+          first_half: false,
+        ),
       ],
       parent: Some(ContourIdx(0)),
       outer: false,
     ),
     Contour(
       points: [
+        Point(
+          y: 0.0,
+          x: -0.1,
+        ),
         Point(
           y: 2.0,
           x: 0.0,
@@ -557,12 +591,21 @@ expression: "(top, contours)"
           y: 0.0,
           x: 0.1,
         ),
-        Point(
-          y: 0.0,
-          x: -0.1,
+      ],
+      segs: [
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(6),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(8),
+          first_half: true,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(7),
+          first_half: true,
         ),
       ],
-      segs: [],
       parent: Some(ContourIdx(1)),
       outer: true,
     ),

@@ -5,10 +5,9 @@
 
 use std::collections::VecDeque;
 
-use kurbo::BezPath;
+use kurbo::{BezPath, Rect};
 
 use crate::{
-    curve::Order,
     geom::Point,
     segments::{SegIdx, Segments},
     sweep::{
@@ -343,7 +342,7 @@ pub struct Topology {
     /// Intervals of segments that we know are far away from other segments. In
     /// these intervals, we can use the original curves and know that there are
     /// no collisions.
-    pub safe_intervals: OutputSegVec<Option<(f64, f64)>>,
+    pub safe_intervals: OutputSegVec<(f64, f64)>,
     pub orig_seg: OutputSegVec<SegIdx>,
     // TODO: probably don't have this owned
     #[serde(skip)]
@@ -485,7 +484,9 @@ impl Topology {
         self.winding.inner.push(winding);
         self.deleted.inner.push(false);
         self.scan_west.inner.push(None);
-        self.safe_intervals.inner.push(None);
+        self.safe_intervals
+            .inner
+            .push((f64::NEG_INFINITY, f64::INFINITY));
         self.orig_seg.inner.push(idx);
         out_idx
     }
@@ -543,6 +544,7 @@ impl Topology {
         let mut sweep_state = Sweeper::new(&segments, eps);
         let mut range_bufs = SweepLineRangeBuffers::default();
         let mut line_bufs = SweepLineBuffers::default();
+        //dbg!(&segments);
         while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
             while let Some(positions) = line.next_range(&mut range_bufs, &segments, eps) {
                 let range = positions.seg_range();
@@ -559,6 +561,13 @@ impl Topology {
         ret.merge_coincident();
         ret.segments = segments;
         ret
+    }
+
+    fn restrict_safe_interval(&mut self, idx: OutputSegIdx, y0: f64, y1: f64) {
+        let (prev_y0, prev_y1) = self.safe_intervals[idx];
+        let y0 = prev_y0.max(y0);
+        let y1 = prev_y1.min(y1);
+        self.safe_intervals[idx] = (y0, y1);
     }
 
     fn process_sweep_line_range(
@@ -578,8 +587,9 @@ impl Topology {
         let mut seg_buf = Vec::new();
         let mut connected_segs = SegmentsConnectedAtX::default();
         // A pair (SegIdx, OutputSegIdx) where both indices refer to the last segment
-        // we saw that points up from this sweep line.
+        // we saw that points up (or down) from this sweep line.
         let mut last_connected_up_seg: Option<(SegIdx, OutputSegIdx)> = None;
+        let mut last_connected_down_seg: Option<(SegIdx, OutputSegIdx)> = None;
 
         while let Some(next_x) = pos.x() {
             let p = PointIdx(self.points.inner.len());
@@ -605,54 +615,10 @@ impl Topology {
                 if let Some((prev_idx, prev_out_idx)) = last_connected_up_seg {
                     let cmp = pos.line().compare_segments(prev_idx, idx);
 
-                    // Find the last strongly-ordered interval before (or including) the current y position.
-                    let (mut y_start, y_end) = if let Some((y_start, y_end, order)) = cmp
-                        .iter()
-                        .filter(|&(y_start, _, order)| order != Order::Ish && y_start < y)
-                        .last()
-                    {
-                        debug_assert_eq!(order, Order::Left);
-                        (y_start, y_end)
-                    } else {
-                        (f64::INFINITY, f64::NEG_INFINITY)
-                    };
+                    let (y_start, y_end) = cmp.order_interval_before(y);
 
-                    let point_idx = self.point_idx[out_idx.other_half()];
-                    let seg_start = self.points[point_idx];
-
-                    // The segment comparison only accounts for the y-interval in which both segments
-                    // exist. But if the previous segment started after us or ended before us, that
-                    // extra y interval where we existed and then didn't can be added to the "safe"
-                    // interval. TODO: find some natural utility place to put this.
-                    let prev_seg = &segments[prev_idx];
-                    if y_start == prev_seg.p0.y {
-                        y_start = seg_start.y;
-                    } else if y_start == seg_start.y {
-                        y_start = prev_seg.p0.y
-                    }
-
-                    let my_y_start = y_start.max(seg_start.y);
-                    let my_y_end = y_end.min(y);
-                    if my_y_start < my_y_end {
-                        self.safe_intervals[out_idx.idx] = Some((my_y_start, my_y_end));
-                    }
-
-                    if let Some((prev_y_start, prev_y_end)) = self.safe_intervals[prev_out_idx] {
-                        let prev_y_start = prev_y_start.max(y_start);
-                        let prev_y_end = prev_y_end.min(y_end);
-                        if prev_y_start < prev_y_end {
-                            self.safe_intervals[prev_out_idx] = Some((prev_y_start, prev_y_end));
-                        } else {
-                            self.safe_intervals[prev_out_idx] = None;
-                        }
-                    }
-                } else {
-                    // There's nothing just to my left. Mark the whole segment as safe (if there's
-                    // something to my right, it will be handled in the next pass through this
-                    // inner loop.)
-                    let point_idx = self.point_idx[out_idx.other_half()];
-                    let seg_start = self.points[point_idx];
-                    self.safe_intervals[out_idx.idx] = Some((seg_start.y, y));
+                    self.restrict_safe_interval(out_idx.idx, y_start, y_end);
+                    self.restrict_safe_interval(prev_out_idx, y_start, y_end);
                 }
                 last_connected_up_seg = Some((idx, out_idx.idx));
             }
@@ -681,6 +647,16 @@ impl Topology {
                 self.scan_west[half_seg] = scan_west;
                 scan_west = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
+
+                if let Some((prev_idx, prev_out_idx)) = last_connected_down_seg {
+                    let cmp = pos.line().compare_segments(prev_idx, new_seg);
+
+                    let (y_start, y_end) = cmp.order_interval_after(y);
+
+                    self.restrict_safe_interval(half_seg, y_start, y_end);
+                    self.restrict_safe_interval(prev_out_idx, y_start, y_end);
+                }
+                last_connected_down_seg = Some((new_seg, half_seg));
             }
             self.add_segs_counter_clockwise(
                 &mut first_seg,
@@ -962,17 +938,19 @@ impl Topology {
     }
 
     pub fn bounding_box(&self) -> kurbo::Rect {
-        let mut min_x = f64::INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-        for p in self.points.inner.iter() {
-            min_x = min_x.min(p.x);
-            min_y = min_y.min(p.y);
-            max_x = max_x.max(p.x);
-            max_y = max_y.max(p.y);
+        let mut rect = Rect::new(
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
+        for seg in self.segments.segments() {
+            rect = rect.union_pt(seg.p0.to_kurbo());
+            rect = rect.union_pt(seg.p1.to_kurbo());
+            rect = rect.union_pt(seg.p2.to_kurbo());
+            rect = rect.union_pt(seg.p3.to_kurbo());
         }
-        kurbo::Rect::from_points((min_x, min_y), (max_x, max_y))
+        rect
     }
 }
 

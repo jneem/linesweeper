@@ -357,14 +357,14 @@ expression: "(top, contours)"
   ),
   safe_intervals: OutputSegVec(
     inner: [
-      Some((-2.0, 2.0)),
-      None,
-      Some((-2.0, 2.0)),
-      Some((-1.0, 1.0)),
-      None,
-      Some((-1.0, 1.0)),
-      None,
-      None,
+      (-2.0, 2.0),
+      (-inf, inf),
+      (-2.0, 2.0),
+      (-1.0, 1.0),
+      (-inf, inf),
+      (-1.0, 1.0),
+      (-inf, inf),
+      (-inf, inf),
     ],
   ),
   orig_seg: OutputSegVec(
@@ -384,6 +384,10 @@ expression: "(top, contours)"
     Contour(
       points: [
         Point(
+          y: -2.0,
+          x: -2.0,
+        ),
+        Point(
           y: 2.0,
           x: -2.0,
         ),
@@ -394,19 +398,36 @@ expression: "(top, contours)"
         Point(
           y: -2.0,
           x: 2.0,
-        ),
-        Point(
-          y: -2.0,
-          x: -2.0,
         ),
       ],
-      segs: [],
+      segs: [
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(0),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(7),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(2),
+          first_half: true,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(1),
+          first_half: true,
+        ),
+      ],
       parent: None,
       outer: true,
     ),
     Contour(
       points: [
         Point(
+          y: 1.0,
+          x: -1.0,
+        ),
+        Point(
           y: -1.0,
           x: -1.0,
         ),
@@ -417,13 +438,26 @@ expression: "(top, contours)"
         Point(
           y: 1.0,
           x: 1.0,
-        ),
-        Point(
-          y: 1.0,
-          x: -1.0,
         ),
       ],
-      segs: [],
+      segs: [
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(3),
+          first_half: true,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(4),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(5),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(6),
+          first_half: true,
+        ),
+      ],
       parent: Some(ContourIdx(0)),
       outer: false,
     ),

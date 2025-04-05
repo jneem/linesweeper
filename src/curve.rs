@@ -262,6 +262,38 @@ impl CurveOrder {
             .find(|(_start, _end, order)| *order != Order::Ish)
             .map_or(Order::Ish, |(_start, _end, order)| order)
     }
+
+    pub fn order_interval_before(&self, y: f64) -> (f64, f64) {
+        if let Some((y_start, y_end, _)) = self
+            .iter()
+            .filter(|&(y_start, _, order)| order != Order::Ish && y_start < y)
+            .last()
+        {
+            if y_start == self.start {
+                (f64::NEG_INFINITY, y_end)
+            } else {
+                (y_start, y_end)
+            }
+        } else {
+            (f64::NEG_INFINITY, self.start)
+        }
+    }
+
+    pub fn order_interval_after(&self, y: f64) -> (f64, f64) {
+        if let Some((y_start, y_end, _)) = self
+            .iter()
+            .filter(|&(_, y_end, order)| order != Order::Ish && y_end > y)
+            .last()
+        {
+            if y_end == self.cmps.last().unwrap().end {
+                (y_start, f64::INFINITY)
+            } else {
+                (y_start, y_end)
+            }
+        } else {
+            (self.cmps.last().unwrap().end, f64::INFINITY)
+        }
+    }
 }
 
 pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {

@@ -7,6 +7,10 @@ Contours(
     Contour(
       points: [
         Point(
+          y: 0.0,
+          x: 0.0,
+        ),
+        Point(
           y: 0.5,
           x: 0.0,
         ),
@@ -17,13 +21,26 @@ Contours(
         Point(
           y: 0.0,
           x: 0.5,
-        ),
-        Point(
-          y: 0.0,
-          x: 0.0,
         ),
       ],
-      segs: [],
+      segs: [
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(3),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(10),
+          first_half: false,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(5),
+          first_half: true,
+        ),
+        HalfOutputSegIdx(
+          idx: OutputSegIdx(4),
+          first_half: true,
+        ),
+      ],
       parent: None,
       outer: true,
     ),

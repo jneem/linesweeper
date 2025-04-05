@@ -197,10 +197,10 @@ Topology(
   ),
   safe_intervals: OutputSegVec(
     inner: [
-      Some((0.0, 1.0)),
-      None,
-      Some((0.0, 1.0)),
-      None,
+      (0.0, 1.0),
+      (-inf, inf),
+      (0.0, 1.0),
+      (-inf, inf),
     ],
   ),
   orig_seg: OutputSegVec(
