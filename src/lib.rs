@@ -7,6 +7,8 @@ mod geom;
 pub mod num;
 pub mod order;
 pub mod position;
+pub mod positioning_graph;
+pub mod segment_tree;
 mod segments;
 pub mod sweep;
 pub mod topology;
