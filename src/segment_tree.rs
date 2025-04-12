@@ -72,13 +72,11 @@ impl<T: Clone> SegmentTree<T> {
 
         let mut tree = vec![SegmentTreeNode::default(); (2 * points.len() - 3).next_power_of_two()];
         fill_heap(&mut tree, 0, &points[1..points.len() - 1]);
-        dbg!(&tree);
 
         let mut buf = Vec::new();
         for (x0, x1, _) in intervals {
             buf.clear();
             find_nodes(&tree, (*x0, *x1), (min, max), &mut buf);
-            dbg!(&buf);
             for &idx in &buf {
                 tree[idx].payload_len += 1;
             }
@@ -101,7 +99,6 @@ impl<T: Clone> SegmentTree<T> {
                 payloads[node.payload_idx] = payload.clone();
             }
         }
-        dbg!(&tree);
 
         Self {
             tree,
@@ -125,42 +122,47 @@ pub struct SegmentTreeIter<'a, T> {
     payload: Vec<T>,
     // The stack points to the heap node that we've just visited (whose
     // elements are at the end of the `payload` array).
-    stack: Vec<usize>,
+    stack: Vec<(usize, f64, f64)>,
 }
 
 impl<T: Clone> SegmentTreeIter<'_, T> {
     // TODO: return the intervals also
-    pub fn next_payloads(&mut self) -> Option<&[T]> {
-        // We don't distinguish between "we're done" and "we haven't started yet".
+    pub fn next_payloads(&mut self) -> Option<(f64, f64, &[T])> {
+        // We don't distinguish between "we're done" and  "we haven't started yet".
         // In other words, this isn't a "fused" iterator.
         if self.stack.is_empty() {
-            self.fill_stack_to_leaf(0);
+            self.fill_stack_to_leaf(0, (self.tree.min, self.tree.max));
         } else if let Some(next_idx) = self.empty_stack_to_unfinished_parent() {
-            self.fill_stack_to_leaf(next_idx);
+            let &(parent_idx, _, parent_end) = self.stack.last().unwrap();
+            self.fill_stack_to_leaf(
+                next_idx,
+                (self.tree.tree[parent_idx].x.unwrap(), parent_end),
+            );
         } else {
             return None;
         }
 
-        Some(self.payload.as_slice())
+        let &(_, start, end) = self.stack.last().unwrap();
+        Some((start, end, self.payload.as_slice()))
     }
 
-    fn fill_stack_to_leaf(&mut self, idx: usize) {
+    fn fill_stack_to_leaf(&mut self, idx: usize, interval: (f64, f64)) {
         if idx >= self.tree.tree.len() {
             return;
         }
         let node = &self.tree.tree[idx];
-        self.stack.push(idx);
+        self.stack.push((idx, interval.0, interval.1));
         self.payload.extend_from_slice(
             &self.tree.payloads[node.payload_idx..(node.payload_idx + node.payload_len)],
         );
 
-        if node.x.is_some() {
-            self.fill_stack_to_leaf(2 * idx + 1);
+        if let Some(x) = node.x {
+            self.fill_stack_to_leaf(2 * idx + 1, (interval.0, x));
         }
     }
 
     fn empty_stack_to_unfinished_parent(&mut self) -> Option<usize> {
-        let idx = self.stack.pop()?;
+        let idx = self.stack.pop()?.0;
         let payload_len = self.tree.tree[idx].payload_len;
         self.payload
             .truncate(self.payload.len().checked_sub(payload_len).unwrap());
@@ -178,16 +180,51 @@ impl<T: Clone> SegmentTreeIter<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::SegmentTree;
+    use proptest::prelude::*;
 
     #[test]
     fn basic() {
         let intervals = [(0.0, 10.0, 0), (1.0, 9.0, 1), (0.0, 2.0, 2)];
         let tree = SegmentTree::new(&intervals);
-        dbg!(&tree.payloads);
         let mut iter = tree.iter();
-        assert_eq!(iter.next_payloads(), Some([0, 2].as_slice()));
-        assert_eq!(iter.next_payloads(), Some([0, 2, 1].as_slice()));
-        assert_eq!(iter.next_payloads(), Some([0, 1].as_slice()));
-        assert_eq!(iter.next_payloads(), Some([0].as_slice()));
+        assert_eq!(iter.next_payloads(), Some((0.0, 1.0, [0, 2].as_slice())));
+        assert_eq!(iter.next_payloads(), Some((1.0, 2.0, [0, 2, 1].as_slice())));
+        assert_eq!(iter.next_payloads(), Some((2.0, 9.0, [0, 1].as_slice())));
+        assert_eq!(iter.next_payloads(), Some((9.0, 10.0, [0].as_slice())));
+    }
+
+    proptest! {
+        #[test]
+        fn segment_tree(mut intervals: Vec<(f64, f64)>) {
+            intervals.retain_mut(|(x0, x1)| {
+                if !x0.is_finite() || !x1.is_finite() || x0 == x1 {
+                    return false;
+                }
+                let min = x0.min(*x1);
+                let max = x0.max(*x1);
+
+                *x0 = min;
+                *x1 = max;
+                true
+            });
+
+            if intervals.is_empty() {
+                return Ok(());
+            }
+
+            let indexed = intervals.into_iter().enumerate().map(|(i, (x0, x1))| (x0, x1, i)).collect::<Vec<_>>();
+            let tree = SegmentTree::new(&indexed);
+            let mut iter = tree.iter();
+            while let Some((x0, x1, payloads)) = iter.next_payloads() {
+                let mut payloads_found = payloads.to_vec();
+                payloads_found.sort();
+
+                let mut payloads_expected = indexed.iter().filter_map(|&(y0, y1, i)| {
+                    (y0 <= x0 && x1 <= y1).then_some(i)
+                }).collect::<Vec<_>>();
+                payloads_expected.sort();
+                assert_eq!(payloads_found, payloads_expected);
+            }
+        }
     }
 }
