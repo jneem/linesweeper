@@ -367,6 +367,7 @@ expression: "(top, contours)"
       (-inf, inf),
     ],
   ),
+  close_segments: [],
   orig_seg: OutputSegVec(
     inner: [
       SegIdx(3),

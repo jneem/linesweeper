@@ -480,6 +480,26 @@ expression: "(top, contours)"
       (-inf, inf),
     ],
   ),
+  close_segments: [
+    Node(
+      left_seg: OutputSegIdx(3),
+      right_seg: OutputSegIdx(6),
+      y0: 1.9677777777755552,
+      y1: 2.0,
+    ),
+    Node(
+      left_seg: OutputSegIdx(6),
+      right_seg: OutputSegIdx(8),
+      y0: 1.889999999999,
+      y1: 2.0,
+    ),
+    Node(
+      left_seg: OutputSegIdx(8),
+      right_seg: OutputSegIdx(5),
+      y0: 1.9677777777755552,
+      y1: 2.0,
+    ),
+  ],
   orig_seg: OutputSegVec(
     inner: [
       SegIdx(3),

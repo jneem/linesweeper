@@ -9,6 +9,7 @@ use kurbo::{BezPath, Rect};
 
 use crate::{
     geom::Point,
+    positioning_graph,
     segments::{SegIdx, Segments},
     sweep::{
         SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
@@ -213,6 +214,16 @@ impl<T> OutputSegVec<T> {
     }
 }
 
+impl<T: Default> OutputSegVec<T> {
+    pub fn with_size(cap: usize) -> Self {
+        Self {
+            inner: std::iter::from_fn(|| Some(T::default()))
+                .take(cap)
+                .collect(),
+        }
+    }
+}
+
 impl<T> Default for OutputSegVec<T> {
     fn default() -> Self {
         Self { inner: Vec::new() }
@@ -343,6 +354,7 @@ pub struct Topology {
     /// these intervals, we can use the original curves and know that there are
     /// no collisions.
     pub safe_intervals: OutputSegVec<(f64, f64)>,
+    pub close_segments: Vec<positioning_graph::Node>,
     pub orig_seg: OutputSegVec<SegIdx>,
     // TODO: probably don't have this owned
     #[serde(skip)]
@@ -538,6 +550,7 @@ impl Topology {
             deleted: OutputSegVec::with_capacity(segments.len()),
             scan_west: OutputSegVec::with_capacity(segments.len()),
             safe_intervals: OutputSegVec::with_capacity(segments.len()),
+            close_segments: Vec::new(),
             orig_seg: OutputSegVec::with_capacity(segments.len()),
             segments: Segments::default(),
         };
@@ -559,6 +572,7 @@ impl Topology {
             }
         }
         ret.merge_coincident();
+        ret.update_close_intervals();
         ret.segments = segments;
         ret
     }
@@ -619,6 +633,15 @@ impl Topology {
 
                     self.restrict_safe_interval(out_idx.idx, y_start, y_end);
                     self.restrict_safe_interval(prev_out_idx, y_start, y_end);
+
+                    if y_end < y {
+                        self.close_segments.push(positioning_graph::Node {
+                            left_seg: prev_out_idx,
+                            right_seg: out_idx.idx,
+                            y0: y_end,
+                            y1: y,
+                        });
+                    }
                 }
                 last_connected_up_seg = Some((idx, out_idx.idx));
             }
@@ -655,6 +678,15 @@ impl Topology {
 
                     self.restrict_safe_interval(half_seg, y_start, y_end);
                     self.restrict_safe_interval(prev_out_idx, y_start, y_end);
+
+                    if y_start > y {
+                        self.close_segments.push(positioning_graph::Node {
+                            left_seg: prev_out_idx,
+                            right_seg: half_seg,
+                            y0: y,
+                            y1: y_start,
+                        });
+                    }
                 }
                 last_connected_down_seg = Some((new_seg, half_seg));
             }
@@ -951,6 +983,27 @@ impl Topology {
             rect = rect.union_pt(seg.p3.to_kurbo());
         }
         rect
+    }
+
+    // While initially creating the topology, the safe and close intervals
+    // were just based on the curve comparisons. But the output segments might
+    // be shorter than the intervals, so fix them up.
+    //
+    // TODO: also check sanity
+    fn update_close_intervals(&mut self) {
+        self.close_segments.retain_mut(|node| {
+            let left_p0 = self.point_idx[node.left_seg.first_half()];
+            let left_p1 = self.point_idx[node.left_seg.second_half()];
+            let right_p0 = self.point_idx[node.right_seg.first_half()];
+            let right_p1 = self.point_idx[node.right_seg.second_half()];
+            let y0 = self.points[left_p0].y.max(self.points[right_p0].y);
+            let y1 = self.points[left_p1].y.min(self.points[right_p1].y);
+
+            debug_assert!(y0 < y1);
+            node.y0 = node.y0.max(y0);
+            node.y1 = node.y1.min(y1);
+            node.y0 < node.y1
+        })
     }
 }
 

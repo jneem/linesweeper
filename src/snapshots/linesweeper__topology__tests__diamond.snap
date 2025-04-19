@@ -203,6 +203,20 @@ Topology(
       (1.0, 1.9849999999995),
     ],
   ),
+  close_segments: [
+    Node(
+      left_seg: OutputSegIdx(0),
+      right_seg: OutputSegIdx(1),
+      y0: 0.0,
+      y1: 0.015000000000499994,
+    ),
+    Node(
+      left_seg: OutputSegIdx(2),
+      right_seg: OutputSegIdx(3),
+      y0: 1.9849999999995,
+      y1: 2.0,
+    ),
+  ],
   orig_seg: OutputSegVec(
     inner: [
       SegIdx(3),
