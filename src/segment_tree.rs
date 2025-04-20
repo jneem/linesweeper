@@ -126,7 +126,6 @@ pub struct SegmentTreeIter<'a, T> {
 }
 
 impl<T: Clone> SegmentTreeIter<'_, T> {
-    // TODO: return the intervals also
     pub fn next_payloads(&mut self) -> Option<(f64, f64, &[T])> {
         // We don't distinguish between "we're done" and  "we haven't started yet".
         // In other words, this isn't a "fused" iterator.

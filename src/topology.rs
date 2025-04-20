@@ -212,6 +212,10 @@ impl<T> OutputSegVec<T> {
             inner: Vec::with_capacity(cap),
         }
     }
+
+    pub fn indices(&self) -> impl Iterator<Item = OutputSegIdx> {
+        (0..self.inner.len()).map(OutputSegIdx)
+    }
 }
 
 impl<T: Default> OutputSegVec<T> {
