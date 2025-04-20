@@ -12,7 +12,8 @@ use crate::{
     positioning_graph,
     segments::{SegIdx, Segments},
     sweep::{
-        SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
+        ComparisonCache, SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange,
+        SweepLineRangeBuffers, Sweeper,
     },
 };
 
@@ -114,6 +115,10 @@ impl HalfOutputSegIdx {
             first_half: !self.first_half,
         }
     }
+
+    pub fn is_first_half(self) -> bool {
+        self.first_half
+    }
 }
 
 impl std::fmt::Debug for HalfOutputSegIdx {
@@ -128,7 +133,7 @@ impl std::fmt::Debug for HalfOutputSegIdx {
 
 /// A vector indexed by half-output segments.
 #[derive(Clone, Hash, PartialEq, Eq, serde::Serialize)]
-struct HalfOutputSegVec<T> {
+pub struct HalfOutputSegVec<T> {
     start: Vec<T>,
     end: Vec<T>,
 }
@@ -138,6 +143,19 @@ impl<T> HalfOutputSegVec<T> {
         Self {
             start: Vec::with_capacity(cap),
             end: Vec::with_capacity(cap),
+        }
+    }
+}
+
+impl<T: Default> HalfOutputSegVec<T> {
+    pub fn with_size(cap: usize) -> Self {
+        Self {
+            start: std::iter::from_fn(|| Some(T::default()))
+                .take(cap)
+                .collect(),
+            end: std::iter::from_fn(|| Some(T::default()))
+                .take(cap)
+                .collect(),
         }
     }
 }
@@ -215,6 +233,14 @@ impl<T> OutputSegVec<T> {
 
     pub fn indices(&self) -> impl Iterator<Item = OutputSegIdx> {
         (0..self.inner.len()).map(OutputSegIdx)
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 }
 
@@ -1008,6 +1034,26 @@ impl Topology {
             node.y1 = node.y1.min(y1);
             node.y0 < node.y1
         })
+    }
+
+    pub fn compute_positions(&self, eps: f64) -> OutputSegVec<BezPath> {
+        // TODO: reuse the cache from the sweep-line
+        let mut cmp = ComparisonCache::default();
+        let mut endpoints = HalfOutputSegVec::with_size(self.orig_seg.len());
+        for idx in self.orig_seg.indices() {
+            endpoints[idx.first_half()] = self.points[self.point_idx[idx.first_half()]].to_kurbo();
+            endpoints[idx.second_half()] =
+                self.points[self.point_idx[idx.second_half()]].to_kurbo();
+        }
+
+        crate::position::compute_positions(
+            &self.segments,
+            &self.orig_seg,
+            &self.close_segments,
+            &mut cmp,
+            &endpoints,
+            eps,
+        )
     }
 }
 

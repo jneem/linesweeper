@@ -50,7 +50,7 @@ impl PositioningGraph {
         Self { nodes, edges }
     }
 
-    pub fn connected_components(&self) -> Vec<SegmentTree<OutputSegIdx>> {
+    pub fn connected_components(&self) -> Vec<SegmentTree<(OutputSegIdx, OutputSegIdx)>> {
         let mut ret = Vec::new();
         let mut seen = vec![false; self.nodes.len()];
         let mut stack: Vec<usize> = Vec::new();
@@ -80,12 +80,9 @@ impl PositioningGraph {
             debug_assert!(!component.is_empty());
             let intervals: Vec<_> = component
                 .iter()
-                .flat_map(|idx| {
+                .map(|idx| {
                     let node = &self.nodes[*idx];
-                    [
-                        (node.y0, node.y1, node.left_seg),
-                        (node.y0, node.y1, node.right_seg),
-                    ]
+                    (node.y0, node.y1, (node.left_seg, node.right_seg))
                 })
                 .collect();
             ret.push(SegmentTree::new(&intervals));
@@ -129,12 +126,12 @@ mod tests {
         assert_eq!(components.len(), 1);
         let segs = &components[0];
         let mut iter = segs.iter();
-        assert_eq!(iter.next_payloads(), Some((0.0, 0.5, &[s1, s0][..])));
+        assert_eq!(iter.next_payloads(), Some((0.0, 0.5, &[(s0, s1)][..])));
         assert_eq!(
             iter.next_payloads(),
-            Some((0.5, 1.0, &[s1, s0, s2, s1][..]))
+            Some((0.5, 1.0, &[(s0, s1), (s1, s2)][..]))
         );
-        assert_eq!(iter.next_payloads(), Some((1.0, 1.5, &[s2, s1][..])));
+        assert_eq!(iter.next_payloads(), Some((1.0, 1.5, &[(s1, s2)][..])));
 
         // An example with two connected components.
         let nodes = vec![

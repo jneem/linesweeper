@@ -9,7 +9,7 @@ use linesweeper::{
     curve::{solve_t_for_y, y_subsegment},
     generators,
     num::CheapOrderedFloat,
-    topology::Topology,
+    topology::{OutputSegVec, Topology},
     Point,
 };
 
@@ -154,11 +154,14 @@ pub fn main() -> anyhow::Result<()> {
         document = document.add(path);
     }
 
+    let out_paths = top.compute_positions(eps);
+
     document = add_op(
         document,
         Op::Union,
         args.non_zero,
         &top,
+        &out_paths,
         one_width,
         0.0,
         stroke_width,
@@ -168,6 +171,7 @@ pub fn main() -> anyhow::Result<()> {
         Op::Intersection,
         args.non_zero,
         &top,
+        &out_paths,
         one_width * 2.0,
         0.0,
         stroke_width,
@@ -177,6 +181,7 @@ pub fn main() -> anyhow::Result<()> {
         Op::Xor,
         args.non_zero,
         &top,
+        &out_paths,
         0.0,
         one_height,
         stroke_width,
@@ -186,6 +191,7 @@ pub fn main() -> anyhow::Result<()> {
         Op::Difference,
         args.non_zero,
         &top,
+        &out_paths,
         one_width,
         one_height,
         stroke_width,
@@ -195,6 +201,7 @@ pub fn main() -> anyhow::Result<()> {
         Op::ReverseDifference,
         args.non_zero,
         &top,
+        &out_paths,
         one_width * 2.0,
         one_height,
         stroke_width,
@@ -210,6 +217,7 @@ fn add_op(
     op: Op,
     non_zero: bool,
     top: &Topology,
+    out_paths: &OutputSegVec<BezPath>,
     x_off: f64,
     y_off: f64,
     stroke_width: f64,
@@ -246,42 +254,38 @@ fn add_op(
             let mut first = true;
 
             for seg in segs {
-                let p0 = top.point(seg.other_half());
-                let p1 = top.point(seg);
-
-                if first {
-                    first = !first;
-                    data = data.move_to((p0.x + x_off, p0.y + y_off));
-                }
-
-                let (y0, y1) = top.safe_intervals[seg];
-                let y0 = y0.max(p0.y.min(p1.y));
-                let y1 = y1.min(p0.y.max(p1.y));
-                if y0 < y1 {
-                    let seg_idx = top.orig_seg[seg];
-                    let curve = top.segments[seg_idx].to_kurbo();
-                    let mut curve = y_subsegment(curve, y0, y1);
-
-                    if p0.y > p1.y {
-                        curve = CubicBez::new(curve.p3, curve.p2, curve.p1, curve.p0);
-                    }
-
-                    if curve.p0 != p0.to_kurbo() {
-                        data = data.line_to((curve.p0.x + x_off, curve.p0.y + y_off));
-                    }
-                    data = data.cubic_curve_to((
-                        curve.p1.x + x_off,
-                        curve.p1.y + y_off,
-                        curve.p2.x + x_off,
-                        curve.p2.y + y_off,
-                        curve.p3.x + x_off,
-                        curve.p3.y + y_off,
-                    ));
-                    if curve.p3 != p1.to_kurbo() {
-                        data = data.line_to((p1.x + x_off, p1.y + y_off));
-                    }
+                let path = if seg.is_first_half() {
+                    out_paths[seg].reverse_subpaths()
                 } else {
-                    data = data.line_to((p1.x + x_off, p1.y + y_off));
+                    out_paths[seg].clone()
+                };
+
+                for el in path.iter() {
+                    match el {
+                        kurbo::PathEl::MoveTo(p) => {
+                            if first {
+                                first = !first;
+                                data = data.move_to((p.x + x_off, p.y + y_off));
+                            }
+                        }
+                        kurbo::PathEl::LineTo(p) => {
+                            data = data.line_to((p.x + x_off, p.y + y_off));
+                        }
+                        kurbo::PathEl::QuadTo(p0, p1) => {
+                            data = data.quadratic_curve_to((
+                                (p0.x + x_off, p0.y + y_off),
+                                (p1.x + x_off, p1.y + y_off),
+                            ));
+                        }
+                        kurbo::PathEl::CurveTo(p0, p1, p2) => {
+                            data = data.cubic_curve_to((
+                                (p0.x + x_off, p0.y + y_off),
+                                (p1.x + x_off, p1.y + y_off),
+                                (p2.x + x_off, p2.y + y_off),
+                            ));
+                        }
+                        kurbo::PathEl::ClosePath => todo!(),
+                    }
                 }
             }
             data = data.close();
