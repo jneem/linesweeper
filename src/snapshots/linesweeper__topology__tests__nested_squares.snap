@@ -355,18 +355,6 @@ expression: "(top, contours)"
       None,
     ],
   ),
-  safe_intervals: OutputSegVec(
-    inner: [
-      (-2.0, 2.0),
-      (-inf, inf),
-      (-2.0, 2.0),
-      (-1.0, 1.0),
-      (-inf, inf),
-      (-1.0, 1.0),
-      (-inf, inf),
-      (-inf, inf),
-    ],
-  ),
   close_segments: [],
   orig_seg: OutputSegVec(
     inner: [

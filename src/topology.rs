@@ -685,7 +685,6 @@ impl Topology {
                     let cmp = pos.line().compare_segments(prev_idx, new_seg);
 
                     if let Some((_, y_end)) = cmp.close_interval_at(y) {
-                        dbg!(&cmp, y, y_end);
                         self.close_segments.push(positioning_graph::Node {
                             left_seg: prev_out_idx,
                             right_seg: half_seg,

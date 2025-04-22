@@ -195,14 +195,6 @@ Topology(
       Some(OutputSegIdx(2)),
     ],
   ),
-  safe_intervals: OutputSegVec(
-    inner: [
-      (0.015000000000499994, 1.0),
-      (0.015000000000499994, 1.0),
-      (1.0, 1.9849999999995),
-      (1.0, 1.9849999999995),
-    ],
-  ),
   close_segments: [
     Node(
       left_seg: OutputSegIdx(0),

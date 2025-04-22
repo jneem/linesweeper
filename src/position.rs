@@ -102,7 +102,7 @@ pub fn ordered_curves(
 }
 
 fn ordered_curves_inner(ctx: &mut PositionContext<'_>) {
-    eprintln!("recursing {:?} on {}..{}", ctx.order, ctx.y0, ctx.y1);
+    //eprintln!("recursing {:?} on {}..{}", ctx.order, ctx.y0, ctx.y1);
     let mut start_y = ctx.y0;
 
     'outer: while start_y < ctx.y1 {
@@ -111,7 +111,6 @@ fn ordered_curves_inner(ctx: &mut PositionContext<'_>) {
             let cmp =
                 ctx.cmp
                     .compare_segments(ctx.segs, ctx.order[i - 1], ctx.order[i], ctx.accuracy);
-            dbg!(&cmp);
 
             let (_start, end, order) = cmp
                 .iter()
@@ -170,10 +169,10 @@ fn horizontal_positions(
 }
 
 fn ordered_curves_all_close(ctx: &mut PositionContext<'_>) {
-    eprintln!(
-        "handling close curves {:?} from {}..{}",
-        ctx.order, ctx.y0, ctx.y1
-    );
+    // eprintln!(
+    //     "handling close curves {:?} from {}..{}",
+    //     ctx.order, ctx.y0, ctx.y1
+    // );
     // TODO: special case for only one curve. Maybe also for two curves.
 
     let mut approxes = Vec::new();
@@ -262,12 +261,9 @@ pub fn compute_positions(
 ) -> OutputSegVec<BezPath> {
     let mut out = OutputSegVec::<Vec<BezPath>>::with_size(orig_seg_map.len());
     let graph = positioning_graph::PositioningGraph::new(out.len(), close_segs.to_vec());
-    dbg!(close_segs, &graph);
     for component in graph.connected_components() {
-        dbg!(&component);
         let mut range_iter = component.iter();
         while let Some((y0, y1, indices)) = range_iter.next_payloads() {
-            dbg!(y0, y1, indices);
             // Figure out the sweep-line order of the indices...
             let mut order = OutputSegVec::<Option<OutputSegIdx>>::with_size(out.len());
             let mut has_left_close = OutputSegVec::<bool>::with_size(out.len());
@@ -311,16 +307,20 @@ pub fn compute_positions(
         let seg = &segs[orig_seg_map[out_idx]];
         let y0 = endpoints[out_idx.first_half()].y;
         let y1 = endpoints[out_idx.second_half()].y;
-        eprintln!("positioning {out_idx:?}, seg {seg:?} paths {sorted_paths:?}");
 
         if sorted_paths.is_empty() {
             // If the close-path-realization picked up nothing for this segment, we can just
             // output it unchanged, except that we should still respect the already-chosen
             // endpoints.
-            let c = seg.to_kurbo();
             let mut out_path = BezPath::new();
-            out_path.move_to(endpoints[out_idx.first_half()]);
-            out_path.curve_to(c.p1, c.p2, endpoints[out_idx.second_half()]);
+            if y0 == y1 {
+                out_path.move_to(endpoints[out_idx.first_half()]);
+                out_path.line_to(endpoints[out_idx.second_half()]);
+            } else {
+                let c = y_subsegment(seg.to_kurbo(), y0, y1);
+                out_path.move_to(endpoints[out_idx.first_half()]);
+                out_path.curve_to(c.p1, c.p2, endpoints[out_idx.second_half()]);
+            }
             ret[out_idx] = out_path;
             continue;
         }
@@ -331,7 +331,6 @@ pub fn compute_positions(
 
         debug_assert!(y0 <= p.y);
         if y0 < p.y {
-            eprintln!("initial gap from {} to {}", y0, p.y,);
             already_skipped = true;
             out_path.move_to(endpoints[out_idx.first_half()]);
             let c = y_subsegment(seg.to_kurbo(), y0, p.y);
@@ -344,10 +343,7 @@ pub fn compute_positions(
             let path_y = start_pt(path).y;
 
             if p.y != path_y {
-                eprintln!(
-                    "gap from {} to {}, confusing? {already_skipped}",
-                    p.y, path_y,
-                );
+                debug_assert!(!already_skipped);
                 already_skipped = true;
 
                 debug_assert!(p.y < path_y);
@@ -362,10 +358,7 @@ pub fn compute_positions(
 
         debug_assert!(p.y <= y1);
         if p.y < y1 {
-            eprintln!(
-                "trailing gap from {} to {}, confusing? {already_skipped}",
-                p.y, y1
-            );
+            debug_assert!(!already_skipped);
             let c = y_subsegment(seg.to_kurbo(), p.y, y1);
             out_path.curve_to(c.p1, c.p2, c.p3);
         }
