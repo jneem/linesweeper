@@ -1,4 +1,4 @@
-use kurbo::{BezPath, CubicBez, ParamCurve as _, Shape};
+use kurbo::{BezPath, CubicBez, ParamCurve as _};
 
 use crate::{
     curve::{slice_bez, y_subsegment, EstParab, Order},
