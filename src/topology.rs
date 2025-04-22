@@ -380,10 +380,6 @@ pub struct Topology {
     /// index). This ensures that a scan will always terminate, and it also means that we can
     /// build the contours in increasing `OutputSegIdx` order.
     scan_west: OutputSegVec<Option<OutputSegIdx>>,
-    /// Intervals of segments that we know are far away from other segments. In
-    /// these intervals, we can use the original curves and know that there are
-    /// no collisions.
-    pub safe_intervals: OutputSegVec<(f64, f64)>,
     pub close_segments: Vec<positioning_graph::Node>,
     pub orig_seg: OutputSegVec<SegIdx>,
     // TODO: probably don't have this owned
@@ -526,9 +522,6 @@ impl Topology {
         self.winding.inner.push(winding);
         self.deleted.inner.push(false);
         self.scan_west.inner.push(None);
-        self.safe_intervals
-            .inner
-            .push((f64::NEG_INFINITY, f64::INFINITY));
         self.orig_seg.inner.push(idx);
         out_idx
     }
@@ -579,7 +572,6 @@ impl Topology {
             point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
             deleted: OutputSegVec::with_capacity(segments.len()),
             scan_west: OutputSegVec::with_capacity(segments.len()),
-            safe_intervals: OutputSegVec::with_capacity(segments.len()),
             close_segments: Vec::new(),
             orig_seg: OutputSegVec::with_capacity(segments.len()),
             segments: Segments::default(),
@@ -605,13 +597,6 @@ impl Topology {
         ret.update_close_intervals();
         ret.segments = segments;
         ret
-    }
-
-    fn restrict_safe_interval(&mut self, idx: OutputSegIdx, y0: f64, y1: f64) {
-        let (prev_y0, prev_y1) = self.safe_intervals[idx];
-        let y0 = prev_y0.max(y0);
-        let y1 = prev_y1.min(y1);
-        self.safe_intervals[idx] = (y0, y1);
     }
 
     fn process_sweep_line_range(
@@ -659,16 +644,11 @@ impl Topology {
                 if let Some((prev_idx, prev_out_idx)) = last_connected_up_seg {
                     let cmp = pos.line().compare_segments(prev_idx, idx);
 
-                    let (y_start, y_end) = cmp.order_interval_before(y);
-
-                    self.restrict_safe_interval(out_idx.idx, y_start, y_end);
-                    self.restrict_safe_interval(prev_out_idx, y_start, y_end);
-
-                    if y_end < y {
+                    if let Some((y_start, _)) = cmp.close_interval_at(y) {
                         self.close_segments.push(positioning_graph::Node {
                             left_seg: prev_out_idx,
                             right_seg: out_idx.idx,
-                            y0: y_end,
+                            y0: y_start,
                             y1: y,
                         });
                     }
@@ -704,17 +684,13 @@ impl Topology {
                 if let Some((prev_idx, prev_out_idx)) = last_connected_down_seg {
                     let cmp = pos.line().compare_segments(prev_idx, new_seg);
 
-                    let (y_start, y_end) = cmp.order_interval_after(y);
-
-                    self.restrict_safe_interval(half_seg, y_start, y_end);
-                    self.restrict_safe_interval(prev_out_idx, y_start, y_end);
-
-                    if y_start > y {
+                    if let Some((_, y_end)) = cmp.close_interval_at(y) {
+                        dbg!(&cmp, y, y_end);
                         self.close_segments.push(positioning_graph::Node {
                             left_seg: prev_out_idx,
                             right_seg: half_seg,
                             y0: y,
-                            y1: y_start,
+                            y1: y_end,
                         });
                     }
                 }

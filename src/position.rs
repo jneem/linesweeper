@@ -262,9 +262,12 @@ pub fn compute_positions(
 ) -> OutputSegVec<BezPath> {
     let mut out = OutputSegVec::<Vec<BezPath>>::with_size(orig_seg_map.len());
     let graph = positioning_graph::PositioningGraph::new(out.len(), close_segs.to_vec());
+    dbg!(close_segs, &graph);
     for component in graph.connected_components() {
+        dbg!(&component);
         let mut range_iter = component.iter();
         while let Some((y0, y1, indices)) = range_iter.next_payloads() {
+            dbg!(y0, y1, indices);
             // Figure out the sweep-line order of the indices...
             let mut order = OutputSegVec::<Option<OutputSegIdx>>::with_size(out.len());
             let mut has_left_close = OutputSegVec::<bool>::with_size(out.len());
@@ -306,8 +309,9 @@ pub fn compute_positions(
         sorted_paths.sort_by(|p, q| start_pt(p).y.partial_cmp(&start_pt(q).y).unwrap());
 
         let seg = &segs[orig_seg_map[out_idx]];
-        let y0 = seg.p0.y;
-        let y1 = seg.p3.y;
+        let y0 = endpoints[out_idx.first_half()].y;
+        let y1 = endpoints[out_idx.second_half()].y;
+        eprintln!("positioning {out_idx:?}, seg {seg:?} paths {sorted_paths:?}");
 
         if sorted_paths.is_empty() {
             // If the close-path-realization picked up nothing for this segment, we can just

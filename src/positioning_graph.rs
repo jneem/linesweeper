@@ -21,6 +21,7 @@ impl Node {
     }
 }
 
+#[derive(Debug)]
 pub struct PositioningGraph {
     pub nodes: Vec<Node>,
     /// An edge list representation. This vector has the same length
