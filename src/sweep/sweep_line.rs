@@ -350,6 +350,12 @@ impl<'segs> Sweeper<'segs> {
             .compare_segments(self.segments, i, j)
     }
 
+    fn compare_segments_conservatively(&self, i: SegIdx, j: SegIdx) -> CurveOrder {
+        self.conservative_comparisons
+            .borrow_mut()
+            .compare_segments(self.segments, i, j)
+    }
+
     /// Moves the sweep forward, returning the next sweep line.
     ///
     /// Returns `None` when sweeping is complete.
@@ -691,6 +697,26 @@ impl<'segs> Sweeper<'segs> {
         }
     }
 
+    // If we have a segment in a changed interval, then every other segment
+    // that it compares "Ish" to should also be in that changed interval.
+    #[cfg(feature = "slow-asserts")]
+    fn check_changed_interval_closeness(&self) {
+        let y = self.y;
+        for iv in &self.changed_intervals {
+            for j in self.line.segs.range(iv.segs.clone()) {
+                for i in self.line.segs.range(..iv.segs.start) {
+                    let cmp = self.compare_segments(i.seg, j.seg);
+                    assert_ne!(cmp.order_at(y), Order::Right);
+                }
+
+                for k in self.line.segs.range(iv.segs.end..) {
+                    let cmp = self.compare_segments(j.seg, k.seg);
+                    assert_ne!(cmp.order_at(y), Order::Right);
+                }
+            }
+        }
+    }
+
     #[cfg(feature = "slow-asserts")]
     fn check_invariants(&self) {
         for seg_entry in self.line.segs.iter() {
@@ -719,7 +745,6 @@ impl<'segs> Sweeper<'segs> {
             )
             .is_none());
 
-        let _eps = malachite::Rational::try_from(self.eps).unwrap();
         for i in 0..self.line.segs.len() {
             if self.line.is_exit(i) {
                 continue;
@@ -770,6 +795,8 @@ impl<'segs> Sweeper<'segs> {
                 }
             }
         }
+
+        self.check_changed_interval_closeness();
     }
 
     #[cfg(not(feature = "slow-asserts"))]
@@ -854,32 +881,49 @@ impl<'segs> Sweeper<'segs> {
             let mut end_idx = idx + 1;
 
             for i in (idx + 1)..self.line.segs.len() {
-                let seg_idx = self.line.seg(i - 1);
+                // Note that end_idx is mutated in the loop, so this points to the segment
+                // that we most recently added to the changed interval. Modulo some subtleties
+                // involving conservative/non-conservative comparisons, this will usually be
+                // `i - 1`.
+                let seg_idx = self.line.seg(end_idx - 1);
                 let next_seg_idx = self.line.seg(i);
-                let cmp = self.compare_segments(seg_idx, next_seg_idx);
-                if cmp.order_at(self.y) == Order::Left {
+                let strong_cmp = self.compare_segments_conservatively(seg_idx, next_seg_idx);
+                if strong_cmp.order_at(self.y) == Order::Left {
                     break;
                 } else {
-                    debug_assert_eq!(cmp.order_at(self.y), Order::Ish);
-                    self.line.segs[i].in_changed_interval = true;
-                    self.line.segs[i].set_old_idx_if_unset(i);
+                    debug_assert_eq!(strong_cmp.order_at(self.y), Order::Ish);
+                    let cmp = self.compare_segments(seg_idx, next_seg_idx);
+                    debug_assert_ne!(cmp.order_at(self.y), Order::Right);
+                    if cmp.order_at(self.y) == Order::Ish {
+                        for j in end_idx..=i {
+                            self.line.segs[j].in_changed_interval = true;
+                            self.line.segs[j].set_old_idx_if_unset(j);
+                        }
 
-                    end_idx = i + 1;
+                        end_idx = i + 1;
+                    }
                 }
             }
 
             for i in (0..start_idx).rev() {
                 let prev_seg_idx = self.line.seg(i);
-                let seg_idx = self.line.seg(i + 1);
-                let cmp = self.compare_segments(prev_seg_idx, seg_idx);
-                if cmp.order_at(self.y) == Order::Left {
+                // Note that start_idx is mutated in the loop, so this points to the segment
+                // that we most recently added to the changed interval.
+                let seg_idx = self.line.seg(start_idx);
+                let strong_cmp = self.compare_segments_conservatively(prev_seg_idx, seg_idx);
+                if strong_cmp.order_at(self.y) == Order::Left {
                     break;
                 } else {
-                    debug_assert_eq!(cmp.order_at(self.y), Order::Ish);
-                    self.line.segs[i].in_changed_interval = true;
-                    self.line.segs[i].set_old_idx_if_unset(i);
-
-                    start_idx = i;
+                    debug_assert_eq!(strong_cmp.order_at(self.y), Order::Ish);
+                    let cmp = self.compare_segments(prev_seg_idx, seg_idx);
+                    debug_assert_ne!(cmp.order_at(self.y), Order::Right);
+                    if cmp.order_at(self.y) == Order::Ish {
+                        for j in i..start_idx {
+                            self.line.segs[j].in_changed_interval = true;
+                            self.line.segs[j].set_old_idx_if_unset(j);
+                        }
+                        start_idx = i;
+                    }
                 }
             }
             self.changed_intervals
@@ -1083,7 +1127,7 @@ impl SegmentOrder {
 /// each segment an `x` coordinate within its range then you won't paint
 /// yourself into a corner: subsequent points can be positioned with the right
 /// ordering *and* within the designated range.
-fn horizontal_positions<G: Fn(&SegmentOrderEntry) -> SegIdx>(
+fn feasible_horizontal_positions<G: Fn(&SegmentOrderEntry) -> SegIdx>(
     entries: &[SegmentOrderEntry],
     entry_seg: G,
     y: f64,
@@ -1266,7 +1310,9 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             buffers.old_line[entry.old_idx.unwrap() - range.segs.start] = *entry;
         }
 
-        horizontal_positions(
+        // Assign horizontal positions to all the points in the old sweep line.
+        // First, compute the feasible positions.
+        feasible_horizontal_positions(
             &buffers.old_line,
             |entry| entry.old_seg(),
             self.state.y,
@@ -1275,16 +1321,13 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             &mut buffers.positions,
         );
 
+        // Now go through and assign the actual positions.
+        //
         // The two positioning arrays should have the same segments, but possibly in a different
         // order. We build them up in the old-sweep-line order.
         buffers.output_events.clear();
         let events = &mut buffers.output_events;
-        // It would be natural to set max_so_far to -infinity, but a generic F: Float doesn't
-        // have -infinity.
-        let mut max_so_far = buffers
-            .positions
-            .first()
-            .map_or(0.0, |(_idx, min_x, _max_x)| *min_x - 1.0);
+        let mut max_so_far = f64::NEG_INFINITY;
         for (entry, min_x, max_x) in &buffers.positions {
             let preferred_x = if entry.exit {
                 // The best possible position is the true segment-ending position.
@@ -1311,11 +1354,13 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             });
         }
 
+        // And now we repeat for the new sweep line: compute the feasible positions
+        // and then choose the actual positions.
         buffers.old_line.clear();
         buffers
             .old_line
             .extend(self.state.line.segs.range(range.segs.clone()).cloned());
-        horizontal_positions(
+        feasible_horizontal_positions(
             &buffers.old_line,
             |entry| entry.seg,
             self.state.y,
@@ -1323,10 +1368,7 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             eps,
             &mut buffers.positions,
         );
-        let mut max_so_far = buffers
-            .positions
-            .first()
-            .map_or(0.0, |(_idx, min_x, _max_x)| *min_x - 1.0);
+        let mut max_so_far = f64::NEG_INFINITY;
         for (idx, (entry, min_x, max_x)) in buffers.positions.iter().enumerate() {
             let ev = &mut events[entry.old_idx.unwrap() - range.segs.start];
             ev.sweep_idx = Some(range.segs.start + idx);
