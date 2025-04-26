@@ -802,31 +802,9 @@ impl EstParab {
         }
     }
 
+    #[cfg(test)]
     fn eval(&self, y: f64) -> f64 {
         self.c0 + self.c1 * y + self.c2 * y * y
-    }
-
-    fn brute_force_d(&self, c: CubicBez) {
-        let mut dmin = 0.0f64;
-        let mut dmax = 0.0f64;
-        let mut which_min = 0.0f64;
-        for i in 0..10001 {
-            let t = i as f64 / 10000.0;
-            let p = c.eval(t);
-            let x = p.x - self.eval(p.y);
-            if x < dmin {
-                which_min = t;
-            }
-            dmin = dmin.min(x);
-            dmax = dmax.max(x);
-        }
-
-        // let t = 0.9392882704660391;
-        // let p = c.eval(t);
-        // let x = dbg!(p.x) - dbg!(self.eval(dbg!(p.y)));
-        // dbg!(x);
-
-        eprintln!("dmin {dmin:.7}, dmax {dmax:.7}, min at {which_min:.7}");
     }
 
     fn max_param(&self) -> f64 {
@@ -1090,36 +1068,53 @@ fn intersect_cubics_rec(
     }
 }
 
-fn bboxes_disjoint(c0: CubicBez, c1: CubicBez, y0: f64, y1: f64, eps: f64) -> bool {
-    let c0 = c0.subsegment(solve_t_for_y(c0, y0)..solve_t_for_y(c0, y1));
-    let c1 = c1.subsegment(solve_t_for_y(c1, y0)..solve_t_for_y(c1, y1));
-    let b0 = Shape::bounding_box(&c0);
-    let b1 = Shape::bounding_box(&c1);
-    b0.max_x() + eps < b1.min_x() || b1.min_x() + eps < b0.max_x()
-}
-
-// TODO: docme
-fn fix_up_endpoints(order: &mut CurveOrder, c0: CubicBez, c1: CubicBez, eps: f64) {
-    if order.cmps.len() <= 1 {
-        return;
-    }
-
-    let first = order.cmps.first().unwrap();
-    if first.order == Order::Ish && bboxes_disjoint(c0, c1, order.start, first.end, eps) {
-        order.cmps.remove(0);
-    }
-
-    if order.cmps.len() <= 1 {
-        return;
-    }
-    let last = order.cmps.last().unwrap();
-    let prev = order.cmps.len() - 2;
-    if last.order == Order::Ish && bboxes_disjoint(c0, c1, order.cmps[prev].end, last.end, eps) {
-        order.cmps[prev].end = last.end;
-        order.cmps.pop();
-    }
-}
-
+/// Compute the horizontal order between two cubics, for the vertical range that they have in common.
+///
+/// The returned order breaks the vertical range into regions, and in each region either specifies
+/// a definite order or says that the curves are close. For example, for the following two curves
+/// we might identify five vertical regions.
+///
+/// ```text
+/// c0      c1
+///  \      /
+///   \    /    left
+///    \  /     ______
+///     \/      close
+///     /\      ______
+///    /  \
+///   (    \    right
+///    \    )
+///     \  /    ______
+///      \/     close
+///      /\     ______
+///     /  \    left
+/// ```
+///
+/// There are two "closeness" parameters, `tolerance` and `accuracy`. The
+/// `tolerance` parameter determines (more-or-less) what "close" means. If `c0`
+/// is more than `tolerance` to the left of `c1` then we return "left", if `c0`
+/// is more than `tolerance` to the right of `c1` then we return "right", and
+/// otherwise we return "close".
+///
+/// But because our algorithm is iterative and approximate, we also take
+/// an `accuracy` parameter that determines how accurately we honor the
+/// `tolerance`. So more precisely, if `c0` is more than `tolerance + accuracy`
+/// on one side of `c1` then we definitely return that ordering, if `c0` and
+/// `c1` are within `tolerance - accuracy` of one another then we definitely
+/// return "close", and in the other cases we're allowed to return anything.
+///
+/// In practice, our calculations are also subject to floating point error,
+/// which we don't account for. You probably shouldn't ask for tolerance and
+/// accuracy that are too close to the limits of `f64` accuracy. We test with a
+/// relative (to the magnitude of the cubic parameters) error of `1e-8`, so that
+/// should be fine.
+///
+/// Finally, bear in mind that the returned vertical coordinates are
+/// subject to floating-point errors as well, and so we may not pinpoint the
+/// exact vertical coordinate where "left" transitions to "close". This is
+/// particularly important when the curves are almost horizontal, because then
+/// a small vertical error means a big horizontal error. You may want to apply
+/// [`CurveOrder::with_y_slop`] to the returned orders.
 pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, tolerance: f64, accuracy: f64) -> CurveOrder {
     debug_assert!(tolerance > 0.0 && accuracy > 0.0 && accuracy <= tolerance);
     // dbg!(c0, c1);
