@@ -156,26 +156,28 @@ impl CurveOrder {
             .iter()
             .skip_while(|(_start, end, _order)| end <= &y)
             .skip_while(|(_start, _end, order)| *order == Order::Left);
-        let (before_y, after_y, order_at_y) = iter.next()?;
 
-        match order_at_y {
-            Order::Right => Some(NextTouch::Cross(y)),
-            Order::Ish => {
-                // If this interval is the last one, we'll say there's no touch.
-                // It will get handled at the endpoint anyway.
-                let (_, _, next_order) = iter.next()?;
-                let cross_y = (after_y + before_y) / 2.0;
-                if next_order == Order::Right {
-                    Some(NextTouch::Cross(cross_y))
-                } else {
-                    debug_assert!(next_order == Order::Left);
+        let (y0, y1, order) = iter.next()?;
+        debug_assert_eq!(order, Order::Ish);
+
+        // If this interval is the last one, we'll say there's no touch.
+        // It will get handled at the endpoint anyway.
+        let (_, next_y1, next_order) = iter.next()?;
+
+        let cross_y = (y0 + y1) / 2.0;
+        match next_order {
+            Order::Right => Some(NextTouch::Cross(cross_y)),
+            Order::Left => {
+                if y < y0 {
                     Some(NextTouch::Touch(cross_y))
+                } else {
+                    self.next_touch_after(next_y1)
                 }
             }
-
-            Order::Left => {
-                // We skipped over these already.
-                unreachable!()
+            Order::Ish => {
+                // The current order is Ish, and adjacent orders get merged
+                // so the next one isn't Ish.
+                unreachable!();
             }
         }
     }
@@ -195,13 +197,13 @@ impl CurveOrder {
 
         for (start, end, order) in self.iter() {
             let new_end = if end == last_end { end } else { end - slop };
-            if order != Order::Ish && start + slop < new_end {
-                if start == self.start {
+            if order != Order::Ish {
+                if start == self.start && start < new_end {
                     ret.push(CurveOrderEntry {
                         end: new_end,
                         order,
                     });
-                } else {
+                } else if start + slop < new_end {
                     ret.push(CurveOrderEntry {
                         end: start + slop,
                         order: Order::Ish,

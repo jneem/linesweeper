@@ -694,6 +694,14 @@ impl<'segs> Sweeper<'segs> {
             for (_, seg) in to_move.into_iter().rev() {
                 self.insert(insertion_pos, seg);
             }
+        } else {
+            // TODO: this is for handling the "touch but don't cross" case.
+            // As discussed in `intersection_scan_right`, maybe we should handle
+            // this with a different kind of intersection event.
+            //
+            // Currently, this leads to over-division for intersections (not touches)
+            // that were already handled.
+            self.segs_needing_positions.extend(right_idx..=left_idx);
         }
     }
 
@@ -985,7 +993,9 @@ impl SegmentOrder {
 
                 let order = cmp.compare_segments(segments, segi, segj);
                 if order.order_at(y) == Order::Right {
-                    dbg!(&order);
+                    dbg!(segments);
+                    dbg!(&self.segs);
+                    dbg!(&order, y);
                     return Some((segi, segj));
                 }
             }
