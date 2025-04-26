@@ -4,6 +4,7 @@ expression: "snapshot_outputs(segs, 0.1)"
 ---
 [
   Output(
+    y: -1.0,
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
@@ -59,6 +60,7 @@ expression: "snapshot_outputs(segs, 0.1)"
     ],
   ),
   Output(
+    y: -0.924999999999625,
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
@@ -106,6 +108,7 @@ expression: "snapshot_outputs(segs, 0.1)"
     changed: [],
   ),
   Output(
+    y: -0.8999999999995001,
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
@@ -153,6 +156,7 @@ expression: "snapshot_outputs(segs, 0.1)"
     changed: [],
   ),
   Output(
+    y: -0.8999999999992501,
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
@@ -200,6 +204,7 @@ expression: "snapshot_outputs(segs, 0.1)"
     changed: [],
   ),
   Output(
+    y: 0.0,
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
@@ -262,6 +267,7 @@ expression: "snapshot_outputs(segs, 0.1)"
     ],
   ),
   Output(
+    y: 0.9999999999999999,
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(
@@ -317,6 +323,7 @@ expression: "snapshot_outputs(segs, 0.1)"
     ],
   ),
   Output(
+    y: 1.0,
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(

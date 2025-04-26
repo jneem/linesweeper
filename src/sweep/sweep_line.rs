@@ -1464,6 +1464,7 @@ fn merge_adjacent(intervals: &mut Vec<ChangedInterval>) {
 mod tests {
     use super::*;
 
+    use kurbo::{BezPath, CubicBez};
     use proptest::prelude::*;
 
     use crate::{
@@ -1662,6 +1663,7 @@ mod tests {
 
     #[derive(serde::Serialize, Debug)]
     struct Output {
+        y: f64,
         order: SegmentOrder,
         changed: Vec<ChangedInterval>,
     }
@@ -1671,6 +1673,7 @@ mod tests {
         let mut line_bufs = SweepLineBuffers::default();
         while let Some(line) = sweeper.next_line(&mut line_bufs) {
             outputs.push(Output {
+                y: line.y(),
                 order: line.state.line.clone(),
                 changed: line.state.changed_intervals.clone(),
             });
@@ -1722,6 +1725,29 @@ mod tests {
         segs.add_cycle(a);
         segs.add_cycle(b);
         insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.1));
+    }
+
+    #[test]
+    fn conservative_line_order() {
+        // Here's an example where c0 gets "ish" with c1 in the middle, c0 gets "ish" with c2
+        // in the middle, but c1 is always definitely left of c2.
+        let c0 = CubicBez::new((-1.0, 0.0), (0.5, 0.6), (0.5, 0.4), (-1.0, 1.0));
+        let c1 = CubicBez::new((0.0, 0.0), (0.0, 1.0 / 3.0), (0.0, 2.0 / 3.0), (0.0, 1.0));
+        let c2 = CubicBez::new((0.3, 0.0), (0.3, 1.0 / 3.0), (0.3, 2.0 / 3.0), (0.3, 1.0));
+        dbg!(curve::intersect_cubics(c0, c1, 0.25, 0.125));
+        dbg!(curve::intersect_cubics(c0, c2, 0.25, 0.125));
+        dbg!(curve::intersect_cubics(c1, c2, 0.25, 0.125));
+
+        let to_path = |c: CubicBez| {
+            let mut p = BezPath::new();
+            p.move_to(c.p0);
+            p.curve_to(c.p1, c.p2, c.p3);
+            p
+        };
+
+        let mut segs = Segments::default();
+        segs.add_bez_paths([to_path(c0), to_path(c1), to_path(c2)]);
+        insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.25));
     }
 
     proptest! {
