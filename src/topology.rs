@@ -1013,7 +1013,7 @@ impl Topology {
 
     pub fn compute_positions(&self, eps: f64) -> OutputSegVec<BezPath> {
         // TODO: reuse the cache from the sweep-line
-        let mut cmp = ComparisonCache::default();
+        let mut cmp = ComparisonCache::new(eps, eps / 2.0);
         let mut endpoints = HalfOutputSegVec::with_size(self.orig_seg.len());
         for idx in self.orig_seg.indices() {
             endpoints[idx.first_half()] = self.points[self.point_idx[idx.first_half()]].to_kurbo();

@@ -108,9 +108,9 @@ fn ordered_curves_inner(ctx: &mut PositionContext<'_>) {
     'outer: while start_y < ctx.y1 {
         let mut next_y = ctx.y1;
         for i in 1..ctx.order.len() {
-            let cmp =
-                ctx.cmp
-                    .compare_segments(ctx.segs, ctx.order[i - 1], ctx.order[i], ctx.accuracy);
+            let cmp = ctx
+                .cmp
+                .compare_segments(ctx.segs, ctx.order[i - 1], ctx.order[i]);
 
             let (_start, end, order) = cmp
                 .iter()
@@ -412,19 +412,20 @@ mod tests {
     fn baby_cases() {
         let segs = mk_segs(&[(0.0, 0.0), (1.0, 1.0)]);
         let order: Vec<_> = segs.indices().collect();
-        let mut cmp = ComparisonCache::default();
+        let eps = 1e-6;
+        let mut cmp = ComparisonCache::new(eps, eps / 2.0);
         let out = ordered_curves(&segs, &mut cmp, &order, 0.0, 1.0, 1e-6);
         dbg!(out);
 
         let segs = mk_segs(&[(1e-12, 1e-12), (0.0, 0.0)]);
         let order: Vec<_> = segs.indices().collect();
-        let mut cmp = ComparisonCache::default();
+        let mut cmp = ComparisonCache::new(eps, eps / 2.0);
         let out = ordered_curves(&segs, &mut cmp, &order, 0.0, 1.0, 1e-6);
         dbg!(out);
 
         let segs = mk_segs(&[(0.0, 1.0), (2.0, 1.0)]);
         let order: Vec<_> = segs.indices().collect();
-        let mut cmp = ComparisonCache::default();
+        let mut cmp = ComparisonCache::new(eps, eps / 2.0);
         let out = ordered_curves(&segs, &mut cmp, &order, 0.0, 1.0, 1e-6);
         dbg!(out);
     }

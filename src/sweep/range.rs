@@ -1,4 +1,4 @@
-use crate::{curve::CurveOrder, num::CheapOrderedFloat, SegIdx};
+use crate::{num::CheapOrderedFloat, SegIdx};
 
 use super::{ChangedInterval, OutputEvent, SweepLine};
 

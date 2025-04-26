@@ -259,20 +259,24 @@ pub struct SweepLineBuffers {
     output_events: Vec<OutputEvent>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ComparisonCache {
     inner: HashMap<(SegIdx, SegIdx), CurveOrder>,
+    accuracy: f64,
+    tolerance: f64,
 }
 
 impl ComparisonCache {
+    pub fn new(tolerance: f64, accuracy: f64) -> Self {
+        ComparisonCache {
+            inner: HashMap::new(),
+            accuracy,
+            tolerance,
+        }
+    }
+
     // FIXME: less cloning
-    pub fn compare_segments(
-        &mut self,
-        segments: &Segments,
-        i: SegIdx,
-        j: SegIdx,
-        eps: f64,
-    ) -> CurveOrder {
+    pub fn compare_segments(&mut self, segments: &Segments, i: SegIdx, j: SegIdx) -> CurveOrder {
         if let Some(order) = self.inner.get(&(i, j)) {
             return order.clone();
         }
@@ -280,8 +284,13 @@ impl ComparisonCache {
         let segi = &segments[i];
         let segj = &segments[j];
 
-        let forward = curve::intersect_cubics(segi.to_kurbo(), segj.to_kurbo(), eps, eps / 2.0)
-            .with_y_slop(eps);
+        let forward = curve::intersect_cubics(
+            segi.to_kurbo(),
+            segj.to_kurbo(),
+            self.tolerance,
+            self.accuracy,
+        )
+        .with_y_slop(self.tolerance);
         let reverse = forward.flip();
         self.inner.insert((j, i), reverse);
         self.inner.entry((i, j)).insert_entry(forward).get().clone()
@@ -313,6 +322,7 @@ pub struct Sweeper<'a> {
     changed_intervals: Vec<ChangedInterval>,
 
     comparisons: RefCell<ComparisonCache>,
+    conservative_comparisons: RefCell<ComparisonCache>,
 }
 
 impl<'segs> Sweeper<'segs> {
@@ -329,14 +339,15 @@ impl<'segs> Sweeper<'segs> {
             segs_needing_positions: Vec::new(),
             changed_intervals: Vec::new(),
             horizontals: Vec::new(),
-            comparisons: RefCell::new(ComparisonCache::default()),
+            comparisons: RefCell::new(ComparisonCache::new(eps, eps / 2.0)),
+            conservative_comparisons: RefCell::new(ComparisonCache::new(4.0 * eps, eps / 2.0)),
         }
     }
 
     fn compare_segments(&self, i: SegIdx, j: SegIdx) -> CurveOrder {
         self.comparisons
             .borrow_mut()
-            .compare_segments(self.segments, i, j, self.eps)
+            .compare_segments(self.segments, i, j)
     }
 
     /// Moves the sweep forward, returning the next sweep line.
@@ -528,7 +539,6 @@ impl<'segs> Sweeper<'segs> {
             self.y,
             self.segments,
             seg_idx,
-            self.eps,
             &mut self.comparisons.borrow_mut(),
         );
         let contour_prev = if self.segments.positively_oriented(seg_idx) {
@@ -610,7 +620,6 @@ impl<'segs> Sweeper<'segs> {
                 self.segments,
                 self.comparisons.borrow_mut().deref_mut(),
                 self.y,
-                self.eps,
             )
             .unwrap();
 
@@ -634,7 +643,6 @@ impl<'segs> Sweeper<'segs> {
                 self.segments,
                 self.comparisons.borrow_mut().deref_mut(),
                 self.y,
-                self.eps,
             )
             .unwrap();
         let right_idx = self
@@ -644,7 +652,6 @@ impl<'segs> Sweeper<'segs> {
                 self.segments,
                 self.comparisons.borrow_mut().deref_mut(),
                 self.y,
-                self.eps,
             )
             .unwrap();
         if left_idx < right_idx {
@@ -709,7 +716,6 @@ impl<'segs> Sweeper<'segs> {
                 self.y,
                 &self.segments,
                 self.comparisons.borrow_mut().deref_mut(),
-                self.eps
             )
             .is_none());
 
@@ -740,7 +746,6 @@ impl<'segs> Sweeper<'segs> {
                                     self.segments,
                                     self.comparisons.borrow_mut().deref_mut(),
                                     self.y,
-                                    self.eps,
                                 )
                                 .is_some_and(|pos| i <= pos && pos <= j)
                         };
@@ -928,14 +933,13 @@ impl SegmentOrder {
         y: f64,
         segments: &Segments,
         cmp: &mut ComparisonCache,
-        eps: f64,
     ) -> Option<(SegIdx, SegIdx)> {
         for i in 0..self.segs.len() {
             for j in (i + 1)..self.segs.len() {
                 let segi = self.seg(i);
                 let segj = self.seg(j);
 
-                let order = cmp.compare_segments(segments, segi, segj, eps);
+                let order = cmp.compare_segments(segments, segi, segj);
                 if order.order_at(y) == Order::Right {
                     dbg!(&order);
                     return Some((segi, segj));
@@ -952,7 +956,6 @@ impl SegmentOrder {
         y: f64,
         segments: &Segments,
         seg_idx: SegIdx,
-        eps: f64,
         comparer: &mut ComparisonCache,
     ) -> usize {
         //dbg!(self, seg_idx);
@@ -977,7 +980,7 @@ impl SegmentOrder {
             // will be in the future, so as to minimize swapping.
             // (We could also try checking whether the new segment is a contour neighbor of
             // the segment at pos. That should be a pretty common case.)
-            let cmp = comparer.compare_segments(segments, seg_idx, self.segs[pos].seg, eps);
+            let cmp = comparer.compare_segments(segments, seg_idx, self.segs[pos].seg);
             return match cmp.order_after(y) {
                 Order::Right => pos + 1,
                 Order::Ish => pos,
@@ -987,7 +990,7 @@ impl SegmentOrder {
 
         // A predicate that tests whether `other` is definitely to the left of `seg` at `y`.
         let lower_pred = |other: &SegmentOrderEntry| -> bool {
-            let cmp = comparer.compare_segments(segments, other.seg, seg_idx, eps);
+            let cmp = comparer.compare_segments(segments, other.seg, seg_idx);
             cmp.order_at(y) == Order::Left
         };
 
@@ -1002,7 +1005,7 @@ impl SegmentOrder {
         let search_start = self.segs.partition_point(lower_pred);
         let mut idx = search_start;
         for i in search_start..self.segs.len() {
-            let cmp = comparer.compare_segments(segments, self.segs[i].seg, seg_idx, eps);
+            let cmp = comparer.compare_segments(segments, self.segs[i].seg, seg_idx);
             match cmp.order_at(y) {
                 Order::Right => {
                     // The segment at i is definitely to the right of the new one.
@@ -1034,7 +1037,6 @@ impl SegmentOrder {
         segments: &Segments,
         comparer: &mut ComparisonCache,
         y: f64,
-        eps: f64,
     ) -> Option<usize> {
         if self.segs.len() <= 32 {
             return self
@@ -1048,7 +1050,7 @@ impl SegmentOrder {
         // definitely to our right.
         let start_idx = self.segs.partition_point(|entry| {
             comparer
-                .compare_segments(segments, entry.seg, seg_idx, eps)
+                .compare_segments(segments, entry.seg, seg_idx)
                 .order_at(y)
                 == Order::Left
         });
@@ -1056,7 +1058,7 @@ impl SegmentOrder {
         // end_idx points to something that's definitely after us.
         let end_idx = self.segs.partition_point(|entry| {
             comparer
-                .compare_segments(segments, entry.seg, seg_idx, eps)
+                .compare_segments(segments, entry.seg, seg_idx)
                 .order_at(y)
                 != Order::Right
         });
@@ -1474,8 +1476,8 @@ mod tests {
                     .collect(),
             };
 
-            let mut cmp = ComparisonCache::default();
-            line.find_invalid_order(y, &segs, &mut cmp, eps)
+            let mut cmp = ComparisonCache::new(eps, eps / 2.0);
+            line.find_invalid_order(y, &segs, &mut cmp)
                 .map(|(a, b)| (a.0, b.0))
         }
 
@@ -1525,18 +1527,16 @@ mod tests {
                     .map(|i| SegmentOrderEntry::new(SegIdx(i), &segs, eps))
                     .collect(),
             };
-            let mut comparer = ComparisonCache::default();
-            let idx = line.insertion_idx(y, &segs, new_idx, eps, &mut comparer);
+            let mut comparer = ComparisonCache::new(eps, eps / 2.0);
+            let idx = line.insertion_idx(y, &segs, new_idx, &mut comparer);
 
             dbg!(&line);
-            assert!(dbg!(line.find_invalid_order(y, &segs, &mut comparer, eps)).is_none());
+            assert!(dbg!(line.find_invalid_order(y, &segs, &mut comparer)).is_none());
             line.segs.insert(
                 idx,
                 SegmentOrderEntry::new(SegIdx(xs.len() - 1), &segs, eps),
             );
-            assert!(line
-                .find_invalid_order(y, &segs, &mut comparer, eps)
-                .is_none());
+            assert!(line.find_invalid_order(y, &segs, &mut comparer,).is_none());
             idx
         }
 
