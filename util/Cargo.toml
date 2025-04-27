@@ -1,0 +1,15 @@
+[package]
+name = "linesweeper_util"
+version = "0.0.3"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Joe Neeman <joe@neeman.me>"]
+description = "Robust sweep-line algorithm and two-dimensional boolean ops"
+repository = "https://github.com/jneem/linesweeper"
+
+[dependencies]
+kurbo.workspace = true
+svg = { workspace = true, default-features = false }
+usvg = { workspace = true, default-features = false }
+
+

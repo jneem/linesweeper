@@ -581,7 +581,7 @@ impl Topology {
         let mut line_bufs = SweepLineBuffers::default();
         //dbg!(&segments);
         while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
-            while let Some(positions) = line.next_range(&mut range_bufs, &segments, eps) {
+            while let Some(positions) = line.next_range(&mut range_bufs, &segments) {
                 let range = positions.seg_range();
                 let scan_west_seg = if range.segs.start == 0 {
                     None

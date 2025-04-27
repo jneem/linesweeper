@@ -24,6 +24,7 @@
           fx.latest.rust-src
           fx.latest.miri
         ];
+        kompari = pkgs.callPackage ./nix/kompari.nix { };
       in
       with pkgs;
       {
@@ -32,10 +33,12 @@
             cargo-insta
             cargo-flamegraph
             cargo-fuzz
+            cargo-nextest
             cargo-outdated
             cargo-show-asm
             libclang
             libxkbcommon
+            kompari
             stdenv.cc.cc
             typst
             tinymist

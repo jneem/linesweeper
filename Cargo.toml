@@ -7,6 +7,14 @@ authors = ["Joe Neeman <joe@neeman.me>"]
 description = "Robust sweep-line algorithm and two-dimensional boolean ops"
 repository = "https://github.com/jneem/linesweeper"
 
+[workspace]
+members = ["util"]
+
+[workspace.dependencies]
+kurbo = "0.11.1"
+svg = { version = "0.18", default-features = false }
+usvg = { version = "0.44.0", default-features = false }
+
 [features]
 slow-asserts = []
 generators = []
@@ -25,11 +33,16 @@ anyhow = "1.0.80"
 assert_matches = "1.5.0"
 clap = { version = "4.5.1", features = ["derive"] }
 criterion = "0.5.1"
+glob = "0.3.2"
 i_overlay = "1.9.4"
 insta = { version = "1.41.1", features = ["serde", "ron"] }
+libtest-mimic = "0.8.1"
 proptest = "1.4.0"
 svg = { version = "0.18", default-features = false }
 usvg = { version = "0.44.0", default-features = false }
+linesweeper_util = { path = "util" }
+tiny-skia = "0.11.4"
+kompari = { git = "https://github.com/linebender/kompari" }
 
 [profile.dev.package."*"]
 opt-level = 2

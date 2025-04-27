@@ -22,7 +22,7 @@ pub fn sweep<C: FnMut(f64, OutputEvent)>(segments: &Segments, eps: f64, mut call
     let mut line_bufs = SweepLineBuffers::default();
     while let Some(mut line) = state.next_line(&mut line_bufs) {
         let y = line.y();
-        while let Some(mut range) = line.next_range(&mut range_bufs, segments, eps) {
+        while let Some(mut range) = line.next_range(&mut range_bufs, segments) {
             while let Some(events) = range.events() {
                 for ev in events {
                     callback(y, ev);

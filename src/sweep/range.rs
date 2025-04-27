@@ -205,8 +205,6 @@ impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
     /// Returns the collection of all output events that end at the current
     /// position, or `None` if this batcher is finished.
     ///
-    /// If this returns `None`, this batcher is finished.
-    ///
     /// All the returned events start at the previous `x` position and end
     /// at the current `x` position. In particular, if you alternate between
     /// calling [`SweepLineRange::increase_x`] and this method, you'll
@@ -308,6 +306,16 @@ impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
     /// The indices within the sweep line represented by this range.
     pub fn seg_range(&self) -> ChangedInterval {
         self.changed_interval.clone()
+    }
+
+    pub fn old_segment_range(&self) -> impl Iterator<Item = SegIdx> + '_ {
+        let range = self.changed_interval.segs.clone();
+        self.line().old_segment_range(range)
+    }
+
+    pub fn segment_range(&self) -> impl Iterator<Item = SegIdx> + '_ {
+        let range = self.changed_interval.segs.clone();
+        self.line().segment_range(range)
     }
 
     /// The sweep line that this is a range of.

@@ -1204,6 +1204,41 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         self.state.compare_segments(i, j)
     }
 
+    pub fn old_segment_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> impl Iterator<Item = SegIdx> + '_ {
+        let mut ret = vec![None; range.end - range.start];
+        for (idx, entry) in self.state.line.segs.range(range).enumerate() {
+            let seg = if entry.enter {
+                match entry.old_seg {
+                    Some(s) => s,
+                    None => continue,
+                }
+            } else {
+                entry.seg
+            };
+
+            let idx = entry.old_idx.unwrap_or(idx);
+            ret[idx] = Some(seg);
+        }
+
+        ret.into_iter().flatten()
+    }
+
+    pub fn segment_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> impl Iterator<Item = SegIdx> + '_ {
+        self.state.line.segs.range(range).filter_map(|entry| {
+            if entry.exit && entry.old_seg.is_none() {
+                None
+            } else {
+                Some(entry.seg)
+            }
+        })
+    }
+
     /// Returns the index ranges of segments in this sweep-line that need to be
     /// given explicit positions.
     ///
@@ -1212,9 +1247,9 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
     /// implementation, we need to be able to ignore the segments that don't
     /// need subdivision.
     ///
-    /// This method returns a list of ranges (in increasing order, non-overlapping,
-    /// and non-adjacent). Each of those ranges indexes a range of segments
-    /// that need to be subdivided at the current sweep-line.
+    /// This method returns a range of segments that need to be subdivided at
+    /// the current sweep-line. If you call [`SweepLine::next_range`] and then
+    /// call this again, it will give you a non-overlapping range.
     pub fn cur_interval(&self) -> Option<&ChangedInterval> {
         self.next_changed_interval
             .checked_sub(1)
@@ -1287,7 +1322,6 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         &'a mut self,
         bufs: &'bufs mut SweepLineRangeBuffers,
         segments: &Segments,
-        eps: f64,
     ) -> Option<SweepLineRange<'bufs, 'a, 'segs>> {
         let range = self
             .state
@@ -1327,7 +1361,7 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             |entry| entry.old_seg(),
             self.state.y,
             segments,
-            eps,
+            self.state.eps,
             &mut buffers.positions,
         );
 
@@ -1375,7 +1409,7 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             |entry| entry.seg,
             self.state.y,
             segments,
-            eps,
+            self.state.eps,
             &mut buffers.positions,
         );
         let mut max_so_far = f64::NEG_INFINITY;
