@@ -36,7 +36,6 @@ criterion = "0.5.1"
 glob = "0.3.2"
 i_overlay = "1.9.4"
 insta = { version = "1.41.1", features = ["serde", "ron"] }
-libtest-mimic = "0.8.1"
 proptest = "1.4.0"
 svg = { version = "0.18", default-features = false }
 usvg = { version = "0.44.0", default-features = false }
