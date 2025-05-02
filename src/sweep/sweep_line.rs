@@ -1209,7 +1209,7 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         range: std::ops::Range<usize>,
     ) -> impl Iterator<Item = SegIdx> + '_ {
         let mut ret = vec![None; range.end - range.start];
-        for (idx, entry) in self.state.line.segs.range(range).enumerate() {
+        for (idx, entry) in self.state.line.segs.range(range.clone()).enumerate() {
             let seg = if entry.enter {
                 match entry.old_seg {
                     Some(s) => s,
@@ -1220,7 +1220,7 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             };
 
             let idx = entry.old_idx.unwrap_or(idx);
-            ret[idx] = Some(seg);
+            ret[idx - range.start] = Some(seg);
         }
 
         ret.into_iter().flatten()
