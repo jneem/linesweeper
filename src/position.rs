@@ -337,16 +337,14 @@ pub fn compute_positions(
         let mut p = start_pt(sorted_paths[0]);
         let mut already_skipped = false;
         let mut out_path = BezPath::new();
+        out_path.move_to(endpoints[out_idx.first_half()]);
 
         debug_assert!(y0 <= p.y);
         if y0 < p.y {
             already_skipped = true;
-            out_path.move_to(endpoints[out_idx.first_half()]);
             let c = y_subsegment(seg.to_kurbo(), y0, p.y);
             out_path.curve_to(c.p1, c.p2, p);
             far_idx = Some(0);
-        } else {
-            out_path.move_to(p);
         }
 
         for path in sorted_paths {
@@ -375,7 +373,31 @@ pub fn compute_positions(
             out_path.curve_to(c.p1, c.p2, c.p3);
         }
 
+        match out_path.elements_mut().last_mut().unwrap() {
+            kurbo::PathEl::MoveTo(p)
+            | kurbo::PathEl::LineTo(p)
+            | kurbo::PathEl::QuadTo(_, p)
+            | kurbo::PathEl::CurveTo(_, _, p) => {
+                *p = endpoints[out_idx.second_half()];
+            }
+            kurbo::PathEl::ClosePath => unreachable!(),
+        }
+
         ret[out_idx] = (out_path, far_idx);
+    }
+
+    // TODO: factor this out into some invariant-testing function
+    for out_idx in ret.indices() {
+        let expected_start = endpoints[out_idx.first_half()];
+        let expected_end = endpoints[out_idx.second_half()];
+        assert_eq!(
+            expected_start,
+            ret[out_idx].0.segments().next().unwrap().start()
+        );
+        assert_eq!(
+            expected_end,
+            ret[out_idx].0.segments().last().unwrap().end()
+        );
     }
 
     ret

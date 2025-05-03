@@ -1012,7 +1012,6 @@ impl Topology {
         self.close_segments
             .sort_by(|x, y| x.partial_cmp(y).unwrap());
         self.close_segments.dedup();
-        dbg!(&self.close_segments);
     }
 
     pub fn compute_positions(&self, eps: f64) -> OutputSegVec<(BezPath, Option<usize>)> {

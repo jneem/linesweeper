@@ -398,7 +398,7 @@ fn generate_position_snapshot(path: PathBuf) {
     );
 
     let stroke = tiny_skia::Stroke {
-        width: 3.0,
+        width: 1.0,
         ..Default::default()
     };
     for out_idx in out_paths.indices() {
@@ -413,6 +413,26 @@ fn generate_position_snapshot(path: PathBuf) {
             };
 
             pixmap.stroke_path(&skia_seg, &color(c), &stroke, pad_transform, None);
+
+            let p0 = seg.start();
+            let p0 = tiny_skia::PathBuilder::from_circle(p0.x as f32, p0.y as f32, 2.0).unwrap();
+            let p1 = seg.start();
+            let p1 = tiny_skia::PathBuilder::from_circle(p1.x as f32, p1.y as f32, 2.1).unwrap();
+            let black = color(tiny_skia::Color::BLACK);
+            pixmap.fill_path(
+                &p0,
+                &black,
+                tiny_skia::FillRule::Winding,
+                pad_transform,
+                None,
+            );
+            pixmap.fill_path(
+                &p1,
+                &black,
+                tiny_skia::FillRule::Winding,
+                pad_transform,
+                None,
+            );
         }
     }
     let out_path = output_path_for(input_path_base(&path));
