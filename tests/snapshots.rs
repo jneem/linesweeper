@@ -217,11 +217,11 @@ fn draw_sweep_line_range(
     let mut paint = tiny_skia::Paint::default();
     paint.set_color(sweep_line_color());
     let stroke = tiny_skia::Stroke {
-        width: 3.0,
+        width: 2.0,
         ..Default::default()
     };
     let thick_stroke = tiny_skia::Stroke {
-        width: 6.0,
+        width: 4.0,
         ..Default::default()
     };
     let s_line = line(
