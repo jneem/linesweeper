@@ -433,8 +433,8 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
 
             let p0 = seg.start();
             let p0 = tiny_skia::PathBuilder::from_circle(p0.x as f32, p0.y as f32, 2.0).unwrap();
-            let p1 = seg.start();
-            let p1 = tiny_skia::PathBuilder::from_circle(p1.x as f32, p1.y as f32, 2.1).unwrap();
+            let p1 = seg.end();
+            let p1 = tiny_skia::PathBuilder::from_circle(p1.x as f32, p1.y as f32, 2.0).unwrap();
             let black = color(tiny_skia::Color::BLACK);
             pixmap.fill_path(
                 &p0,
