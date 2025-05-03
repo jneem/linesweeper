@@ -178,14 +178,14 @@ pub fn realize_perturbation(
         } => {
             let mut next = realize_perturbation(base_cases, next);
             let p = index_mut(&mut next, *idx);
-            *p = perturbation.apply(p.clone());
+            *p = perturbation.apply(*p);
             next
         }
         Perturbation::Subdivision { t, idx, next } => {
             let mut next = realize_perturbation(base_cases, next);
             let idx = *idx % next.len();
-            let p0 = index(&next, idx).clone();
-            let p1 = index(&next, idx + 1).clone();
+            let p0 = *index(&next, idx);
+            let p1 = *index(&next, idx + 1);
             next.insert(idx + 1, p0.affine(&p1, *t));
             next
         }

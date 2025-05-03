@@ -1,5 +1,5 @@
-use kompari::DirDiffConfig;
 use kurbo::{Affine, BezPath, ParamCurve as _, Point, Rect, Vec2};
+use libtest_mimic::{Arguments, Failed, Trial};
 use linesweeper::{
     sweep::{SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper},
     topology::Topology,
@@ -10,6 +10,14 @@ use std::{
     path::{Path, PathBuf},
 };
 use tiny_skia::Pixmap;
+
+fn main() {
+    let args = Arguments::from_args();
+    let mut tests = sweep_snapshot_diffs();
+    tests.extend(position_snapshot_diffs());
+
+    libtest_mimic::run(&args, tests).exit();
+}
 
 fn path_color(idx: usize) -> tiny_skia::Color {
     let palette = [
@@ -28,38 +36,33 @@ fn sweep_line_color() -> tiny_skia::Color {
     tiny_skia::Color::from_rgba8(0x9B, 0x22, 0x26, 0xFF)
 }
 
-#[test]
-fn sweep_snapshot_diffs() {
+fn sweep_snapshot_diffs() -> Vec<Trial> {
     let ws = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let paths = glob::glob(&format!("{ws}/tests/snapshots/inputs/sweep/**/*.svg")).unwrap();
-
-    for p in paths {
-        generate_sweep_snapshot(p.unwrap());
-    }
-
-    let stored_snapshots = PathBuf::from(format!("{ws}/tests/snapshots/snapshots"));
-    let new_snapshots = PathBuf::from(format!("{ws}/target/snapshots/snapshots"));
-    let diff_config = DirDiffConfig::new(stored_snapshots, new_snapshots);
-    let diff = diff_config.create_diff().unwrap();
-
-    assert!(diff.results().is_empty());
+    paths
+        .into_iter()
+        .map(|p| {
+            let p = p.unwrap();
+            let name = input_path_base(&p).display().to_string();
+            Trial::test(name, || generate_sweep_snapshot(p))
+        })
+        .collect()
 }
 
-#[test]
-fn position_snapshot_diffs() {
+// TODO: rewrite this as one test per snapshot, using a single kompari comparison and not the
+// whole DirDiff
+fn position_snapshot_diffs() -> Vec<Trial> {
     let ws = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let paths = glob::glob(&format!("{ws}/tests/snapshots/inputs/position/**/*.svg")).unwrap();
 
-    for p in paths {
-        generate_position_snapshot(p.unwrap());
-    }
-
-    let stored_snapshots = PathBuf::from(format!("{ws}/tests/snapshots/snapshots"));
-    let new_snapshots = PathBuf::from(format!("{ws}/target/snapshots/snapshots"));
-    let diff_config = DirDiffConfig::new(stored_snapshots, new_snapshots);
-    let diff = diff_config.create_diff().unwrap();
-
-    assert!(diff.results().is_empty());
+    paths
+        .into_iter()
+        .map(|p| {
+            let p = p.unwrap();
+            let name = input_path_base(&p).display().to_string();
+            Trial::test(name, || generate_position_snapshot(p))
+        })
+        .collect()
 }
 
 fn input_path_base(input_path: &Path) -> &Path {
@@ -71,6 +74,14 @@ fn input_path_base(input_path: &Path) -> &Path {
 fn output_path_for(input_path: &Path) -> PathBuf {
     let mut ws: PathBuf = std::env::var_os("CARGO_MANIFEST_DIR").unwrap().into();
     ws.push("target/snapshots/snapshots");
+    ws.push(input_path);
+    ws.set_extension("png");
+    ws
+}
+
+fn saved_snapshot_path_for(input_path: &Path) -> PathBuf {
+    let mut ws: PathBuf = std::env::var_os("CARGO_MANIFEST_DIR").unwrap().into();
+    ws.push("tests/snapshots/snapshots");
     ws.push(input_path);
     ws.set_extension("png");
     ws
@@ -317,9 +328,7 @@ fn draw_sweep_line_range(
     }
 }
 
-// TODO: the square/diamond touching snapshot isn't *wrong* as such, but the initial order
-// of the inner square could be better
-fn generate_sweep_snapshot(path: PathBuf) {
+fn generate_sweep_snapshot(path: PathBuf) -> Result<(), Failed> {
     let input = std::fs::read_to_string(&path).unwrap();
     let tree = usvg::Tree::from_str(&input, &usvg::Options::default()).unwrap();
     let bezs = linesweeper_util::svg_to_bezpaths(&tree);
@@ -366,12 +375,20 @@ fn generate_sweep_snapshot(path: PathBuf) {
         }
     }
 
-    let out_path = output_path_for(input_path_base(&path));
+    let base_path = input_path_base(&path);
+    let out_path = output_path_for(base_path);
     std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
-    pixmap.save_png(out_path).unwrap();
+    pixmap.save_png(&out_path).unwrap();
+
+    let new_image = kompari::load_image(&out_path)?;
+    let snapshot = kompari::load_image(&saved_snapshot_path_for(base_path))?;
+    match kompari::compare_images(&snapshot, &new_image) {
+        kompari::ImageDifference::None => Ok(()),
+        _ => Err("image comparison failed".into()),
+    }
 }
 
-fn generate_position_snapshot(path: PathBuf) {
+fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
     let input = std::fs::read_to_string(&path).unwrap();
     let tree = usvg::Tree::from_str(&input, &usvg::Options::default()).unwrap();
     let bezs = linesweeper_util::svg_to_bezpaths(&tree);
@@ -435,7 +452,15 @@ fn generate_position_snapshot(path: PathBuf) {
             );
         }
     }
-    let out_path = output_path_for(input_path_base(&path));
+    let base_path = input_path_base(&path);
+    let out_path = output_path_for(base_path);
     std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
-    pixmap.save_png(out_path).unwrap();
+    pixmap.save_png(&out_path).unwrap();
+
+    let new_image = kompari::load_image(&out_path)?;
+    let snapshot = kompari::load_image(&saved_snapshot_path_for(base_path))?;
+    match kompari::compare_images(&snapshot, &new_image) {
+        kompari::ImageDifference::None => Ok(()),
+        _ => Err("image comparison failed".into()),
+    }
 }

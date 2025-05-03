@@ -42,6 +42,7 @@ usvg = { version = "0.44.0", default-features = false }
 linesweeper_util = { path = "util" }
 tiny-skia = "0.11.4"
 kompari = { git = "https://github.com/linebender/kompari" }
+libtest-mimic = "0.8.1"
 
 [profile.dev.package."*"]
 opt-level = 2
@@ -62,3 +63,7 @@ crate-type = ["staticlib"]
 [[example]]
 name = "boolean_op"
 required-features = ["generators"]
+
+[[test]]
+name = "snapshots"
+harness = false
