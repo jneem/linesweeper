@@ -251,6 +251,10 @@ fn approximate(ctx: &PositionContext<'_>, out: &mut Vec<EstParab>) -> f64 {
     }
 }
 
+// The usize return value tells which segment (if any) in the returned
+// path was the one that was "far" from any other paths. This is really
+// only interesting for diagnosis/visualization so the API should probably
+// be refined somehow to make it optional.
 pub fn compute_positions(
     segs: &Segments,
     orig_seg_map: &OutputSegVec<SegIdx>,
@@ -258,13 +262,15 @@ pub fn compute_positions(
     cmp: &mut ComparisonCache,
     endpoints: &HalfOutputSegVec<kurbo::Point>,
     accuracy: f64,
-) -> OutputSegVec<BezPath> {
+) -> OutputSegVec<(BezPath, Option<usize>)> {
     let mut out = OutputSegVec::<Vec<BezPath>>::with_size(orig_seg_map.len());
     let graph = positioning_graph::PositioningGraph::new(out.len(), close_segs.to_vec());
     for component in graph.connected_components() {
         let mut range_iter = component.iter();
         while let Some((y0, y1, indices)) = range_iter.next_payloads() {
-            // Figure out the sweep-line order of the indices...
+            // Figure out the sweep-line order of the indices. The positioning graph
+            // gives us left/right pairs, so build this `order` to hold the left -> right
+            // "graph", which isn't even much of a graph: just a collection of lines.
             let mut order = OutputSegVec::<Option<OutputSegIdx>>::with_size(out.len());
             let mut has_left_close = OutputSegVec::<bool>::with_size(out.len());
 
@@ -273,6 +279,7 @@ pub fn compute_positions(
                 has_left_close[*r] = true;
             }
 
+            // Find each left-most index, and traverse its neighbors to the right.
             for (ell, _r) in indices {
                 if has_left_close[*ell] {
                     continue;
@@ -295,8 +302,10 @@ pub fn compute_positions(
         }
     }
 
-    let mut ret = OutputSegVec::<BezPath>::with_size(out.len());
+    let mut ret = OutputSegVec::<(BezPath, Option<usize>)>::with_size(out.len());
     for out_idx in out.indices() {
+        let mut far_idx = None;
+
         let start_pt = |p: &BezPath| -> kurbo::Point { p.segments().next().unwrap().start() };
         let end_pt =
             |p: &BezPath| -> kurbo::Point { p.elements().last().unwrap().end_point().unwrap() };
@@ -321,7 +330,7 @@ pub fn compute_positions(
                 out_path.move_to(endpoints[out_idx.first_half()]);
                 out_path.curve_to(c.p1, c.p2, endpoints[out_idx.second_half()]);
             }
-            ret[out_idx] = out_path;
+            ret[out_idx] = (out_path, Some(0));
             continue;
         }
 
@@ -335,6 +344,7 @@ pub fn compute_positions(
             out_path.move_to(endpoints[out_idx.first_half()]);
             let c = y_subsegment(seg.to_kurbo(), y0, p.y);
             out_path.curve_to(c.p1, c.p2, p);
+            far_idx = Some(0);
         } else {
             out_path.move_to(p);
         }
@@ -348,6 +358,7 @@ pub fn compute_positions(
 
                 debug_assert!(p.y < path_y);
                 let c = y_subsegment(seg.to_kurbo(), p.y, path_y);
+                far_idx = Some(out_path.elements().len() - 1); // -1 to skip the initial move_to
                 out_path.curve_to(c.p1, c.p2, c.p3);
             }
 
@@ -360,10 +371,11 @@ pub fn compute_positions(
         if p.y < y1 {
             debug_assert!(!already_skipped);
             let c = y_subsegment(seg.to_kurbo(), p.y, y1);
+            far_idx = Some(out_path.elements().len() - 1); // -1 to skip the initial move_to
             out_path.curve_to(c.p1, c.p2, c.p3);
         }
 
-        ret[out_idx] = out_path;
+        ret[out_idx] = (out_path, far_idx);
     }
 
     ret

@@ -217,7 +217,7 @@ fn add_op(
     op: Op,
     non_zero: bool,
     top: &Topology,
-    out_paths: &OutputSegVec<BezPath>,
+    out_paths: &OutputSegVec<(BezPath, Option<usize>)>,
     x_off: f64,
     y_off: f64,
     stroke_width: f64,
@@ -255,9 +255,9 @@ fn add_op(
 
             for seg in segs {
                 let path = if seg.is_first_half() {
-                    out_paths[seg].reverse_subpaths()
+                    out_paths[seg].0.reverse_subpaths()
                 } else {
-                    out_paths[seg].clone()
+                    out_paths[seg].0.clone()
                 };
 
                 for el in path.iter() {

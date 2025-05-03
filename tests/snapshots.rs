@@ -1,7 +1,8 @@
 use kompari::DirDiffConfig;
-use kurbo::{Affine, BezPath, Point, Rect, Vec2};
+use kurbo::{Affine, BezPath, ParamCurve as _, Point, Rect, Vec2};
 use linesweeper::{
     sweep::{SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper},
+    topology::Topology,
     Segment, Segments,
 };
 use std::{
@@ -34,6 +35,23 @@ fn sweep_snapshot_diffs() {
 
     for p in paths {
         generate_sweep_snapshot(p.unwrap());
+    }
+
+    let stored_snapshots = PathBuf::from(format!("{ws}/tests/snapshots/snapshots"));
+    let new_snapshots = PathBuf::from(format!("{ws}/target/snapshots/snapshots"));
+    let diff_config = DirDiffConfig::new(stored_snapshots, new_snapshots);
+    let diff = diff_config.create_diff().unwrap();
+
+    assert!(diff.results().is_empty());
+}
+
+#[test]
+fn position_snapshot_diffs() {
+    let ws = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let paths = glob::glob(&format!("{ws}/tests/snapshots/inputs/position/**/*.svg")).unwrap();
+
+    for p in paths {
+        generate_position_snapshot(p.unwrap());
     }
 
     let stored_snapshots = PathBuf::from(format!("{ws}/tests/snapshots/snapshots"));
@@ -81,7 +99,28 @@ fn skia_path(elts: impl IntoIterator<Item = kurbo::PathEl>) -> tiny_skia::Path {
     pb.finish().unwrap()
 }
 
-fn skia_segment(s: &Segment) -> tiny_skia::Path {
+fn skia_kurbo_seg(seg: kurbo::PathSeg) -> tiny_skia::Path {
+    let mut pb = tiny_skia::PathBuilder::new();
+    let start = seg.start();
+    pb.move_to(start.x as f32, start.y as f32);
+    match seg {
+        kurbo::PathSeg::Line(ell) => pb.line_to(ell.p1.x as f32, ell.p1.y as f32),
+        kurbo::PathSeg::Quad(q) => {
+            pb.quad_to(q.p1.x as f32, q.p1.y as f32, q.p2.x as f32, q.p2.y as f32)
+        }
+        kurbo::PathSeg::Cubic(c) => pb.cubic_to(
+            c.p1.x as f32,
+            c.p1.y as f32,
+            c.p2.x as f32,
+            c.p2.y as f32,
+            c.p3.x as f32,
+            c.p3.y as f32,
+        ),
+    }
+    pb.finish().unwrap()
+}
+
+fn skia_cubic(s: &kurbo::CubicBez) -> tiny_skia::Path {
     let mut pb = tiny_skia::PathBuilder::new();
     pb.move_to(s.p0.x as f32, s.p0.y as f32);
     pb.cubic_to(
@@ -93,6 +132,10 @@ fn skia_segment(s: &Segment) -> tiny_skia::Path {
         s.p3.y as f32,
     );
     pb.finish().unwrap()
+}
+
+fn skia_segment(s: &Segment) -> tiny_skia::Path {
+    skia_cubic(&s.to_kurbo())
 }
 
 fn line(p: impl Into<Point>, q: impl Into<Point>) -> tiny_skia::Path {
@@ -272,10 +315,10 @@ fn draw_sweep_line_range(
             None,
         );
     }
-
-    // TODO: draw the rest
 }
 
+// TODO: the square/diamond touching snapshot isn't *wrong* as such, but the initial order
+// of the inner square could be better
 fn generate_sweep_snapshot(path: PathBuf) {
     let input = std::fs::read_to_string(&path).unwrap();
     let tree = usvg::Tree::from_str(&input, &usvg::Options::default()).unwrap();
@@ -323,6 +366,55 @@ fn generate_sweep_snapshot(path: PathBuf) {
         }
     }
 
+    let out_path = output_path_for(input_path_base(&path));
+    std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
+    pixmap.save_png(out_path).unwrap();
+}
+
+fn generate_position_snapshot(path: PathBuf) {
+    let input = std::fs::read_to_string(&path).unwrap();
+    let tree = usvg::Tree::from_str(&input, &usvg::Options::default()).unwrap();
+    let bezs = linesweeper_util::svg_to_bezpaths(&tree);
+    let bbox = linesweeper_util::bezier_bounding_box(bezs.iter());
+    let bezs: Vec<_> = bezs
+        .into_iter()
+        .map(|p| Affine::translate(-bbox.origin().to_vec2()) * p)
+        .collect();
+
+    let eps = 16.0;
+    let top = Topology::from_paths(bezs, Vec::new(), eps);
+    let out_paths = top.compute_positions(eps);
+
+    let pad = 2.0 * eps;
+    let bbox = top.bounding_box();
+    let mut pixmap = Pixmap::new(
+        (bbox.width() + 2.0 * pad).ceil() as u32,
+        (bbox.height() + 2.0 * pad).ceil() as u32,
+    )
+    .unwrap();
+    let pad_transform = tiny_skia::Transform::from_translate(
+        (pad - bbox.min_x()) as f32,
+        (pad - bbox.min_y()) as f32,
+    );
+
+    let stroke = tiny_skia::Stroke {
+        width: 3.0,
+        ..Default::default()
+    };
+    for out_idx in out_paths.indices() {
+        let (path, far_idx) = &out_paths[out_idx];
+        for (idx, seg) in path.segments().enumerate() {
+            let skia_seg = skia_kurbo_seg(seg);
+
+            let c = if far_idx == &Some(idx) {
+                path_color(0)
+            } else {
+                path_color(3)
+            };
+
+            pixmap.stroke_path(&skia_seg, &color(c), &stroke, pad_transform, None);
+        }
+    }
     let out_path = output_path_for(input_path_base(&path));
     std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
     pixmap.save_png(out_path).unwrap();

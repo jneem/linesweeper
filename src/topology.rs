@@ -76,7 +76,7 @@ impl std::fmt::Debug for HalfSegmentWindingNumbers {
 ///
 /// There's no compile-time magic preventing misuse of this index, but you
 /// should only use this to index into the [`Topology`] that you got it from.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize, PartialOrd)]
 pub struct OutputSegIdx(usize);
 
 impl OutputSegIdx {
@@ -1008,10 +1008,14 @@ impl Topology {
             node.y0 = node.y0.max(y0);
             node.y1 = node.y1.min(y1);
             node.y0 < node.y1
-        })
+        });
+        self.close_segments
+            .sort_by(|x, y| x.partial_cmp(y).unwrap());
+        self.close_segments.dedup();
+        dbg!(&self.close_segments);
     }
 
-    pub fn compute_positions(&self, eps: f64) -> OutputSegVec<BezPath> {
+    pub fn compute_positions(&self, eps: f64) -> OutputSegVec<(BezPath, Option<usize>)> {
         // TODO: reuse the cache from the sweep-line
         let mut cmp = ComparisonCache::new(eps, eps / 2.0);
         let mut endpoints = HalfOutputSegVec::with_size(self.orig_seg.len());

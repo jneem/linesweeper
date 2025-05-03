@@ -7,7 +7,7 @@ fn overlaps((x0, x1): (f64, f64), (y0, y1): (f64, f64)) -> bool {
     x0 <= y1 && y0 <= x1
 }
 
-#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[derive(Clone, Copy, Debug, serde::Serialize, PartialEq, PartialOrd)]
 pub struct Node {
     pub left_seg: OutputSegIdx,
     pub right_seg: OutputSegIdx,
