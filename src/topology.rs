@@ -421,6 +421,7 @@ pub struct Topology {
     /// created when we process `s1`) and it's redundant with the `scan_west` relation from
     /// `s2` to `s1`.
     scan_east: OutputSegVec<Option<OutputSegIdx>>,
+    scan_after: Vec<(f64, OutputSegIdx, OutputSegIdx)>,
     pub close_segments: Vec<positioning_graph::Node>,
     pub orig_seg: OutputSegVec<SegIdx>,
     // TODO: probably don't have this owned
@@ -616,6 +617,7 @@ impl Topology {
             deleted: OutputSegVec::with_capacity(segments.len()),
             scan_west: OutputSegVec::with_capacity(segments.len()),
             scan_east: OutputSegVec::with_capacity(segments.len()),
+            scan_after: Vec::new(),
             close_segments: Vec::new(),
             orig_seg: OutputSegVec::with_capacity(segments.len()),
             segments: Segments::default(),
@@ -795,6 +797,22 @@ impl Topology {
                 }
             }
         }
+
+        // If something was connected up but nothing was connected down, let's remember that
+        // the scan-line order has changed.
+        if last_connected_down_seg.is_none() {
+            let seg_range = pos.seg_range().segs;
+            let west_nbr = seg_range
+                .start
+                .checked_sub(1)
+                .and_then(|idx| pos.line().line_segment(idx));
+            let east_nbr = pos.line().line_segment(pos.seg_range().segs.end);
+            if let Some((west, east)) = west_nbr.zip(east_nbr) {
+                let west = self.open_segs[west.0].front().unwrap();
+                let east = self.open_segs[east.0].front().unwrap();
+                self.scan_after.push((y, *west, *east));
+            }
+        }
     }
 
     fn delete_half(&mut self, half_seg: HalfOutputSegIdx) {
@@ -807,6 +825,10 @@ impl Topology {
         self.deleted[seg] = true;
         self.delete_half(seg.first_half());
         self.delete_half(seg.second_half());
+    }
+
+    fn is_horizontal(&self, seg: OutputSegIdx) -> bool {
+        self.point(seg.first_half()).y == self.point(seg.second_half()).y
     }
 
     /// After generating the topology, there's a good chance we end up with
@@ -1063,6 +1085,75 @@ impl Topology {
         rect
     }
 
+    // Doesn't account for deleted segments. I mean, they're still present in the output.
+    //
+    // FIXME: we're not updating the order for when segments end. Like, if seg 5 is to the
+    // west of seg 2 but then seg 5 ends, what's to the west of seg 2 now?
+    fn build_scan_line_orders(&self) -> ScanLineOrder {
+        let mut west_map: OutputSegVec<Vec<(f64, OutputSegIdx)>> =
+            OutputSegVec::with_size(self.winding.len());
+        let mut east_map: OutputSegVec<Vec<(f64, OutputSegIdx)>> =
+            OutputSegVec::with_size(self.winding.len());
+
+        // This slightly funny iteration order ensures that we push everything
+        // in increasing y. `scan_west` (resp. east) contains the *first* west
+        // (resp east) neighbor of an output segment, so that's the one we
+        // should push into the west_map (resp east_map) first.
+
+        // Filter out horizontal segments, because we don't care about them when
+        // doing scan line orders (they're present in scan_west because we do
+        // care about them when doing topology).
+        for idx in self.scan_west.indices().filter(|i| !self.is_horizontal(*i)) {
+            let y = self.point(idx.first_half()).y;
+            if let Some(west) = self.scan_west[idx] {
+                west_map[idx].push((y, west));
+            }
+        }
+
+        for idx in self.scan_east.indices() {
+            let y = self.point(idx.first_half()).y;
+            if let Some(east) = self.scan_east[idx] {
+                // Double-check that we're inserting in order.
+                if let Some((last_y, _)) = west_map[east].last() {
+                    debug_assert!(y > *last_y);
+                }
+
+                west_map[east].push((y, idx));
+                east_map[idx].push((y, east));
+            }
+        }
+
+        for idx in self.scan_west.indices().filter(|i| !self.is_horizontal(*i)) {
+            let y = self.point(idx.first_half()).y;
+            if let Some(west) = self.scan_west[idx] {
+                // Double-check that we're inserting in order.
+                if let Some((last_y, _)) = east_map[west].last() {
+                    debug_assert!(y > *last_y);
+                }
+                east_map[west].push((y, idx));
+            }
+        }
+
+        // Account for the scan-line changes that were triggered by segments
+        // ending and revealing other things behind them. It would be nice if
+        // we could process these in sweep-line order, to avoid the need to sort
+        // and dedup...
+        for &(y, west, east) in &self.scan_after {
+            west_map[east].push((y, west));
+            east_map[west].push((y, east));
+        }
+        for vec in &mut west_map.inner {
+            vec.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            vec.dedup();
+        }
+        for vec in &mut east_map.inner {
+            vec.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            vec.dedup();
+        }
+
+        ScanLineOrder { west_map, east_map }
+    }
+
     // While initially creating the topology, the safe and close intervals
     // were just based on the curve comparisons. But the output segments might
     // be shorter than the intervals, so fix them up.
@@ -1106,6 +1197,18 @@ impl Topology {
             self.eps,
         )
     }
+}
+
+/// A summary of all the east-west ordering relations between non-horizontal
+/// output segments.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ScanLineOrder {
+    /// Each entry is a list of `(y, west_neighbor)`: starting at `y`, `west_neighbor`
+    /// is the segment to my west. The `y`s are in increasing order.
+    pub west_map: OutputSegVec<Vec<(f64, OutputSegIdx)>>,
+    /// Each entry is a list of `(y, east_neighbor)`: starting at `y`, `east_neighbor`
+    /// is the segment to my east. The `y`s are in increasing order.
+    pub east_map: OutputSegVec<Vec<(f64, OutputSegIdx)>>,
 }
 
 /// An index for a [`Contour`] within [`Contours`].
@@ -1347,7 +1450,7 @@ mod tests {
         let top = Topology::from_polylines(outer, inner, eps);
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
-        insta::assert_ron_snapshot!((top, contours));
+        insta::assert_ron_snapshot!((&top, contours, top.build_scan_line_orders()));
     }
 
     #[test]

@@ -323,6 +323,9 @@ Topology(
       None,
     ],
   ),
+  scan_after: [
+    (0.5, OutputSegIdx(0), OutputSegIdx(5)),
+  ],
   close_segments: [
     Node(
       left_seg: OutputSegIdx(2),

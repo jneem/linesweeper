@@ -360,6 +360,7 @@ Topology(
       None,
     ],
   ),
+  scan_after: [],
   close_segments: [
     Node(
       left_seg: OutputSegIdx(0),

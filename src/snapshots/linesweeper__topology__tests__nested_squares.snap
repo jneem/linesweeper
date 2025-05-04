@@ -1,6 +1,6 @@
 ---
 source: src/topology.rs
-expression: "(top, contours)"
+expression: "(&top, contours, top.build_scan_line_orders())"
 ---
 (Topology(
   eps: 0.01,
@@ -368,6 +368,9 @@ expression: "(top, contours)"
       None,
     ],
   ),
+  scan_after: [
+    (1.0, OutputSegIdx(0), OutputSegIdx(2)),
+  ],
   close_segments: [],
   orig_seg: OutputSegVec(
     inner: [
@@ -464,4 +467,45 @@ expression: "(top, contours)"
       outer: false,
     ),
   ],
+), ScanLineOrder(
+  west_map: OutputSegVec(
+    inner: [
+      [],
+      [],
+      [
+        (-2.0, OutputSegIdx(0)),
+        (-1.0, OutputSegIdx(5)),
+        (1.0, OutputSegIdx(0)),
+      ],
+      [
+        (-1.0, OutputSegIdx(0)),
+      ],
+      [],
+      [
+        (-1.0, OutputSegIdx(3)),
+      ],
+      [],
+      [],
+    ],
+  ),
+  east_map: OutputSegVec(
+    inner: [
+      [
+        (-2.0, OutputSegIdx(2)),
+        (-1.0, OutputSegIdx(3)),
+        (1.0, OutputSegIdx(2)),
+      ],
+      [],
+      [],
+      [
+        (-1.0, OutputSegIdx(5)),
+      ],
+      [],
+      [
+        (-1.0, OutputSegIdx(2)),
+      ],
+      [],
+      [],
+    ],
+  ),
 ))
