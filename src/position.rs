@@ -66,6 +66,10 @@ impl PositionContext<'_> {
     }
 }
 
+/// FIXME: need to document and test the accuracy here. I think we're allowing up to `accuracy` of
+/// horizontal movement, which means that the sweep-line part needs to guarantee something like:
+/// if two output segments pass within 2*eps of each other, then they must share a beginning or ending
+/// sweep-line-range. 2*eps, because each part is allowed to move by eps...
 pub fn ordered_curves(
     segs: &Segments,
     cmp: &mut ComparisonCache,
