@@ -2,8 +2,8 @@ use kurbo::{BezPath, CubicBez, ParamCurve as _};
 
 use crate::{
     curve::{slice_bez, y_subsegment, EstParab, Order},
+    order::ComparisonCache,
     positioning_graph,
-    sweep::ComparisonCache,
     topology::{HalfOutputSegVec, OutputSegIdx, OutputSegVec},
     SegIdx, Segments,
 };
@@ -66,10 +66,6 @@ impl PositionContext<'_> {
     }
 }
 
-/// FIXME: need to document and test the accuracy here. I think we're allowing up to `accuracy` of
-/// horizontal movement, which means that the sweep-line part needs to guarantee something like:
-/// if two output segments pass within 2*eps of each other, then they must share a beginning or ending
-/// sweep-line-range. 2*eps, because each part is allowed to move by eps...
 pub fn ordered_curves(
     segs: &Segments,
     cmp: &mut ComparisonCache,
@@ -411,7 +407,7 @@ pub fn compute_positions(
 mod tests {
     use kurbo::{CubicBez, Line, PathSeg};
 
-    use crate::{sweep::ComparisonCache, Point, Segments};
+    use crate::{order::ComparisonCache, Point, Segments};
 
     use super::{horizontal_error_weight, ordered_curves};
 

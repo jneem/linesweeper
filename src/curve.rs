@@ -12,7 +12,7 @@ pub fn slice_bez(c: CubicBez, y0: f64, y1: f64) -> CubicBez {
     ret
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct CurveOrderEntry {
     end: f64,
     order: Order,
@@ -184,30 +184,36 @@ impl CurveOrder {
 
     // TODO: add unit tests
     // (and docs)
-    pub fn with_y_slop(self, slop: f64) -> CurveOrder {
+    pub fn with_y_slop(self, slop: f64, y_close_before: f64, y_close_after: f64) -> CurveOrder {
         let mut ret = Vec::new();
 
-        if self.cmps.len() <= 1 {
-            // TODO: think more carefully about corner cases at endpoints.
-            return self;
-        }
+        // if self.cmps.len() <= 1 {
+        //     // TODO: think more carefully about corner cases at endpoints.
+        //     return self;
+        // }
 
         // unwrap: cmps is always non-empty
         let last_end = self.cmps.last().unwrap().end;
 
         for (start, end, order) in self.iter() {
-            let new_end = if end == last_end { end } else { end - slop };
+            let new_end = if end == last_end {
+                end.min(y_close_after - slop)
+            } else {
+                end - slop
+            };
             if order != Order::Ish {
-                if start == self.start && start < new_end {
-                    ret.push(CurveOrderEntry {
-                        end: new_end,
-                        order,
-                    });
-                } else if start + slop < new_end {
-                    ret.push(CurveOrderEntry {
-                        end: start + slop,
-                        order: Order::Ish,
-                    });
+                let new_start = if start == self.start {
+                    start.max(y_close_before + slop)
+                } else {
+                    start + slop
+                };
+                if new_start < new_end {
+                    if new_start != self.start {
+                        ret.push(CurveOrderEntry {
+                            end: new_start,
+                            order: Order::Ish,
+                        });
+                    }
                     ret.push(CurveOrderEntry {
                         end: new_end,
                         order,
@@ -527,6 +533,22 @@ pub struct Cubic {
 }
 
 impl Cubic {
+    pub fn from_bez_y(c: CubicBez) -> Self {
+        let c3 = c.p3.y - 3.0 * c.p2.y + 3.0 * c.p1.y - c.p0.y;
+        let c2 = 3.0 * (c.p2.y - 2.0 * c.p1.y + c.p0.y);
+        let c1 = 3.0 * (c.p1.y - c.p0.y);
+        let c0 = c.p0.y;
+        Self { c3, c2, c1, c0 }
+    }
+
+    pub fn from_bez_x(c: CubicBez) -> Self {
+        let c3 = c.p3.x - 3.0 * c.p2.x + 3.0 * c.p1.x - c.p0.x;
+        let c2 = 3.0 * (c.p2.x - 2.0 * c.p1.x + c.p0.x);
+        let c1 = 3.0 * (c.p1.x - c.p0.x);
+        let c0 = c.p0.x;
+        Self { c3, c2, c1, c0 }
+    }
+
     pub fn eval(&self, t: f64) -> f64 {
         self.c3 * t * t * t + self.c2 * t * t + self.c1 * t + self.c0
     }
@@ -1006,7 +1028,11 @@ fn intersect_cubics_rec(
     // As an extra debug check, we do some point evaluations of our curves and
     // check that they agree with the orders we've assigned. First, add some error
     // bars in the y direction.
-    for (new_y0, new_y1, order) in scratch.clone().with_y_slop(accuracy).iter() {
+    for (new_y0, new_y1, order) in scratch
+        .clone()
+        .with_y_slop(accuracy, f64::NEG_INFINITY, f64::INFINITY)
+        .iter()
+    {
         // dbg!(new_y0, new_y1, order);
         // dbg!(ep0.eval(new_y0 - y_mid));
         // dbg!(ep1.eval(new_y0 - y_mid));
@@ -1154,6 +1180,8 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, tolerance: f64, accuracy: f6
 
 #[cfg(test)]
 mod test {
+    use core::f64;
+
     use super::*;
 
     #[test]
@@ -1237,6 +1265,7 @@ mod test {
         assert!(diff >= ep.dmin);
     }
 
+    // At some point, this test case looped infinitely.
     #[test]
     fn test_loop() {
         let c0 = CubicBez {
@@ -1253,5 +1282,59 @@ mod test {
         };
 
         dbg!(intersect_cubics(c0, c1, 1e-6, 1e-6));
+    }
+
+    #[test]
+    fn y_slop_single_seg() {
+        let order = CurveOrder {
+            start: 0.0,
+            cmps: vec![CurveOrderEntry {
+                end: 1.0,
+                order: Order::Right,
+            }],
+        };
+
+        assert_eq!(
+            order
+                .clone()
+                .with_y_slop(0.5, f64::NEG_INFINITY, f64::INFINITY)
+                .cmps,
+            order.cmps
+        );
+
+        assert_eq!(
+            order.clone().with_y_slop(0.5, -0.25, f64::INFINITY).cmps,
+            vec![
+                CurveOrderEntry {
+                    end: 0.25,
+                    order: Order::Ish,
+                },
+                CurveOrderEntry {
+                    end: 1.0,
+                    order: Order::Right,
+                }
+            ],
+        );
+        assert_eq!(
+            order.clone().with_y_slop(0.5, f64::NEG_INFINITY, 1.25).cmps,
+            vec![
+                CurveOrderEntry {
+                    end: 0.75,
+                    order: Order::Right,
+                },
+                CurveOrderEntry {
+                    end: 1.0,
+                    order: Order::Ish,
+                }
+            ],
+        );
+
+        assert_eq!(
+            order.clone().with_y_slop(1.0, -0.25, 1.25).cmps,
+            vec![CurveOrderEntry {
+                end: 1.0,
+                order: Order::Ish,
+            },],
+        );
     }
 }

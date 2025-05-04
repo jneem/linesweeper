@@ -10,11 +10,11 @@ use kurbo::{BezPath, Rect};
 use crate::{
     curve::y_subsegment,
     geom::Point,
+    order::ComparisonCache,
     positioning_graph,
     segments::{SegIdx, Segments},
     sweep::{
-        ComparisonCache, SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange,
-        SweepLineRangeBuffers, Sweeper,
+        SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
     },
 };
 
@@ -600,6 +600,7 @@ impl Topology {
         shape_a.resize(segments.len(), true);
         segments.add_cycles(set_b);
         shape_a.resize(segments.len(), false);
+        dbg!(&segments);
         Self::from_segments(segments, shape_a, eps)
     }
 
@@ -1194,7 +1195,15 @@ impl Topology {
             &self.close_segments,
             &mut cmp,
             &endpoints,
-            self.eps,
+            // The eps / 4.0 is (I think) the biggest value where we're
+            // guaranteed correctness, because the sweep-line only guarantees
+            // that curves comparing "ish" will get noticed by the sweep-line,
+            // and only those points within eps/2 are guaranteed to compare
+            // "ish". So then if each of those gets perturbed by up to eps / 4
+            // then we still have the right order.
+            //
+            // (TODO: explain this better)
+            self.eps / 4.0,
         )
     }
 }
@@ -1521,5 +1530,23 @@ mod tests {
     fn perturbation_test_f64(perturbations in prop::collection::vec(perturbation(f64_perturbation(0.1)), 1..5)) {
         run_perturbation(perturbations);
     }
+    }
+
+    #[test]
+    fn bug() {
+        use Perturbation::*;
+        let perturbations: Vec<Perturbation<F64Perturbation>> = vec![
+            Subdivision {
+                t: 0.9394124935587298,
+                idx: 2015950306058370793,
+                next: Box::new(Base { idx: 0 }),
+            },
+            Subdivision {
+                t: 0.13141341476907323,
+                idx: 16536748748586597932,
+                next: Box::new(Base { idx: 0 }),
+            },
+        ];
+        run_perturbation(perturbations);
     }
 }

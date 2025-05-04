@@ -10,6 +10,7 @@ use crate::{
     curve::{self, CurveOrder, Order},
     geom::Segment,
     num::CheapOrderedFloat,
+    order::ComparisonCache,
     segments::{SegIdx, Segments},
     treevec::TreeVec,
 };
@@ -261,44 +262,6 @@ pub struct SweepLineBuffers {
     /// A vector of (segment, min allowable horizontal position, max allowable horizontal position).
     positions: Vec<(SegmentOrderEntry, f64, f64)>,
     output_events: Vec<OutputEvent>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ComparisonCache {
-    inner: HashMap<(SegIdx, SegIdx), CurveOrder>,
-    accuracy: f64,
-    tolerance: f64,
-}
-
-impl ComparisonCache {
-    pub fn new(tolerance: f64, accuracy: f64) -> Self {
-        ComparisonCache {
-            inner: HashMap::new(),
-            accuracy,
-            tolerance,
-        }
-    }
-
-    // FIXME: less cloning
-    pub fn compare_segments(&mut self, segments: &Segments, i: SegIdx, j: SegIdx) -> CurveOrder {
-        if let Some(order) = self.inner.get(&(i, j)) {
-            return order.clone();
-        }
-
-        let segi = &segments[i];
-        let segj = &segments[j];
-
-        let forward = curve::intersect_cubics(
-            segi.to_kurbo(),
-            segj.to_kurbo(),
-            self.tolerance,
-            self.accuracy,
-        )
-        .with_y_slop(self.tolerance);
-        let reverse = forward.flip();
-        self.inner.insert((j, i), reverse);
-        self.inner.entry((i, j)).insert_entry(forward).get().clone()
-    }
 }
 
 /// Encapsulates the state of the sweep-line algorithm and allows iterating over sweep lines.

@@ -11,7 +11,7 @@ mod sweep_line;
 
 pub use output_event::OutputEvent;
 pub use range::{SegmentsConnectedAtX, SweepLineRange, SweepLineRangeBuffers};
-pub use sweep_line::{ChangedInterval, ComparisonCache, SweepLine, SweepLineBuffers, Sweeper};
+pub use sweep_line::{ChangedInterval, SweepLine, SweepLineBuffers, Sweeper};
 
 use crate::Segments;
 
