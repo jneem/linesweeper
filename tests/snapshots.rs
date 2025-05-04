@@ -400,7 +400,7 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
 
     let eps = 16.0;
     let top = Topology::from_paths(bezs, Vec::new(), eps);
-    let out_paths = top.compute_positions(eps);
+    let out_paths = top.compute_positions();
 
     let pad = 2.0 * eps;
     let bbox = top.bounding_box();
@@ -418,7 +418,7 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
         width: 1.0,
         ..Default::default()
     };
-    for out_idx in out_paths.indices() {
+    for out_idx in top.segment_indices() {
         let (path, far_idx) = &out_paths[out_idx];
         for (idx, seg) in path.segments().enumerate() {
             let skia_seg = skia_kurbo_seg(seg);

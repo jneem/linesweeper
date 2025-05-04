@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 use kurbo::{BezPath, Rect};
 
 use crate::{
+    curve::y_subsegment,
     geom::Point,
     positioning_graph,
     segments::{SegIdx, Segments},
@@ -339,6 +340,7 @@ impl std::fmt::Debug for PointNeighbors {
 /// things like clipping a potentially non-closed path to a closed path.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Topology {
+    eps: f64,
     /// Indexed by `SegIdx`.
     shape_a: Vec<bool>,
     /// Indexed by `SegIdx`.
@@ -602,6 +604,7 @@ impl Topology {
 
     fn from_segments(segments: Segments, shape_a: Vec<bool>, eps: f64) -> Self {
         let mut ret = Self {
+            eps,
             shape_a,
             open_segs: vec![VecDeque::new(); segments.len()],
 
@@ -634,9 +637,9 @@ impl Topology {
                 ret.process_sweep_line_range(positions, &segments, scan_west_seg);
             }
         }
+        ret.segments = segments;
         ret.merge_coincident();
         ret.update_close_intervals();
-        ret.segments = segments;
         ret
     }
 
@@ -824,6 +827,25 @@ impl Topology {
             }
             let cc_nbr = self.point_neighbors[idx.first_half()].clockwise;
             if self.point_idx[idx.second_half()] == self.point_idx[cc_nbr.other_half()] {
+                // We've found two segments with the same starting and ending points, but
+                // that doesn't mean they're coincident!
+                // TODO: we could use the comparison cache here, if we could keep it around somewhere.
+                let y0 = self.point(idx.first_half()).y;
+                let y1 = self.point(idx.second_half()).y;
+                if y0 != y1 {
+                    let s1 = self.orig_seg[idx];
+                    let s2 = self.orig_seg[cc_nbr];
+                    let s1 = y_subsegment(self.segments[s1].to_kurbo(), y0, y1);
+                    let s2 = y_subsegment(self.segments[s2].to_kurbo(), y0, y1);
+                    if (s1.p0 - s2.p0).hypot() > self.eps
+                        || (s1.p1 - s2.p1).hypot() > self.eps
+                        || (s1.p2 - s2.p2).hypot() > self.eps
+                        || (s1.p3 - s2.p3).hypot() > self.eps
+                    {
+                        continue;
+                    }
+                }
+
                 // All output segments are in sweep line order, so if they're
                 // coincident then they'd better both be first halves.
                 debug_assert!(cc_nbr.first_half);
@@ -1065,9 +1087,9 @@ impl Topology {
         self.close_segments.dedup();
     }
 
-    pub fn compute_positions(&self, eps: f64) -> OutputSegVec<(BezPath, Option<usize>)> {
+    pub fn compute_positions(&self) -> OutputSegVec<(BezPath, Option<usize>)> {
         // TODO: reuse the cache from the sweep-line
-        let mut cmp = ComparisonCache::new(eps, eps / 2.0);
+        let mut cmp = ComparisonCache::new(self.eps, self.eps / 2.0);
         let mut endpoints = HalfOutputSegVec::with_size(self.orig_seg.len());
         for idx in self.orig_seg.indices() {
             endpoints[idx.first_half()] = self.points[self.point_idx[idx.first_half()]].to_kurbo();
@@ -1081,7 +1103,7 @@ impl Topology {
             &self.close_segments,
             &mut cmp,
             &endpoints,
-            eps,
+            self.eps,
         )
     }
 }

@@ -154,7 +154,7 @@ pub fn main() -> anyhow::Result<()> {
         document = document.add(path);
     }
 
-    let out_paths = top.compute_positions(eps);
+    let out_paths = top.compute_positions();
 
     document = add_op(
         document,

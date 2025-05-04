@@ -3,6 +3,7 @@ source: src/topology.rs
 expression: "(top, contours)"
 ---
 (Topology(
+  eps: 0.01,
   shape_a: [
     true,
     true,
