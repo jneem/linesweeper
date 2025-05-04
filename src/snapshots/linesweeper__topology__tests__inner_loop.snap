@@ -465,6 +465,21 @@ expression: "(top, contours)"
       None,
     ],
   ),
+  scan_east: OutputSegVec(
+    inner: [
+      None,
+      None,
+      None,
+      None,
+      None,
+      Some(OutputSegIdx(2)),
+      None,
+      None,
+      Some(OutputSegIdx(5)),
+      None,
+      None,
+    ],
+  ),
   close_segments: [
     Node(
       left_seg: OutputSegIdx(3),

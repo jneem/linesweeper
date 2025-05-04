@@ -18,7 +18,7 @@ use super::{OutputEvent, SweepLineRange, SweepLineRangeBuffers};
 
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 pub(crate) struct SegmentOrderEntry {
-    seg: SegIdx,
+    pub(crate) seg: SegIdx,
     /// True if this segment is about to leave the sweep-line.
     ///
     /// We handle enter/exits like this:
@@ -131,6 +131,10 @@ impl SegmentOrderEntry {
 
     fn old_seg(&self) -> SegIdx {
         self.old_seg.unwrap_or(self.seg)
+    }
+
+    pub(crate) fn is_in_changed_interval(&self) -> bool {
+        self.in_changed_interval
     }
 }
 
@@ -1196,14 +1200,20 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
     }
 
     /// Get the line segment at position `idx` in the new order.
-    pub fn line_segment(&self, idx: usize) -> SegIdx {
-        self.state.line.segs[idx].seg
+    pub fn line_segment(&self, idx: usize) -> Option<SegIdx> {
+        self.state.line.segs.get(idx).map(|entry| entry.seg)
+    }
+
+    /// Get the line segment at position `idx` in the new order.
+    pub(crate) fn line_entry(&self, idx: usize) -> Option<&SegmentOrderEntry> {
+        self.state.line.segs.get(idx)
     }
 
     pub fn compare_segments(&self, i: SegIdx, j: SegIdx) -> CurveOrder {
         self.state.compare_segments(i, j)
     }
 
+    /// The range must be a changed range. TODO: doc properly
     pub fn old_segment_range(
         &self,
         range: std::ops::Range<usize>,

@@ -195,6 +195,14 @@ Topology(
       Some(OutputSegIdx(2)),
     ],
   ),
+  scan_east: OutputSegVec(
+    inner: [
+      None,
+      None,
+      None,
+      None,
+    ],
+  ),
   close_segments: [
     Node(
       left_seg: OutputSegIdx(0),

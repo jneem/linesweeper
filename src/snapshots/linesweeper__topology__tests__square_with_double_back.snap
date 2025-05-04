@@ -311,6 +311,17 @@ Topology(
       None,
     ],
   ),
+  scan_east: OutputSegVec(
+    inner: [
+      None,
+      None,
+      None,
+      None,
+      None,
+      None,
+      None,
+    ],
+  ),
   close_segments: [
     Node(
       left_seg: OutputSegIdx(2),

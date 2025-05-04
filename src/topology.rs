@@ -376,10 +376,49 @@ pub struct Topology {
     point_neighbors: HalfOutputSegVec<PointNeighbors>,
     /// Marks the output segments that have been deleted due to merges of coindident segments.
     deleted: OutputSegVec<bool>,
-    /// The map from a segment to its scan-left neighbor is always strictly decreasing (in the
+    /// For each non-horizontal output segment, if we go just a tiny bit south of its starting
+    /// position then which output segment is to the west?
+    ///
+    /// The map from a segment to its scan-west neighbor is always strictly decreasing (in the
     /// index). This ensures that a scan will always terminate, and it also means that we can
     /// build the contours in increasing `OutputSegIdx` order.
     scan_west: OutputSegVec<Option<OutputSegIdx>>,
+    /// For each non-horizontal output segment that's at the east edge of its sweep-line-range,
+    /// this is the segment to the east... but *only* if the segment to the east continues through
+    /// the sweep-line where this output segment started.
+    ///
+    /// That is, in this situation (where the `->` points to our sweep-line) there will be no
+    /// "scan_east" relation from s1 to s2:
+    ///
+    /// ```text
+    /// \            /
+    ///  \          /
+    ///   \        /
+    /// -> ◦      ◦
+    ///    |      |
+    ///    |      |
+    ///    |      |
+    ///  (s1)   (s2)
+    /// ```
+    ///
+    /// However, in this situation there will be a "scan_east" relation from s1 to s2.
+    ///
+    /// ```text
+    /// \         |
+    ///  \        |
+    ///   \       |
+    /// -> ◦      |
+    ///    |      |
+    ///    |      |
+    ///    |      |
+    ///   (s1)   (s2)
+    /// ```
+    ///
+    /// The reason behind this seemingly-arbitrary choice is that in the former situation
+    /// it's harder to build up `scan_east` (because the output segment `s2` hasn't bee
+    /// created when we process `s1`) and it's redundant with the `scan_west` relation from
+    /// `s2` to `s1`.
+    scan_east: OutputSegVec<Option<OutputSegIdx>>,
     pub close_segments: Vec<positioning_graph::Node>,
     pub orig_seg: OutputSegVec<SegIdx>,
     // TODO: probably don't have this owned
@@ -522,6 +561,7 @@ impl Topology {
         self.winding.inner.push(winding);
         self.deleted.inner.push(false);
         self.scan_west.inner.push(None);
+        self.scan_east.inner.push(None);
         self.orig_seg.inner.push(idx);
         out_idx
     }
@@ -572,6 +612,7 @@ impl Topology {
             point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
             deleted: OutputSegVec::with_capacity(segments.len()),
             scan_west: OutputSegVec::with_capacity(segments.len()),
+            scan_east: OutputSegVec::with_capacity(segments.len()),
             close_segments: Vec::new(),
             orig_seg: OutputSegVec::with_capacity(segments.len()),
             segments: Segments::default(),
@@ -586,7 +627,7 @@ impl Topology {
                 let scan_west_seg = if range.segs.start == 0 {
                     None
                 } else {
-                    let prev_seg = positions.line().line_segment(range.segs.start - 1);
+                    let prev_seg = positions.line().line_segment(range.segs.start - 1).unwrap();
                     debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
                     ret.open_segs[prev_seg.0].front().copied()
                 };
@@ -615,10 +656,9 @@ impl Topology {
         // a &mut self reference.
         let mut seg_buf = Vec::new();
         let mut connected_segs = SegmentsConnectedAtX::default();
-        // A pair (SegIdx, OutputSegIdx) where both indices refer to the last segment
-        // we saw that points up (or down) from this sweep line.
-        let mut last_connected_up_seg: Option<(SegIdx, OutputSegIdx)> = None;
-        let mut last_connected_down_seg: Option<(SegIdx, OutputSegIdx)> = None;
+        // The last segment we saw that points up (or down) from this sweep line.
+        let mut last_connected_up_seg: Option<OutputSegIdx> = None;
+        let mut last_connected_down_seg: Option<OutputSegIdx> = None;
 
         while let Some(next_x) = pos.x() {
             let p = PointIdx(self.points.inner.len());
@@ -641,19 +681,19 @@ impl Topology {
             self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), p);
 
             for (&out_idx, idx) in seg_buf.iter().zip(connected_segs.connected_up()) {
-                if let Some((prev_idx, prev_out_idx)) = last_connected_up_seg {
-                    let cmp = pos.line().compare_segments(prev_idx, idx);
+                if let Some(prev_idx) = last_connected_up_seg {
+                    let cmp = pos.line().compare_segments(self.orig_seg[prev_idx], idx);
 
                     if let Some((y_start, _)) = cmp.close_interval_at(y) {
                         self.close_segments.push(positioning_graph::Node {
-                            left_seg: prev_out_idx,
+                            left_seg: prev_idx,
                             right_seg: out_idx.idx,
                             y0: y_start,
                             y1: y,
                         });
                     }
                 }
-                last_connected_up_seg = Some((idx, out_idx.idx));
+                last_connected_up_seg = Some(out_idx.idx);
             }
 
             // Then: gather the output segments from half-segments starting here and moving
@@ -681,19 +721,21 @@ impl Topology {
                 scan_west = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
 
-                if let Some((prev_idx, prev_out_idx)) = last_connected_down_seg {
-                    let cmp = pos.line().compare_segments(prev_idx, new_seg);
+                if let Some(prev_idx) = last_connected_down_seg {
+                    let cmp = pos
+                        .line()
+                        .compare_segments(self.orig_seg[prev_idx], new_seg);
 
                     if let Some((_, y_end)) = cmp.close_interval_at(y) {
                         self.close_segments.push(positioning_graph::Node {
-                            left_seg: prev_out_idx,
+                            left_seg: prev_idx,
                             right_seg: half_seg,
                             y0: y,
                             y1: y_end,
                         });
                     }
                 }
-                last_connected_down_seg = Some((new_seg, half_seg));
+                last_connected_down_seg = Some(half_seg);
             }
             self.add_segs_counter_clockwise(
                 &mut first_seg,
@@ -706,8 +748,9 @@ impl Topology {
             // and add any horizontals starting here.
             pos.increase_x();
 
-            // Finally, gather the output segments from horizontal segments starting here.
-            // Allocate new output segments for them and calculate their winding numbers.
+            // Gather the output segments from horizontal segments starting
+            // here. Allocate new output segments for them and calculate their
+            // winding numbers.
             let hsegs = pos.active_horizontals();
 
             // We don't want to update our "global" winding number state because that's supposed
@@ -740,6 +783,14 @@ impl Topology {
                 seg_buf.iter().copied(),
                 p,
             );
+        }
+
+        if let Some(seg) = last_connected_down_seg {
+            if let Some(east_nbr) = pos.line().line_entry(pos.seg_range().segs.end) {
+                if !east_nbr.is_in_changed_interval() {
+                    self.scan_east[seg] = self.open_segs[east_nbr.seg.0].front().copied()
+                }
+            }
         }
     }
 
