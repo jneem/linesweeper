@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 87ffcdf96df9f88e13c595fd71e4c6e86eadf365efcec4c7f8f395c57fdd6f20 # shrinks to perturbations = [Subdivision { t: 0.8279203883070297, idx: 11865133298020245315, next: Base { idx: 0 } }]
