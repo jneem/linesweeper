@@ -369,7 +369,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
     ],
   ),
   scan_after: [
-    (1.0, OutputSegIdx(0), OutputSegIdx(2)),
+    (1.0, Some(OutputSegIdx(0)), Some(OutputSegIdx(2))),
   ],
   close_segments: [],
   orig_seg: OutputSegVec(
@@ -473,16 +473,16 @@ expression: "(&top, contours, top.build_scan_line_orders())"
       [],
       [],
       [
-        (-2.0, OutputSegIdx(0)),
-        (-1.0, OutputSegIdx(5)),
-        (1.0, OutputSegIdx(0)),
+        (-2.0, Some(OutputSegIdx(0))),
+        (-1.0, Some(OutputSegIdx(5))),
+        (1.0, Some(OutputSegIdx(0))),
       ],
       [
-        (-1.0, OutputSegIdx(0)),
+        (-1.0, Some(OutputSegIdx(0))),
       ],
       [],
       [
-        (-1.0, OutputSegIdx(3)),
+        (-1.0, Some(OutputSegIdx(3))),
       ],
       [],
       [],
@@ -491,18 +491,18 @@ expression: "(&top, contours, top.build_scan_line_orders())"
   east_map: OutputSegVec(
     inner: [
       [
-        (-2.0, OutputSegIdx(2)),
-        (-1.0, OutputSegIdx(3)),
-        (1.0, OutputSegIdx(2)),
+        (-2.0, Some(OutputSegIdx(2))),
+        (-1.0, Some(OutputSegIdx(3))),
+        (1.0, Some(OutputSegIdx(2))),
       ],
       [],
       [],
       [
-        (-1.0, OutputSegIdx(5)),
+        (-1.0, Some(OutputSegIdx(5))),
       ],
       [],
       [
-        (-1.0, OutputSegIdx(2)),
+        (-1.0, Some(OutputSegIdx(2))),
       ],
       [],
       [],

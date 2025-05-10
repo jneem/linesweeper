@@ -77,7 +77,7 @@ impl std::fmt::Debug for HalfSegmentWindingNumbers {
 ///
 /// There's no compile-time magic preventing misuse of this index, but you
 /// should only use this to index into the [`Topology`] that you got it from.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize, PartialOrd)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize, PartialOrd, Ord)]
 pub struct OutputSegIdx(usize);
 
 impl OutputSegIdx {
@@ -421,7 +421,7 @@ pub struct Topology {
     /// created when we process `s1`) and it's redundant with the `scan_west` relation from
     /// `s2` to `s1`.
     scan_east: OutputSegVec<Option<OutputSegIdx>>,
-    scan_after: Vec<(f64, OutputSegIdx, OutputSegIdx)>,
+    scan_after: Vec<(f64, Option<OutputSegIdx>, Option<OutputSegIdx>)>,
     pub close_segments: Vec<positioning_graph::Node>,
     pub orig_seg: OutputSegVec<SegIdx>,
     // TODO: probably don't have this owned
@@ -600,7 +600,6 @@ impl Topology {
         shape_a.resize(segments.len(), true);
         segments.add_cycles(set_b);
         shape_a.resize(segments.len(), false);
-        dbg!(&segments);
         Self::from_segments(segments, shape_a, eps)
     }
 
@@ -808,10 +807,10 @@ impl Topology {
                 .checked_sub(1)
                 .and_then(|idx| pos.line().line_segment(idx));
             let east_nbr = pos.line().line_segment(pos.seg_range().segs.end);
-            if let Some((west, east)) = west_nbr.zip(east_nbr) {
-                let west = self.open_segs[west.0].front().unwrap();
-                let east = self.open_segs[east.0].front().unwrap();
-                self.scan_after.push((y, *west, *east));
+            let west = west_nbr.map(|idx| *self.open_segs[idx.0].front().unwrap());
+            let east = east_nbr.map(|idx| *self.open_segs[idx.0].front().unwrap());
+            if west.is_some() || east.is_some() {
+                self.scan_after.push((y, west, east));
             }
         }
     }
@@ -1087,13 +1086,10 @@ impl Topology {
     }
 
     // Doesn't account for deleted segments. I mean, they're still present in the output.
-    //
-    // FIXME: we're not updating the order for when segments end. Like, if seg 5 is to the
-    // west of seg 2 but then seg 5 ends, what's to the west of seg 2 now?
     fn build_scan_line_orders(&self) -> ScanLineOrder {
-        let mut west_map: OutputSegVec<Vec<(f64, OutputSegIdx)>> =
+        let mut west_map: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>> =
             OutputSegVec::with_size(self.winding.len());
-        let mut east_map: OutputSegVec<Vec<(f64, OutputSegIdx)>> =
+        let mut east_map: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>> =
             OutputSegVec::with_size(self.winding.len());
 
         // This slightly funny iteration order ensures that we push everything
@@ -1107,31 +1103,33 @@ impl Topology {
         for idx in self.scan_west.indices().filter(|i| !self.is_horizontal(*i)) {
             let y = self.point(idx.first_half()).y;
             if let Some(west) = self.scan_west[idx] {
-                west_map[idx].push((y, west));
+                west_map[idx].push((y, Some(west)));
             }
         }
 
+        dbg!(&self.points, &self.point_idx);
         for idx in self.scan_east.indices() {
             let y = self.point(idx.first_half()).y;
             if let Some(east) = self.scan_east[idx] {
+                east_map[idx].push((y, Some(east)));
                 // Double-check that we're inserting in order.
                 if let Some((last_y, _)) = west_map[east].last() {
                     debug_assert!(y > *last_y);
                 }
 
-                west_map[east].push((y, idx));
-                east_map[idx].push((y, east));
+                west_map[east].push((y, Some(idx)));
             }
         }
 
         for idx in self.scan_west.indices().filter(|i| !self.is_horizontal(*i)) {
             let y = self.point(idx.first_half()).y;
             if let Some(west) = self.scan_west[idx] {
+                dbg!(y, idx, west, &east_map[west]);
                 // Double-check that we're inserting in order.
                 if let Some((last_y, _)) = east_map[west].last() {
                     debug_assert!(y > *last_y);
                 }
-                east_map[west].push((y, idx));
+                east_map[west].push((y, Some(idx)));
             }
         }
 
@@ -1140,8 +1138,12 @@ impl Topology {
         // we could process these in sweep-line order, to avoid the need to sort
         // and dedup...
         for &(y, west, east) in &self.scan_after {
-            west_map[east].push((y, west));
-            east_map[west].push((y, east));
+            if let Some(east) = east {
+                west_map[east].push((y, west));
+            }
+            if let Some(west) = west {
+                east_map[west].push((y, east));
+            }
         }
         for vec in &mut west_map.inner {
             vec.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -1152,7 +1154,14 @@ impl Topology {
             vec.dedup();
         }
 
-        ScanLineOrder { west_map, east_map }
+        let ret = ScanLineOrder { west_map, east_map };
+        #[cfg(feature = "slow-asserts")]
+        ret.check_invariants(&self.orig_seg, &self.segments);
+        // dbg!(&ret.east_map[OutputSegIdx(12)]);
+        // dbg!(&ret.west_map[OutputSegIdx(12)]);
+        // dbg!(&ret.east_map[OutputSegIdx(15)]);
+        // dbg!(&ret.west_map[OutputSegIdx(15)]);
+        ret
     }
 
     // While initially creating the topology, the safe and close intervals
@@ -1189,12 +1198,12 @@ impl Topology {
                 self.points[self.point_idx[idx.second_half()]].to_kurbo();
         }
 
-        crate::position::compute_positions(
+        crate::position::compute_positions2(
             &self.segments,
             &self.orig_seg,
-            &self.close_segments,
             &mut cmp,
             &endpoints,
+            &self.build_scan_line_orders(),
             // The eps / 4.0 is (I think) the biggest value where we're
             // guaranteed correctness, because the sweep-line only guarantees
             // that curves comparing "ish" will get noticed by the sweep-line,
@@ -1214,10 +1223,59 @@ impl Topology {
 pub struct ScanLineOrder {
     /// Each entry is a list of `(y, west_neighbor)`: starting at `y`, `west_neighbor`
     /// is the segment to my west. The `y`s are in increasing order.
-    pub west_map: OutputSegVec<Vec<(f64, OutputSegIdx)>>,
+    pub west_map: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
     /// Each entry is a list of `(y, east_neighbor)`: starting at `y`, `east_neighbor`
     /// is the segment to my east. The `y`s are in increasing order.
-    pub east_map: OutputSegVec<Vec<(f64, OutputSegIdx)>>,
+    pub east_map: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
+}
+
+impl ScanLineOrder {
+    fn neighbor_after(
+        map: &OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
+        seg: OutputSegIdx,
+        y: f64,
+    ) -> Option<OutputSegIdx> {
+        // TODO: maybe binary search, if this might get big?
+        let mut last_idx = None;
+        for (start_y, idx) in map[seg].iter() {
+            if *start_y > y {
+                return last_idx;
+            }
+            last_idx = *idx;
+        }
+        last_idx
+    }
+
+    // TODO: test cases
+    pub fn west_neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
+        Self::neighbor_after(&self.west_map, seg, y)
+    }
+
+    pub fn east_neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
+        Self::neighbor_after(&self.east_map, seg, y)
+    }
+
+    #[cfg(feature = "slow-asserts")]
+    fn check_invariants(&self, orig_seg: &OutputSegVec<SegIdx>, segs: &Segments) {
+        for idx in self.east_map.indices() {
+            for &(y, east_idx) in &self.east_map[idx] {
+                if let Some(east_idx) = east_idx {
+                    let seg = &segs[orig_seg[idx]];
+                    let east_seg = &segs[orig_seg[east_idx]];
+                    assert!(y >= seg.p0.y && y >= east_seg.p0.y);
+                    assert!(y < seg.p3.y && y < east_seg.p3.y);
+                }
+            }
+            for &(y, west_idx) in &self.west_map[idx] {
+                if let Some(west_idx) = west_idx {
+                    let seg = &segs[orig_seg[idx]];
+                    let west_seg = &segs[orig_seg[west_idx]];
+                    assert!(y >= seg.p0.y && y >= west_seg.p0.y);
+                    assert!(y < seg.p3.y && y < west_seg.p3.y);
+                }
+            }
+        }
+    }
 }
 
 /// An index for a [`Contour`] within [`Contours`].
@@ -1460,6 +1518,47 @@ mod tests {
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
         insta::assert_ron_snapshot!((&top, contours, top.build_scan_line_orders()));
+
+        let out_idx = top.orig_seg.indices().collect::<Vec<_>>();
+        let orders = top.build_scan_line_orders();
+        assert_eq!(orders.west_neighbor_after(out_idx[0], -2.0), None);
+        assert_eq!(orders.east_neighbor_after(out_idx[0], -2.2), None);
+        assert_eq!(
+            orders.east_neighbor_after(out_idx[0], -2.0),
+            Some(out_idx[2])
+        );
+        assert_eq!(
+            orders.east_neighbor_after(out_idx[0], -1.5),
+            Some(out_idx[2])
+        );
+        assert_eq!(
+            orders.east_neighbor_after(out_idx[0], -1.0),
+            Some(out_idx[3])
+        );
+        assert_eq!(
+            orders.east_neighbor_after(out_idx[0], 1.0),
+            Some(out_idx[2])
+        );
+        // Maybe this is a little surprising, but it's what the current implementation does.
+        assert_eq!(
+            orders.east_neighbor_after(out_idx[0], 2.0),
+            Some(out_idx[2])
+        );
+    }
+
+    #[test]
+    fn squares_with_gaps() {
+        let mid = [[p(-2.0, -2.0), p(2.0, -2.0), p(2.0, 2.0), p(-2.0, 2.0)]];
+        let left_right = [
+            [p(-4.0, -1.0), p(-3.0, -1.0), p(-3.0, 1.0), p(-4.0, 1.0)],
+            [p(4.0, -1.0), p(3.0, -1.0), p(3.0, -0.5), p(4.0, -0.5)],
+            [p(4.0, 1.0), p(3.0, 1.0), p(3.0, 0.5), p(4.0, 0.5)],
+        ];
+        let eps = 0.01;
+        let top = Topology::from_polylines(mid, left_right, eps);
+        let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
+
+        insta::assert_ron_snapshot!((&top, contours, top.build_scan_line_orders()));
     }
 
     #[test]
@@ -1530,23 +1629,5 @@ mod tests {
     fn perturbation_test_f64(perturbations in prop::collection::vec(perturbation(f64_perturbation(0.1)), 1..5)) {
         run_perturbation(perturbations);
     }
-    }
-
-    #[test]
-    fn bug() {
-        use Perturbation::*;
-        let perturbations: Vec<Perturbation<F64Perturbation>> = vec![
-            Subdivision {
-                t: 0.9394124935587298,
-                idx: 2015950306058370793,
-                next: Box::new(Base { idx: 0 }),
-            },
-            Subdivision {
-                t: 0.13141341476907323,
-                idx: 16536748748586597932,
-                next: Box::new(Base { idx: 0 }),
-            },
-        ];
-        run_perturbation(perturbations);
     }
 }

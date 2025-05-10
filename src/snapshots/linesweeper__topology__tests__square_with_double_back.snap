@@ -324,7 +324,7 @@ Topology(
     ],
   ),
   scan_after: [
-    (0.5, OutputSegIdx(0), OutputSegIdx(5)),
+    (0.5, Some(OutputSegIdx(0)), Some(OutputSegIdx(5))),
   ],
   close_segments: [
     Node(
