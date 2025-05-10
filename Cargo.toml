@@ -23,7 +23,6 @@ default = []
 [dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
 arrayvec = { version = "0.7.6", features = ["serde"] }
-malachite = "0.4.5"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive"] }
 kurbo = { version = "0.11.1", features = ["serde"] }
@@ -43,6 +42,7 @@ linesweeper_util = { path = "util" }
 tiny-skia = "0.11.4"
 kompari = { git = "https://github.com/linebender/kompari" }
 libtest-mimic = "0.8.1"
+skrifa = "0.31.0"
 
 [profile.dev.package."*"]
 opt-level = 2
@@ -66,4 +66,8 @@ required-features = ["generators"]
 
 [[test]]
 name = "snapshots"
+harness = false
+
+[[test]]
+name = "fonts"
 harness = false

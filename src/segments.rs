@@ -1,3 +1,5 @@
+use std::{iter::Peekable, ops::Index};
+
 use kurbo::BezPath;
 
 use crate::{
@@ -25,7 +27,7 @@ impl std::fmt::Debug for SegIdx {
 /// An arena of line segments.
 ///
 /// Segments are indexed by [`SegIdx`] and can be retrieved by indexing (i.e. with square brackets).
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Segments {
     segs: Vec<Segment>,
     contour_prev: Vec<Option<SegIdx>>,
@@ -42,12 +44,98 @@ pub struct Segments {
     exit: Vec<(f64, SegIdx)>,
 }
 
+struct SegmentEntryFormatter<'a> {
+    idx: SegIdx,
+    seg: &'a Segment,
+    prev: Option<SegIdx>,
+    next: Option<SegIdx>,
+    oriented: bool,
+}
+
+impl std::fmt::Debug for SegmentEntryFormatter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let seg_idx = self.idx;
+        let seg = self.seg;
+        let prefix = if self.oriented {
+            self.prev.map(|i| format!("{i:?} -> ")).unwrap_or_default()
+        } else {
+            self.next.map(|i| format!("{i:?} <- ")).unwrap_or_default()
+        };
+        let suffix = if self.oriented {
+            self.next.map(|i| format!(" -> {i:?}")).unwrap_or_default()
+        } else {
+            self.prev.map(|i| format!(" <- {i:?}")).unwrap_or_default()
+        };
+        write!(f, "{seg_idx:?}: {prefix}{seg:?}{suffix}")
+    }
+}
+
+impl std::fmt::Debug for Segments {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut list = f.debug_list();
+        for idx in 0..self.segs.len() {
+            list.entry(&SegmentEntryFormatter {
+                idx: SegIdx(idx),
+                seg: &self.segs[idx],
+                prev: self.contour_prev[idx],
+                next: self.contour_next[idx],
+                oriented: self.orientation[idx],
+            });
+        }
+        list.finish()
+    }
+}
+
 fn cyclic_pairs<T>(xs: &[T]) -> impl Iterator<Item = (&T, &T)> {
     pairs(xs).chain(xs.last().zip(xs.first()))
 }
 
 fn pairs<T>(xs: &[T]) -> impl Iterator<Item = (&T, &T)> {
     xs.windows(2).map(|pair| (&pair[0], &pair[1]))
+}
+
+struct SubpathIter<I> {
+    inner: I,
+    done: bool,
+}
+
+impl<I> Iterator for SubpathIter<I>
+where
+    I: Iterator<Item = kurbo::PathEl>,
+{
+    type Item = kurbo::PathEl;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            None
+        } else {
+            let ret = self.inner.next()?;
+            if matches!(ret, kurbo::PathEl::ClosePath) {
+                self.done = true;
+            }
+            Some(ret)
+        }
+    }
+}
+
+struct Subpaths<I: Iterator> {
+    inner: Peekable<I>,
+}
+
+impl<I> Subpaths<I>
+where
+    I: Iterator<Item = kurbo::PathEl>,
+{
+    fn next(&mut self) -> Option<SubpathIter<&mut Peekable<I>>> {
+        if self.inner.peek().is_none() {
+            None
+        } else {
+            Some(SubpathIter {
+                inner: &mut self.inner,
+                done: false,
+            })
+        }
+    }
 }
 
 impl Segments {
@@ -178,31 +266,35 @@ impl Segments {
     }
 
     fn add_path_without_updating_enter_exit(&mut self, p: &BezPath) {
-        let old_len = self.segs.len();
-        for seg in p.segments() {
-            // TODO: could have a fast path for line segments
-            let cubic = seg.to_cubic();
-            let cubics = monotonic_pieces(cubic);
-            for c in cubics {
-                let (p0, p1, p2, p3, orient) = if (c.p0.y, c.p0.x) <= (c.p3.y, c.p3.x) {
-                    (c.p0, c.p1, c.p2, c.p3, true)
-                } else {
-                    (c.p3, c.p2, c.p1, c.p0, false)
-                };
-                self.segs
-                    .push(Segment::new(p0.into(), p1.into(), p2.into(), p3.into()));
-                self.orientation.push(orient);
-                self.contour_prev
-                    .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
-                self.contour_next.push(Some(SegIdx(self.segs.len())));
+        let mut subpaths = Subpaths {
+            inner: p.iter().peekable(),
+        };
+        while let Some(subpath) = subpaths.next() {
+            let old_len = self.segs.len();
+            for seg in kurbo::segments(subpath) {
+                // TODO: could have a fast path for line segments
+                let cubic = seg.to_cubic();
+                let cubics = monotonic_pieces(cubic);
+                for c in cubics {
+                    let (p0, p1, p2, p3, orient) = if (c.p0.y, c.p0.x) <= (c.p3.y, c.p3.x) {
+                        (c.p0, c.p1, c.p2, c.p3, true)
+                    } else {
+                        (c.p3, c.p2, c.p1, c.p0, false)
+                    };
+                    self.segs
+                        .push(Segment::new(p0.into(), p1.into(), p2.into(), p3.into()));
+                    self.orientation.push(orient);
+                    self.contour_prev
+                        .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
+                    self.contour_next.push(Some(SegIdx(self.segs.len())));
+                }
             }
-        }
-
-        if let Some(first) = self.contour_prev.get_mut(old_len) {
-            *first = Some(SegIdx(self.segs.len() - 1));
-        }
-        if let Some(last) = self.contour_next.last_mut() {
-            *last = Some(SegIdx(old_len));
+            if let Some(first) = self.contour_prev.get_mut(old_len) {
+                *first = Some(SegIdx(self.segs.len() - 1));
+            }
+            if let Some(last) = self.contour_next.last_mut() {
+                *last = Some(SegIdx(old_len));
+            }
         }
     }
 
