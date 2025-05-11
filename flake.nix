@@ -40,6 +40,7 @@
             libxkbcommon
             kompari
             stdenv.cc.cc
+            taplo
             typst
             tinymist
             vulkan-loader

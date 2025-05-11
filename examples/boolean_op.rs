@@ -1,14 +1,11 @@
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr};
 
 use clap::{Args, Parser};
-use kurbo::{BezPath, CubicBez, ParamCurve as _};
-use ordered_float::NotNan;
+use kurbo::{BezPath, ParamCurve as _};
 use svg::Document;
 
 use linesweeper::{
-    curve::{solve_t_for_y, y_subsegment},
     generators,
-    num::CheapOrderedFloat,
     topology::{OutputSegVec, Topology},
     Point,
 };
@@ -212,6 +209,7 @@ pub fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_op(
     mut doc: Document,
     op: Op,

@@ -1,16 +1,8 @@
-#![allow(missing_docs)]
-
+/// Curve comparison utilities.
 use arrayvec::ArrayVec;
 use kurbo::{
     common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, QuadBez, Shape, Vec2,
 };
-
-pub fn slice_bez(c: CubicBez, y0: f64, y1: f64) -> CubicBez {
-    let mut ret = c.subsegment(solve_t_for_y(c, y0)..solve_t_for_y(c, y1));
-    ret.p0.y = y0;
-    ret.p3.y = y1;
-    ret
-}
 
 #[derive(Clone, Debug, PartialEq)]
 struct CurveOrderEntry {
@@ -64,14 +56,18 @@ pub struct CurveOrder {
     cmps: Vec<CurveOrderEntry>,
 }
 
+/// An iterator over intervals in a [`CurveOrder`].
 pub struct CurveOrderIter<'a> {
     next: f64,
     iter: std::slice::Iter<'a, CurveOrderEntry>,
 }
 
+/// The different ways in which two curves can interact.
 #[derive(Clone, Copy, Debug)]
-pub enum NextTouch {
+pub enum CurveInteraction {
+    /// The curves cross at a given height.
     Cross(f64),
+    /// The curves touch at a given height, but don't actually cross.
     Touch(f64),
 }
 
@@ -151,7 +147,7 @@ impl CurveOrder {
     /// We "imagine" that our curve is to the left, but we don't actually insist
     /// on it: if our curve is actually to the right at `y` we just say that
     /// they cross immediately.
-    pub fn next_touch_after(&self, y: f64) -> Option<NextTouch> {
+    pub fn next_touch_after(&self, y: f64) -> Option<CurveInteraction> {
         let mut iter = self
             .iter()
             .skip_while(|(_start, end, _order)| end <= &y)
@@ -166,10 +162,10 @@ impl CurveOrder {
 
         let cross_y = (y0 + y1) / 2.0;
         match next_order {
-            Order::Right => Some(NextTouch::Cross(cross_y)),
+            Order::Right => Some(CurveInteraction::Cross(cross_y)),
             Order::Left => {
                 if y < y0 {
-                    Some(NextTouch::Touch(cross_y))
+                    Some(CurveInteraction::Touch(cross_y))
                 } else {
                     self.next_touch_after(next_y1)
                 }
@@ -182,15 +178,55 @@ impl CurveOrder {
         }
     }
 
-    // TODO: add unit tests
-    // (and docs)
+    /// Adds some vertical imprecision to the order comparison.
+    ///
+    /// To understand why we need this, note that
+    /// - All our computations are approximate, and so the computed `y` values where orders
+    ///   change will not be exact. When curves are almost horizontal, this error in `y`
+    ///   can lead to a large error in `x`.
+    /// - For the sweep-line algorithm to work, we need the strong order to be transitive:
+    ///   if at some height `y`, `c0` is left of `c1` and `c1` is left of `c2` then `c0`
+    ///   is left of `c2`.
+    ///
+    /// Together, these two properties present a problem: the approximation error in `y` can
+    /// lead to transitivity being violated for some specific heights `y` where there's a lot
+    /// of crossing action.
+    ///
+    /// Our solution to this issue is to admit that all of our `y` values are imprecise,
+    /// by expanding the "ish" regions. This method expands all the "ish" regions by `slop`
+    /// in both directions. Geometrically, after applying y-slop, you end up with a comparison
+    /// where `c0` is declared "left" of `c1` at `y` if a small square around the point on `c0`
+    /// at height `y` stays to the left of `c1`.
+    ///
+    /// `y_close_before` and `y_close_after` are for handling the endpoints. You should set
+    /// `y_close_before` (resp `y_close_after`) to be smaller than the common start height
+    /// (resp larger than the common end height), and it tells the slop-adding algorithm
+    /// to pretend that the two curves were close together up to `y_close_before` (resp after
+    /// `y_close_after`).
+    ///
+    /// The reason you need these two parameters is for situations like:
+    ///
+    /// ```text
+    ///                           -
+    ///                 / \       |
+    ///                /   \      |
+    ///               /     \     | <- s1 and s3 "ish"
+    ///              /   |   \    |
+    ///             /    |    \   -
+    ///            s1   s2    s3
+    /// ```
+    ///
+    /// Here, `s1` and `s3` are "ish" initially, and so after adding y-slop
+    /// we'll say they're "ish" on the labelled interval. On the other hand,
+    /// `s2` starts off far from both `s1` and `s3`, so at the start of `s2`
+    /// we'll say that `s1` is left of `s2` which is left of `s3`, but `s1`
+    /// and `s3` are still "ish", breaking transitivity. Our solution is to
+    /// pretend that `s2` extends upwards, where we notice that it's close
+    /// to both `s1` and `s3`; adding y-slop to that "virtual closeness"
+    /// restores transitivity by making `s2` start out "ish" to both `s1`
+    /// and `s3`. `y_close_before` is the height where that closeness ends.
     pub fn with_y_slop(self, slop: f64, y_close_before: f64, y_close_after: f64) -> CurveOrder {
         let mut ret = Vec::new();
-
-        // if self.cmps.len() <= 1 {
-        //     // TODO: think more carefully about corner cases at endpoints.
-        //     return self;
-        // }
 
         // unwrap: cmps is always non-empty
         let last_end = self.cmps.last().unwrap().end;
@@ -235,6 +271,7 @@ impl CurveOrder {
         }
     }
 
+    /// Asserts that we satisfy our internal invariants. For testing only.
     pub fn check_invariants(&self) {
         let mut cmps = self.cmps.iter();
         let mut last = cmps.next().unwrap();
@@ -270,16 +307,12 @@ impl CurveOrder {
             .find(|(_start, _end, order)| *order != Order::Ish)
             .map_or(Order::Ish, |(_start, _end, order)| order)
     }
-
-    pub fn close_interval_at(&self, y: f64) -> Option<(f64, f64)> {
-        self.iter()
-            .filter(|&(_, _, order)| order == Order::Ish)
-            .find(|&(y0, y1, _)| y0 <= y && y1 >= y)
-            .map(|(y0, y1, _)| (y0, y1))
-    }
 }
 
+/// Find the parameter `t` at which `c` crosses height `y`.
 pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
+    debug_assert!(c.p0.y <= y && y <= c.p3.y);
+
     if y == c.p0.y {
         return 0.0;
     }
@@ -300,6 +333,9 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
 
     // The sharp cutoff at the endpoint can miss some legitimate internal
     // points. The 1e-8 threshold is a bit arbitrary, though.
+    //
+    // TODO: investigate this further. It can be triggered by the sweep-line
+    // perturbation tests
     if (y - c.p3.y).abs() < 1e-8 {
         return 1.0;
     } else if (y - c.p0.y).abs() < 1e-8 {
@@ -310,12 +346,18 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
     panic!("no solution found, y = {}", y);
 }
 
+/// Finds the x coordinate at which `c` crosses through `y`.
 pub fn solve_x_for_y(c: CubicBez, y: f64) -> f64 {
     c.eval(solve_t_for_y(c, y)).x
 }
 
+/// Restricts a Bézier curve to a vertical range.
+///
+/// The input curve should be monotonic in `y`, and its range should include
+/// `y0` and `y1` (which should be ordered).
 pub fn y_subsegment(c: CubicBez, y0: f64, y1: f64) -> CubicBez {
     debug_assert!(y0 < y1);
+    debug_assert!(c.p0.y <= y0 && y1 <= c.p3.y);
     let t0 = solve_t_for_y(c, y0);
     let t1 = solve_t_for_y(c, y1);
     let mut ret = c.subsegment(t0..t1);
@@ -445,21 +487,34 @@ pub(crate) fn monic_quadratic_roots(b: f64, c: f64) -> (f64, f64) {
     }
 }
 
+/// Specifies the roots of a quadratic, along with the signs taken before, after, and between the roots.
 #[derive(Clone, Copy, Debug)]
 pub struct QuadraticSigns {
+    /// The smaller root.
     pub smaller_root: f64,
+    /// The bigger root.
     pub bigger_root: f64,
+    /// The sign of the quadratic in the limit at `f64::NEG_INFINITY`.
+    ///
+    /// If this is zero, the quadratic is (approximately) zero everywhere.
+    /// Otherwise, the quadratic takes this sign until the first root, then the
+    /// opposite sign until the second root, then this sign again.
     pub initial_sign: f64,
 }
 
+/// A quadratic function in one variable, represented as `c2 * x^2 + c1 * x + c0`.
 #[derive(Clone, Copy, Debug)]
 pub struct Quadratic {
+    /// The quadratic coefficient.
     pub c2: f64,
+    /// The linear coefficient.
     pub c1: f64,
+    /// The constant coefficient.
     pub c0: f64,
 }
 
 impl Quadratic {
+    /// Finds the roots of this quadratic.
     pub fn signs(&self) -> QuadraticSigns {
         let Quadratic { c2, c1, c0 } = *self;
         debug_assert!(c2.is_finite() && c1.is_finite() && c0.is_finite());
@@ -515,24 +570,32 @@ impl Quadratic {
         }
     }
 
+    /// Returns the largest coefficient (in absolute value).
     pub fn max_coeff(&self) -> f64 {
         self.c2.abs().max(self.c1.abs()).max(self.c0.abs())
     }
 
+    /// Evaluates this quadratic at a point.
     pub fn eval(&self, t: f64) -> f64 {
         self.c2 * t * t + self.c1 * t + self.c0
     }
 }
 
+/// A cubic in one variable, represented as `c3 * x^3 + c2 * x^2 + c1 * x + c0`.
 #[derive(Clone, Copy, Debug)]
 pub struct Cubic {
+    /// The cubic coefficient.
     pub c3: f64,
+    /// The quadratic coefficient.
     pub c2: f64,
+    /// The linear coefficient.
     pub c1: f64,
+    /// The constant coefficient.
     pub c0: f64,
 }
 
 impl Cubic {
+    /// Returns the cubic function representing the `y` coordinate of a cubic Bézier.
     pub fn from_bez_y(c: CubicBez) -> Self {
         let c3 = c.p3.y - 3.0 * c.p2.y + 3.0 * c.p1.y - c.p0.y;
         let c2 = 3.0 * (c.p2.y - 2.0 * c.p1.y + c.p0.y);
@@ -541,6 +604,7 @@ impl Cubic {
         Self { c3, c2, c1, c0 }
     }
 
+    /// Returns the cubic function representing the `x` coordinate of a cubic Bézier.
     pub fn from_bez_x(c: CubicBez) -> Self {
         let c3 = c.p3.x - 3.0 * c.p2.x + 3.0 * c.p1.x - c.p0.x;
         let c2 = 3.0 * (c.p2.x - 2.0 * c.p1.x + c.p0.x);
@@ -549,14 +613,12 @@ impl Cubic {
         Self { c3, c2, c1, c0 }
     }
 
+    /// Evaluates this cubic at a point.
     pub fn eval(&self, t: f64) -> f64 {
         self.c3 * t * t * t + self.c2 * t * t + self.c1 * t + self.c0
     }
 
-    pub fn deriv_at(&self, t: f64) -> f64 {
-        self.deriv().eval(t)
-    }
-
+    /// Returns the derivative of this cubic.
     pub fn deriv(&self) -> Quadratic {
         Quadratic {
             c2: 3.0 * self.c3,
@@ -585,7 +647,7 @@ impl Cubic {
         }
 
         while val_x.abs() >= accuracy {
-            let deriv_x = self.deriv_at(x);
+            let deriv_x = self.deriv().eval(x);
 
             let step = -val_x / deriv_x;
             x = (x + step).clamp(lower, upper);
@@ -595,6 +657,18 @@ impl Cubic {
         x
     }
 
+    /// Computes all roots between `lower` and `upper`, to the desired accuracy.
+    ///
+    /// "Accuracy" is measured with respect to the cubic's value: if this cubic
+    /// is called `f` and we find some `x` with `|f(x)| < accuracy` (and `x` is
+    /// contained between two endpoints where `f` has opposite signs) then we'll
+    /// call `x` a root.
+    ///
+    /// We make no guarantees about multiplicity. In fact, if there's a
+    /// double-root that isn't a triple-root (and therefore has no sign change
+    /// nearby) then there's a good chance we miss it altogether. This is
+    /// fine if you're using this root-finding to optimize a quartic, because
+    /// double-roots of the derivative aren't local extrema.
     pub fn roots_between(&self, lower: f64, upper: f64, accuracy: f64) -> ArrayVec<f64, 3> {
         let q = self.deriv();
         let q_roots = q.signs();
@@ -619,6 +693,7 @@ impl Cubic {
         ret
     }
 
+    /// Returns the largest absolute value of any coefficient.
     pub fn max_coeff(&self) -> f64 {
         self.c3
             .abs()
@@ -713,14 +788,19 @@ fn push_quadratic_signs(
     }
 }
 
+/// An approximate horizontal ordering.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Order {
+    /// The first thing is to the right of the second thing.
     Right,
+    /// The two things are close.
     Ish,
+    /// The first thing is to the left of the second thing.
     Left,
 }
 
 impl Order {
+    /// Returns the opposite ordering.
     pub fn flip(self) -> Order {
         match self {
             Order::Right => Order::Left,
@@ -730,27 +810,53 @@ impl Order {
     }
 }
 
+/// An axis-aligned quadratic approximation to a cubic Bézier.
+///
+/// The quadratic here gives `y` as a function of `x`.
 #[derive(Clone, Copy, Debug)]
 pub struct EstParab {
+    /// The constant coefficient of the quadratic approximation.
+    /// (TODO: consider re-using [`Quadratic`] here)
     pub c0: f64,
+    /// The linear coefficient of the quadratic approximation.
     pub c1: f64,
+    /// The quadratic coefficient of the quadratic approximation.
     pub c2: f64,
+    /// The amount by which the approximation undershoots the real
+    /// value. Always non-positive.
+    ///
+    /// To be precise, the true `x` coordinate of the curve we're
+    /// approximating will be at least `<quadratic approx> + dmin`.
+    ///
+    /// Note that while this value is intended to bound the error,
+    /// this isn't strictly a guarantee: we use floating-point to
+    /// compute it and we aren't careful with rounding direction.
+    /// But because the basic algorithm has some slack built in,
+    /// it's very likely that the slack dominates the floating-point
+    /// error. So this *probably* is a bound, and our sweep-line
+    /// algorithm treats it as one.
     pub dmin: f64,
+    /// The amount by which the approximation overshoots the real
+    /// value. Always non-negative.
+    ///
+    /// To be precise, the true `x` coordinate of the curve we're
+    /// approximating will be at most `<quadratic approx> + dmax`.
     pub dmax: f64,
 }
 
 impl EstParab {
-    // c0 + c1 * y + c2 * y^2 is approx equal to cubic bez
-    //
-    // Note that this can produce very large coefficients if
-    //
-    // - dy is small
-    // - any of the y coordinates is large
-    //
-    // The second effect can be mitigated by translation
-    // (especially if dy is small *and* the y coordinates are large,
-    // because then translation would make them all small), and the first
-    // effect can be mitigated by rescaling.
+    /// Compute an approximation for a cubic Bézier, which we assume to be
+    /// monotonically increasing in `y`.
+    ///
+    /// Note that this can produce very large coefficients if
+    ///
+    /// - the Bézier's y range is small, or
+    /// - any of the y coordinates is large
+    ///
+    /// The second effect can be mitigated by translation (especially if
+    /// the y range is small *and* the y coordinates are large, because then
+    /// translation would make them all small), and the first effect can be
+    /// mitigated by rescaling.
     pub fn from_cubic(c: CubicBez) -> Self {
         let seg = PathSeg::Cubic(c);
         let close_seg = PathSeg::Line(Line::new(c.p3, c.p0));

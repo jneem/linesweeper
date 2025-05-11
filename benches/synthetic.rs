@@ -3,59 +3,57 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use linesweeper::{
     boolean_op,
     generators::{checkerboard, slanted_checkerboard, slanties},
-    num::CheapOrderedFloat,
     topology::Topology,
     BooleanOp, FillRule, Point, Segments,
 };
 
-type Float = CheapOrderedFloat;
-type Contours = Vec<Vec<Point<Float>>>;
+type Contours = Vec<Vec<Point>>;
 
 fn just_the_sweep(c: &mut Criterion) {
     let (contours_even, contours_odd) = checkerboard(10);
 
-    let eps = CheapOrderedFloat::from(0.01f64);
+    let eps = 0.01f64;
     let mut segs = Segments::default();
     segs.add_cycles(contours_even.into_iter().chain(contours_odd));
 
     c.bench_function("checkerboard: just the sweep", |b| {
-        b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
+        b.iter(|| linesweeper::sweep::sweep(&segs, eps, |_, _| {}))
     });
 
     let (contours_even, contours_odd) = slanted_checkerboard(10);
 
-    let eps = CheapOrderedFloat::from(0.01f64);
+    let eps = 0.01f64;
     let mut segs = Segments::default();
     segs.add_cycles(contours_even.into_iter().chain(contours_odd));
 
     c.bench_function("slanted_checkerboard: just the sweep", |b| {
-        b.iter(|| linesweeper::sweep::sweep(&segs, &eps, |_, _| {}))
+        b.iter(|| linesweeper::sweep::sweep(&segs, eps, |_, _| {}))
     });
 }
 
 fn build_topology(c: &mut Criterion) {
     let (contours_even, contours_odd) = checkerboard(10);
 
-    let eps = CheapOrderedFloat::from(0.01f64);
+    let eps = 0.01f64;
     c.bench_function("checkerboard: build topology", |b| {
         b.iter(|| {
             black_box(Topology::from_polylines(
                 contours_even.clone(),
                 contours_odd.clone(),
-                &eps,
+                eps,
             ))
         });
     });
 
     let (contours_even, contours_odd) = slanted_checkerboard(10);
 
-    let eps = CheapOrderedFloat::from(0.01f64);
+    let eps = 0.01f64;
     c.bench_function("slanted_checkerboard: build topology", |b| {
         b.iter(|| {
             black_box(Topology::from_polylines(
                 contours_even.clone(),
                 contours_odd.clone(),
-                &eps,
+                eps,
             ))
         });
     });
@@ -65,11 +63,7 @@ fn xor(c: &mut Criterion) {
     let to_floats = |contours: Contours| -> Vec<_> {
         contours
             .into_iter()
-            .map(|ps| {
-                ps.into_iter()
-                    .map(|p| (p.x.into_inner(), p.y.into_inner()))
-                    .collect()
-            })
+            .map(|ps| ps.into_iter().map(|p| (p.x, p.y)).collect())
             .collect()
     };
 

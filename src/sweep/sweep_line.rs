@@ -425,8 +425,8 @@ impl<'segs> Sweeper<'segs> {
 
             if let Some(touch) = cmp.next_touch_after(y) {
                 let int = match touch {
-                    curve::NextTouch::Cross(cross_y) => Some((y.max(cross_y), start_idx, j)),
-                    curve::NextTouch::Touch(touch_y) => {
+                    curve::CurveInteraction::Cross(cross_y) => Some((y.max(cross_y), start_idx, j)),
+                    curve::CurveInteraction::Touch(touch_y) => {
                         (touch_y > y).then_some((touch_y, j, start_idx))
                     }
                 };
@@ -471,8 +471,8 @@ impl<'segs> Sweeper<'segs> {
             let cmp = self.compare_segments(other_idx, seg_idx);
             if let Some(touch) = cmp.next_touch_after(y) {
                 let int = match touch {
-                    curve::NextTouch::Cross(cross_y) => Some((y.max(cross_y), j, start_idx)),
-                    curve::NextTouch::Touch(touch_y) => {
+                    curve::CurveInteraction::Cross(cross_y) => Some((y.max(cross_y), j, start_idx)),
+                    curve::CurveInteraction::Touch(touch_y) => {
                         (touch_y > y).then_some((touch_y, start_idx, j))
                     }
                 };
@@ -734,8 +734,8 @@ impl<'segs> Sweeper<'segs> {
                 if let Some(next_touch) = self.compare_segments(segi, segj).next_touch_after(self.y)
                 {
                     let (y_int, really) = match next_touch {
-                        curve::NextTouch::Cross(y) => (y, true),
-                        curve::NextTouch::Touch(y) => (y, y > self.y),
+                        curve::CurveInteraction::Cross(y) => (y, true),
+                        curve::CurveInteraction::Touch(y) => (y, y > self.y),
                     };
                     if y_int >= self.y && really {
                         // Find an event between i and j.

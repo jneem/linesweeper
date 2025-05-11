@@ -16,12 +16,13 @@ svg = { version = "0.18", default-features = false }
 usvg = { version = "0.44.0", default-features = false }
 
 [features]
+arbitrary = ["dep:arbitrary"]
 slow-asserts = []
 generators = []
 default = []
 
 [dependencies]
-arbitrary = { version = "1.4.1", features = ["derive"] }
+arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
 arrayvec = { version = "0.7.6", features = ["serde"] }
 ordered-float = { version = "4.2.0", features = ["serde"] }
 serde = { version = "1.0.216", features = ["derive"] }

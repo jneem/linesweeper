@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use kurbo::{BezPath, CubicBez};
 
 use crate::{
-    curve::{slice_bez, y_subsegment, EstParab, Order},
+    curve::{y_subsegment, EstParab, Order},
     num::CheapOrderedFloat,
     order::ComparisonCache,
     topology::{HalfOutputSegVec, OutputSegIdx, OutputSegVec, ScanLineOrder},
@@ -90,7 +90,7 @@ fn approximate(
         let y_mid = (y0 + y1) / 2.0;
         for seg_idx in order {
             let cubic = segs[*seg_idx].to_kurbo();
-            let mut cubic = slice_bez(cubic, y0, y1);
+            let mut cubic = y_subsegment(cubic, y0, y1);
             cubic.p0.y -= y_mid;
             cubic.p1.y -= y_mid;
             cubic.p2.y -= y_mid;

@@ -1,3 +1,5 @@
+//! Utilities for fuzz and/or property testing using `arbitrary`.
+
 use arbitrary::Unstructured;
 use kurbo::{CubicBez, Point};
 
@@ -6,6 +8,7 @@ use crate::{
     geom,
 };
 
+/// Generate an arbitrary float in some range.
 pub fn float_in_range(
     start: f64,
     end: f64,
@@ -28,6 +31,7 @@ fn float_at_most(max: f64, u: &mut Unstructured<'_>) -> Result<f64, arbitrary::E
     float_in_range(-1e6, max, u)
 }
 
+/// Generate a float in some range, but give it a chance to be close to another float.
 fn another_float_in_range(
     orig: f64,
     start: f64,
@@ -56,6 +60,7 @@ fn point_at_most(max: f64, u: &mut Unstructured<'_>) -> Result<Point, arbitrary:
     Ok(Point::new(float(u)?, float_at_most(max, u)?))
 }
 
+/// Generate an arbitrary cubic Bezier, guaranteed to be monotonically increasing in y.
 pub fn monotonic_bezier(u: &mut Unstructured<'_>) -> Result<CubicBez, arbitrary::Error> {
     let p0 = point(u)?;
     let p3 = point(u)?;
@@ -71,6 +76,10 @@ pub fn monotonic_bezier(u: &mut Unstructured<'_>) -> Result<CubicBez, arbitrary:
         .unwrap_or(ret))
 }
 
+/// Generate an arbitrary cubic Bezier, guaranteed to be monotonically increasing in y.
+///
+/// This generated Bezier has a chance to be "close" to `first`, for example by starting
+/// at the same point or with the same tangent.
 pub fn another_monotonic_bezier(
     u: &mut Unstructured<'_>,
     first: &CubicBez,
@@ -96,6 +105,7 @@ pub fn another_monotonic_bezier(
         .unwrap_or(ret))
 }
 
+/// Generate an arbitrary quadratic function, with coefficients of roughly the scale `size`.
 pub fn quadratic(size: f64, u: &mut Unstructured<'_>) -> Result<Quadratic, arbitrary::Error> {
     let use_coeffs: bool = u.arbitrary()?;
     if use_coeffs {
@@ -105,6 +115,7 @@ pub fn quadratic(size: f64, u: &mut Unstructured<'_>) -> Result<Quadratic, arbit
 
         Ok(Quadratic { c2, c1, c0 })
     } else {
+        // Generate the roots, with a bias towards an almost-repeated root.
         let size = size.sqrt();
 
         let r1 = float_in_range(-size, size, u)?;
@@ -119,6 +130,7 @@ pub fn quadratic(size: f64, u: &mut Unstructured<'_>) -> Result<Quadratic, arbit
     }
 }
 
+/// Generate an arbitrary cubic function, with coefficients of roughly the scale `size`.
 pub fn cubic(size: f64, u: &mut Unstructured<'_>) -> Result<Cubic, arbitrary::Error> {
     let use_coeffs: bool = u.arbitrary()?;
     if use_coeffs {
@@ -129,6 +141,7 @@ pub fn cubic(size: f64, u: &mut Unstructured<'_>) -> Result<Cubic, arbitrary::Er
 
         Ok(Cubic { c3, c2, c1, c0 })
     } else {
+        // Generate the roots, with a bias towards roots being almost-repeated.
         let size = size.sqrt().sqrt();
 
         let r1 = float_in_range(-size, size, u)?;

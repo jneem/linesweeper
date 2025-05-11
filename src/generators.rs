@@ -15,17 +15,14 @@ type Contours = Vec<Vec<Point>>;
 fn squares((x0, y0): (f64, f64), size: f64, offset: f64, slant: f64, count: usize) -> Contours {
     let mut ret = Vec::new();
     for i in 0..count {
-        let x = x0.clone() + i as f64 * offset.clone();
+        let x = x0 + i as f64 * offset;
         for j in 0..count {
-            let y = y0.clone() + j as f64 * offset.clone();
+            let y = y0 + j as f64 * offset;
             ret.push(vec![
-                Point::new(x.clone(), y.clone()),
-                Point::new(x.clone(), y.clone() + size.clone()),
-                Point::new(
-                    x.clone() + size.clone(),
-                    y.clone() + size.clone() + slant.clone(),
-                ),
-                Point::new(x.clone() + size.clone(), y.clone() + slant.clone()),
+                Point::new(x, y),
+                Point::new(x, y + size),
+                Point::new(x + size, y + size + slant),
+                Point::new(x + size, y + slant),
             ]);
         }
     }

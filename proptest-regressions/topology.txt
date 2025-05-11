@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc e06d16cadc32d2ad23df2c5f0b22509a990df8719857f47e2346e415d50443e5 # shrinks to perturbations = [Subdivision { t: 0.9394124935587298, idx: 2015950306058370793, next: Base { idx: 0 } }, Subdivision { t: 0.13141341476907323, idx: 16536748748586597932, next: Base { idx: 0 } }]
 cc 66cc16b5c318ce64564d715666aa9130ee35f41ee43eb20c0f9a8cf770476ae3 # shrinks to perturbations = [Subdivision { t: 0.8093222325403372, idx: 11406037439407339269, next: Base { idx: 0 } }]
+cc bf6883b0e72f307394f6942e6cca0c30d7ca5b1de20b66ebcb20c45904be4870 # shrinks to perturbations = [Point { perturbation: PointPerturbation { x: Ulp(0), y: Ulp(-1) }, idx: 13955836529066927736, next: Base { idx: 0 } }]
