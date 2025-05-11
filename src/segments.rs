@@ -1,4 +1,4 @@
-use std::{iter::Peekable, ops::Index};
+use std::iter::Peekable;
 
 use kurbo::BezPath;
 

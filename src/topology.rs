@@ -11,7 +11,6 @@ use crate::{
     curve::y_subsegment,
     geom::Point,
     order::ComparisonCache,
-    positioning_graph,
     segments::{SegIdx, Segments},
     sweep::{
         SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
@@ -422,7 +421,6 @@ pub struct Topology {
     /// `s2` to `s1`.
     scan_east: OutputSegVec<Option<OutputSegIdx>>,
     scan_after: Vec<(f64, Option<OutputSegIdx>, Option<OutputSegIdx>)>,
-    pub close_segments: Vec<positioning_graph::Node>,
     pub orig_seg: OutputSegVec<SegIdx>,
     // TODO: probably don't have this owned
     #[serde(skip)]
@@ -618,7 +616,6 @@ impl Topology {
             scan_west: OutputSegVec::with_capacity(segments.len()),
             scan_east: OutputSegVec::with_capacity(segments.len()),
             scan_after: Vec::new(),
-            close_segments: Vec::new(),
             orig_seg: OutputSegVec::with_capacity(segments.len()),
             segments: Segments::default(),
         };
@@ -641,7 +638,6 @@ impl Topology {
         }
         ret.segments = segments;
         ret.merge_coincident();
-        ret.update_close_intervals();
         ret
     }
 
@@ -661,8 +657,7 @@ impl Topology {
         // a &mut self reference.
         let mut seg_buf = Vec::new();
         let mut connected_segs = SegmentsConnectedAtX::default();
-        // The last segment we saw that points up (or down) from this sweep line.
-        let mut last_connected_up_seg: Option<OutputSegIdx> = None;
+        // The last segment we saw that points down from this sweep line.
         let mut last_connected_down_seg: Option<OutputSegIdx> = None;
 
         while let Some(next_x) = pos.x() {
@@ -684,22 +679,6 @@ impl Topology {
             seg_buf.clear();
             seg_buf.extend(self.second_half_segs(connected_segs.connected_up()));
             self.add_segs_clockwise(&mut first_seg, &mut last_seg, seg_buf.iter().copied(), p);
-
-            for (&out_idx, idx) in seg_buf.iter().zip(connected_segs.connected_up()) {
-                if let Some(prev_idx) = last_connected_up_seg {
-                    let cmp = pos.line().compare_segments(self.orig_seg[prev_idx], idx);
-
-                    if let Some((y_start, _)) = cmp.close_interval_at(y) {
-                        self.close_segments.push(positioning_graph::Node {
-                            left_seg: prev_idx,
-                            right_seg: out_idx.idx,
-                            y0: y_start,
-                            y1: y,
-                        });
-                    }
-                }
-                last_connected_up_seg = Some(out_idx.idx);
-            }
 
             // Then: gather the output segments from half-segments starting here and moving
             // to later sweep-lines. Allocate new output segments for them.
@@ -726,20 +705,6 @@ impl Topology {
                 scan_west = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
 
-                if let Some(prev_idx) = last_connected_down_seg {
-                    let cmp = pos
-                        .line()
-                        .compare_segments(self.orig_seg[prev_idx], new_seg);
-
-                    if let Some((_, y_end)) = cmp.close_interval_at(y) {
-                        self.close_segments.push(positioning_graph::Node {
-                            left_seg: prev_idx,
-                            right_seg: half_seg,
-                            y0: y,
-                            y1: y_end,
-                        });
-                    }
-                }
                 last_connected_down_seg = Some(half_seg);
             }
             self.add_segs_counter_clockwise(
@@ -1164,30 +1129,6 @@ impl Topology {
         ret
     }
 
-    // While initially creating the topology, the safe and close intervals
-    // were just based on the curve comparisons. But the output segments might
-    // be shorter than the intervals, so fix them up.
-    //
-    // TODO: also check sanity
-    fn update_close_intervals(&mut self) {
-        self.close_segments.retain_mut(|node| {
-            let left_p0 = self.point_idx[node.left_seg.first_half()];
-            let left_p1 = self.point_idx[node.left_seg.second_half()];
-            let right_p0 = self.point_idx[node.right_seg.first_half()];
-            let right_p1 = self.point_idx[node.right_seg.second_half()];
-            let y0 = self.points[left_p0].y.max(self.points[right_p0].y);
-            let y1 = self.points[left_p1].y.min(self.points[right_p1].y);
-
-            debug_assert!(y0 < y1);
-            node.y0 = node.y0.max(y0);
-            node.y1 = node.y1.min(y1);
-            node.y0 < node.y1
-        });
-        self.close_segments
-            .sort_by(|x, y| x.partial_cmp(y).unwrap());
-        self.close_segments.dedup();
-    }
-
     pub fn compute_positions(&self) -> OutputSegVec<(BezPath, Option<usize>)> {
         // TODO: reuse the cache from the sweep-line
         let mut cmp = ComparisonCache::new(self.eps, self.eps / 2.0);
@@ -1198,7 +1139,7 @@ impl Topology {
                 self.points[self.point_idx[idx.second_half()]].to_kurbo();
         }
 
-        crate::position::compute_positions2(
+        crate::position::compute_positions(
             &self.segments,
             &self.orig_seg,
             &mut cmp,

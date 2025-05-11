@@ -205,7 +205,6 @@ Topology(
     ],
   ),
   scan_after: [],
-  close_segments: [],
   orig_seg: OutputSegVec(
     inner: [
       SegIdx(3),

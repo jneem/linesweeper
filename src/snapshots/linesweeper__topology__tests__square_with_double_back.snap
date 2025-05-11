@@ -326,14 +326,6 @@ Topology(
   scan_after: [
     (0.5, Some(OutputSegIdx(0)), Some(OutputSegIdx(5))),
   ],
-  close_segments: [
-    Node(
-      left_seg: OutputSegIdx(2),
-      right_seg: OutputSegIdx(3),
-      y0: 0.0,
-      y1: 0.5,
-    ),
-  ],
   orig_seg: OutputSegVec(
     inner: [
       SegIdx(6),

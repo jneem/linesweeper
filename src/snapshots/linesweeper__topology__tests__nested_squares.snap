@@ -371,7 +371,6 @@ expression: "(&top, contours, top.build_scan_line_orders())"
   scan_after: [
     (1.0, Some(OutputSegIdx(0)), Some(OutputSegIdx(2))),
   ],
-  close_segments: [],
   orig_seg: OutputSegVec(
     inner: [
       SegIdx(3),

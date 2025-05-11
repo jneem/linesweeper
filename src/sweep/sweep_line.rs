@@ -2,7 +2,7 @@
 //!
 //! This algorithm is documented in `docs/sweep.typ`.
 
-use std::{cell::RefCell, collections::HashMap, ops::DerefMut};
+use std::{cell::RefCell, ops::DerefMut};
 
 use kurbo::{ParamCurve as _, ParamCurveNearest};
 
