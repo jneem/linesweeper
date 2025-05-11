@@ -308,11 +308,25 @@ impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
         self.changed_interval.clone()
     }
 
+    /// Returns an iterator over the segments in this range, ordered according
+    /// to the "old" sweep-line.
+    ///
+    /// In addition to appearing in a different order, the set of segments returned
+    /// by this method and [`Self::segment_range`] may differ: segments that exit at the
+    /// current sweep line will be returned here and not there, while segments that
+    /// enter at the current sweep line will be returned there and not here.
     pub fn old_segment_range(&self) -> impl Iterator<Item = SegIdx> + '_ {
         let range = self.changed_interval.segs.clone();
         self.line().old_segment_range(range)
     }
 
+    /// Returns an iterator over the segments in this range, ordered according
+    /// to the "new" sweep-line.
+    ///
+    /// In addition to appearing in a different order, the set of segments returned
+    /// by this method and [`Self::old_segment_range`] may differ: segments that exit at the
+    /// current sweep line will be returned there and not here, while segments that
+    /// enter at the current sweep line will be returned here and not there.
     pub fn segment_range(&self) -> impl Iterator<Item = SegIdx> + '_ {
         let range = self.changed_interval.segs.clone();
         self.line().segment_range(range)

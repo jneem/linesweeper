@@ -257,6 +257,7 @@ impl Segments {
         self.update_enter_exit(old_len);
     }
 
+    /// Add a collection of Bézier paths to this arena.
     pub fn add_bez_paths(&mut self, ps: impl IntoIterator<Item = BezPath>) {
         let old_len = self.segs.len();
         for p in ps {
@@ -374,6 +375,7 @@ impl Segments {
         &self.exit
     }
 
+    /// Checks that we satisfy our internal invariants. For testing only.
     pub fn check_invariants(&self) {
         for seg in &self.segs {
             assert!(seg.p0 <= seg.p3);

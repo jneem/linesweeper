@@ -715,7 +715,7 @@ impl<'segs> Sweeper<'segs> {
             .line
             .find_invalid_order(
                 self.y,
-                &self.segments,
+                self.segments,
                 self.comparisons.borrow_mut().deref_mut(),
             )
             .is_none());
@@ -1172,12 +1172,17 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         self.state.line.segs.get(idx)
     }
 
+    /// Compares two curves, returning their horizontal order.
     pub fn compare_segments(&self, i: SegIdx, j: SegIdx) -> CurveOrder {
         self.state.compare_segments(i, j)
     }
 
-    /// The range must be a changed range. TODO: doc properly
-    pub fn old_segment_range(
+    /// Returns an iterator over the segments in `range`, according to the "old"
+    /// sweep-line order.
+    ///
+    /// `range` must be a full changed interval, for example the one returned by
+    /// `cur_interval`.
+    pub(crate) fn old_segment_range(
         &self,
         range: std::ops::Range<usize>,
     ) -> impl Iterator<Item = SegIdx> + '_ {
@@ -1199,6 +1204,8 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         ret.into_iter().flatten()
     }
 
+    /// Returns an iterator over the segments in `range`, according to the "new"
+    /// sweep-line order.
     pub fn segment_range(
         &self,
         range: std::ops::Range<usize>,

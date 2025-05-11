@@ -163,7 +163,7 @@ fn bez_end(path: &BezPath) -> f64 {
 /// path was the one that was "far" from any other paths. This is really
 /// only interesting for diagnosis/visualization so the API should probably
 /// be refined somehow to make it optional. (TODO)
-pub fn compute_positions(
+pub(crate) fn compute_positions(
     segs: &Segments,
     orig_seg_map: &OutputSegVec<SegIdx>,
     cmp: &mut ComparisonCache,

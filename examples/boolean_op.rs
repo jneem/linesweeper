@@ -9,8 +9,7 @@ use linesweeper::{
     topology::{OutputSegVec, Topology},
     Point,
 };
-
-mod svg_util;
+use linesweeper_util::svg_to_bezpaths;
 
 #[derive(Copy, Clone, Debug)]
 enum Op {
@@ -94,7 +93,7 @@ fn get_contours(input: &Input) -> anyhow::Result<(Vec<BezPath>, Vec<BezPath>)> {
         (Some(path), None) => {
             let input = std::fs::read_to_string(path)?;
             let tree = usvg::Tree::from_str(&input, &usvg::Options::default())?;
-            let mut contours = svg_util::svg_to_bezpaths(&tree);
+            let mut contours = svg_to_bezpaths(&tree);
             let rest = contours.split_off(1);
             Ok((contours, rest))
         }

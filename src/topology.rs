@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 
-use kurbo::{BezPath, Rect};
+use kurbo::{BezPath, Rect, Shape};
 
 use crate::{
     curve::y_subsegment,
@@ -109,6 +109,7 @@ pub struct HalfOutputSegIdx {
 }
 
 impl HalfOutputSegIdx {
+    /// Returns the index pointing to the other end of this output segment.
     pub fn other_half(self) -> Self {
         Self {
             idx: self.idx,
@@ -116,6 +117,7 @@ impl HalfOutputSegIdx {
         }
     }
 
+    /// Do we point to the first half of the output segment?
     pub fn is_first_half(self) -> bool {
         self.first_half
     }
@@ -139,6 +141,7 @@ pub struct HalfOutputSegVec<T> {
 }
 
 impl<T> HalfOutputSegVec<T> {
+    /// Creates a new vector that can store `cap` output segments without re-allocating.
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             start: Vec::with_capacity(cap),
@@ -148,13 +151,16 @@ impl<T> HalfOutputSegVec<T> {
 }
 
 impl<T: Default> HalfOutputSegVec<T> {
-    pub fn with_size(cap: usize) -> Self {
+    /// Creates a new vector with `size` output segments.
+    ///
+    /// Both halves of each output segment are initialized to their default values.
+    pub fn with_size(size: usize) -> Self {
         Self {
             start: std::iter::from_fn(|| Some(T::default()))
-                .take(cap)
+                .take(size)
                 .collect(),
             end: std::iter::from_fn(|| Some(T::default()))
-                .take(cap)
+                .take(size)
                 .collect(),
         }
     }
@@ -219,36 +225,44 @@ impl<T> std::ops::IndexMut<HalfOutputSegIdx> for HalfOutputSegVec<T> {
     }
 }
 
+/// A vector indexed by output segments.
+///
+/// See [`OutputSegIdx`] for more about output segments.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize)]
 pub struct OutputSegVec<T> {
     inner: Vec<T>,
 }
 
 impl<T> OutputSegVec<T> {
+    /// Creates a new vector with capacity for at least `cap` output segments before reallocating.
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             inner: Vec::with_capacity(cap),
         }
     }
 
+    /// Returns an iterator over all indices into this vector.
     pub fn indices(&self) -> impl Iterator<Item = OutputSegIdx> {
         (0..self.inner.len()).map(OutputSegIdx)
     }
 
+    /// The length of this vector.
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
+    /// Are we empty?
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 }
 
 impl<T: Default> OutputSegVec<T> {
-    pub fn with_size(cap: usize) -> Self {
+    /// Creates a new vector with `size` elements, each initialized with the default value.
+    pub fn with_size(size: usize) -> Self {
         Self {
             inner: std::iter::from_fn(|| Some(T::default()))
-                .take(cap)
+                .take(size)
                 .collect(),
         }
     }
@@ -421,8 +435,12 @@ pub struct Topology {
     /// `s2` to `s1`.
     scan_east: OutputSegVec<Option<OutputSegIdx>>,
     scan_after: Vec<(f64, Option<OutputSegIdx>, Option<OutputSegIdx>)>,
+    /// For each output segment, the input segment that it came from. Will probably become
+    /// private at some point (TODO)
     pub orig_seg: OutputSegVec<SegIdx>,
     // TODO: probably don't have this owned
+    /// The collection of segments used to build this topology. Will probably become private
+    /// at some point (TODO)
     #[serde(skip)]
     pub segments: Segments,
 }
@@ -567,6 +585,10 @@ impl Topology {
         out_idx
     }
 
+    /// Creates a new `Topology` from two collections of Bézier paths.
+    ///
+    /// TODO: this is silly, since a sequence of BezPaths can just be turned into a single
+    /// BezPath.
     pub fn from_paths(
         set_a: impl IntoIterator<Item = BezPath>,
         set_b: impl IntoIterator<Item = BezPath>,
@@ -582,11 +604,11 @@ impl Topology {
         Self::from_segments(segments, shape_a, eps)
     }
 
-    /// Creates a new `Topology` for a collection of segments and a given tolerance.
+    /// Creates a new `Topology` for two collections of polylines and a given tolerance.
     ///
-    /// The segments must contain only closed polylines. For the purpose of boolean ops,
-    /// the first closed polyline determines the first set and all the other polylines determine
-    /// the other set. (Obviously this isn't flexible, and it will be changed. TODO)
+    /// Each "set" is a collection of sequences of points; each sequence of
+    /// points is interpreted as a closed polyline (i.e. the last point will be
+    /// connected back to the first one).
     pub fn from_polylines(
         set_a: impl IntoIterator<Item = impl IntoIterator<Item = Point>>,
         set_b: impl IntoIterator<Item = impl IntoIterator<Item = Point>>,
@@ -1034,6 +1056,7 @@ impl Topology {
         ret
     }
 
+    /// Returns a rectangle bounding all of our segments.
     pub fn bounding_box(&self) -> kurbo::Rect {
         let mut rect = Rect::new(
             f64::INFINITY,
@@ -1042,10 +1065,7 @@ impl Topology {
             f64::NEG_INFINITY,
         );
         for seg in self.segments.segments() {
-            rect = rect.union_pt(seg.p0.to_kurbo());
-            rect = rect.union_pt(seg.p1.to_kurbo());
-            rect = rect.union_pt(seg.p2.to_kurbo());
-            rect = rect.union_pt(seg.p3.to_kurbo());
+            rect = rect.union(seg.to_kurbo().bounding_box());
         }
         rect
     }
@@ -1072,7 +1092,6 @@ impl Topology {
             }
         }
 
-        dbg!(&self.points, &self.point_idx);
         for idx in self.scan_east.indices() {
             let y = self.point(idx.first_half()).y;
             if let Some(east) = self.scan_east[idx] {
@@ -1089,7 +1108,6 @@ impl Topology {
         for idx in self.scan_west.indices().filter(|i| !self.is_horizontal(*i)) {
             let y = self.point(idx.first_half()).y;
             if let Some(west) = self.scan_west[idx] {
-                dbg!(y, idx, west, &east_map[west]);
                 // Double-check that we're inserting in order.
                 if let Some((last_y, _)) = east_map[west].last() {
                     debug_assert!(y > *last_y);
@@ -1122,13 +1140,18 @@ impl Topology {
         let ret = ScanLineOrder { west_map, east_map };
         #[cfg(feature = "slow-asserts")]
         ret.check_invariants(&self.orig_seg, &self.segments);
-        // dbg!(&ret.east_map[OutputSegIdx(12)]);
-        // dbg!(&ret.west_map[OutputSegIdx(12)]);
-        // dbg!(&ret.east_map[OutputSegIdx(15)]);
-        // dbg!(&ret.west_map[OutputSegIdx(15)]);
         ret
     }
 
+    /// Computes paths for all the output segments.
+    ///
+    /// The `usize` return value tells which segment (if any) in the returned
+    /// path was the one that was "far" from any other paths. This is really
+    /// only interesting for diagnosis/visualization so the API should probably
+    /// be refined somehow to make it optional. (TODO)
+    ///
+    /// TODO: We should allow passing in an "inside" callback and then only do
+    /// positioning for the segments that are on the boundary.
     pub fn compute_positions(&self) -> OutputSegVec<(BezPath, Option<usize>)> {
         // TODO: reuse the cache from the sweep-line
         let mut cmp = ComparisonCache::new(self.eps, self.eps / 2.0);
@@ -1187,11 +1210,14 @@ impl ScanLineOrder {
         last_idx
     }
 
-    // TODO: test cases
+    /// Returns the neighbor to the west of `seg` at height `y`, or just after height `y` if
+    /// is exactly on some sweep-line where things change.
     pub fn west_neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
         Self::neighbor_after(&self.west_map, seg, y)
     }
 
+    /// Returns the neighbor to the east of `seg` at height `y`, or just after height `y` if
+    /// is exactly on some sweep-line where things change.
     pub fn east_neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
         Self::neighbor_after(&self.east_map, seg, y)
     }

@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use linesweeper::topology::Topology;
-
-mod svg_util;
+use linesweeper_util::svg_to_bezpaths;
 
 #[derive(Parser)]
 struct Args {
@@ -20,7 +19,7 @@ pub fn main() -> anyhow::Result<()> {
 
     let input = std::fs::read_to_string(&args.input)?;
     let tree = usvg::Tree::from_str(&input, &usvg::Options::default())?;
-    let contours = svg_util::svg_to_bezpaths(&tree);
+    let contours = svg_to_bezpaths(&tree);
 
     let eps = args.epsilon.unwrap_or(0.1);
     let top = Topology::from_paths([contours[0].clone()], contours[1..].iter().cloned(), eps);

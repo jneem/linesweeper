@@ -58,10 +58,6 @@ harness = false
 required-features = ["generators"]
 
 [[example]]
-name = "svg_util"
-crate-type = ["staticlib"]
-
-[[example]]
 name = "boolean_op"
 required-features = ["generators"]
 
