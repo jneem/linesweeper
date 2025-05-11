@@ -24,7 +24,7 @@ impl std::fmt::Debug for SegIdx {
     }
 }
 
-/// An arena of line segments.
+/// An arena of segments, each of which is a cubic Bézier.
 ///
 /// Segments are indexed by [`SegIdx`] and can be retrieved by indexing (i.e. with square brackets).
 #[derive(Clone, Default)]
@@ -139,7 +139,7 @@ where
 }
 
 impl Segments {
-    /// The number of line segments in this arena.
+    /// The number of segments in this arena.
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.segs.len()
@@ -157,10 +157,10 @@ impl Segments {
 
     /// Returns the starting point of the segment at `idx`, relative to the segment's original orientation.
     ///
-    /// The start and end points of the segment itself are stored in sweep-line
-    /// order (i.e. `start` has the smaller `y` coordinate), regardless of the
-    /// original orientation of the segment. Use this method to retrieve the
-    /// segment's original start point.
+    /// The segment itself is stored in sweep-line order (i.e. its starting
+    /// point has the smaller y coordinate) regardless of the original
+    /// orientation of the segment. Use this method to retrieve the segment's
+    /// original start point.
     pub fn oriented_start(&self, idx: SegIdx) -> &Point {
         if self.orientation[idx.0] {
             &self[idx].p0
@@ -171,10 +171,10 @@ impl Segments {
 
     /// Returns the ending point of the segment at `idx`, relative to the segment's original orientation.
     ///
-    /// The start and end points of the segment itself are stored in sweep-line
-    /// order (i.e. `start` has the smaller `y` coordinate), regardless of the
-    /// original orientation of the segment. Use this method to retrieve the
-    /// segment's original end point.
+    /// The segment itself is stored in sweep-line order (i.e. its starting
+    /// point has the smaller y coordinate) regardless of the original
+    /// orientation of the segment. Use this method to retrieve the segment's
+    /// original end point.
     pub fn oriented_end(&self, idx: SegIdx) -> &Point {
         if self.orientation[idx.0] {
             &self[idx].p3
@@ -185,8 +185,8 @@ impl Segments {
 
     /// Returns the index of the segment following `idx`.
     ///
-    /// If `idx` is part of a non-closed polyline and it is the last segment,
-    /// this returns `None`. If `idx` is part of a closed polyline, this will
+    /// If `idx` is part of a non-closed path and it is the last segment,
+    /// this returns `None`. If `idx` is part of a closed path, this will
     /// always return `Some`, and you might need to be careful to avoid looping
     /// infinitely.
     pub fn contour_next(&self, idx: SegIdx) -> Option<SegIdx> {
@@ -195,8 +195,8 @@ impl Segments {
 
     /// Returns the index of the segment preceding `idx`.
     ///
-    /// If `idx` is part of a non-closed polyline and it is the first segment,
-    /// this returns `None`. If `idx` is part of a closed polyline, this will
+    /// If `idx` is part of a non-closed path and it is the first segment,
+    /// this returns `None`. If `idx` is part of a closed path, this will
     /// always return `Some`, and you might need to be careful to avoid looping
     /// infinitely.
     pub fn contour_prev(&self, idx: SegIdx) -> Option<SegIdx> {
