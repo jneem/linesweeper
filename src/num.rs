@@ -1,14 +1,14 @@
-//! A thin abstraction over the different numerical types we support.
+//! Some numerical utilities.
 
 use std::hash::Hash;
 
 /// A wrapper for `f64` that implements `Ord`.
 ///
-/// Unlike the more principled wrappers in the `ordered_float` crate, this
-/// one just panics when comparing NaNs -- it doesn't order them, nor does
-/// it guard against them on construction. This makes things substantially
-/// faster: I measured a 20% improvement to some benchmarks by switching
-/// from `OrderedFloat` to `CheapOrderedFloat`.
+/// Unlike the more principled wrappers in the `ordered_float` crate, this one
+/// just breaks the `Ord` rules when comparing NaNs -- it doesn't order them,
+/// nor does it panic or guard against them on construction. This makes things
+/// substantially faster: I measured a 20% improvement to some benchmarks by
+/// switching from `OrderedFloat` to `CheapOrderedFloat`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct CheapOrderedFloat(f64);

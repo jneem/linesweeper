@@ -74,6 +74,7 @@ impl Point {
         }
     }
 
+    /// Compatibility with `kurbo` points.
     pub fn to_kurbo(self) -> kurbo::Point {
         kurbo::Point::new(self.x, self.y)
     }
@@ -98,11 +99,19 @@ impl From<kurbo::Point> for Point {
 }
 
 /// A contour segment, in sweep-line order.
+///
+/// This is basically the same as `kurbo::CubicBez` except that the ordering is
+/// different. I'm not sure if we care about the ordering, so maybe we can
+/// drop this in favor of `kurbo::CubicBez`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Segment {
+    /// The initial, on-curve, control point.
     pub p0: Point,
+    /// The first off-curve control point.
     pub p1: Point,
+    /// The second off-curve control point.
     pub p2: Point,
+    /// The final, on-curve, control point.
     pub p3: Point,
 }
 
@@ -230,6 +239,7 @@ impl Segment {
         Self { p0, p1, p2, p3 }
     }
 
+    /// Create a new segment that's just a straight line.
     pub fn straight(start: Point, end: Point) -> Self {
         let p0 = start;
         let p1 = Point::new(
@@ -244,6 +254,7 @@ impl Segment {
         Self::new(p0, p1, p2, p3)
     }
 
+    /// Compatibility with `kurbo`'s cubics.
     pub fn to_kurbo(&self) -> kurbo::CubicBez {
         kurbo::CubicBez {
             p0: self.p0.to_kurbo(),
@@ -294,10 +305,20 @@ impl Segment {
         c.subsegment(t_min..t_max).bounding_box()
     }
 
+    /// Returns a lower bound on the `x` coordinate near `y`.
+    ///
+    /// More precisely, take a Minkowski sum between this curve
+    /// and a small square. This returns a lower bound on the `x`
+    /// coordinate of the resulting set at height `y`.
     pub fn lower(&self, y: f64, eps: f64) -> f64 {
         self.local_bbox(y, eps).min_x() - eps
     }
 
+    /// Returns an upper bound on the `x` coordinate near `y`.
+    ///
+    /// More precisely, take a Minkowski sum between this curve
+    /// and a small square. This returns a upper bound on the `x`
+    /// coordinate of the resulting set at height `y`.
     pub fn upper(&self, y: f64, eps: f64) -> f64 {
         self.local_bbox(y, eps).max_x() + eps
     }

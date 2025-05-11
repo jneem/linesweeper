@@ -1,4 +1,4 @@
-/// Curve comparison utilities.
+//! Curve comparison utilities.
 use arrayvec::ArrayVec;
 use kurbo::{
     common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, QuadBez, Shape, Vec2,

@@ -1,3 +1,5 @@
+//! Curve order comparisons, with caching.
+
 use std::collections::HashMap;
 
 use kurbo::CubicBez;
@@ -62,6 +64,7 @@ fn close_end_y(c0: CubicBez, c1: CubicBez, tolerance: f64, accuracy: f64) -> f64
         .unwrap_or(f64::INFINITY)
 }
 
+/// A cache for curve comparisons, so that each pair of curves needs to be compared at most once.
 #[derive(Clone, Debug)]
 pub struct ComparisonCache {
     inner: HashMap<(SegIdx, SegIdx), CurveOrder>,
@@ -70,6 +73,14 @@ pub struct ComparisonCache {
 }
 
 impl ComparisonCache {
+    /// Creates a new comparison cache.
+    ///
+    /// `tolerance` tells us how close two curves can be to be declared "ish", and
+    /// `accuracy` tells us how closely we need to evaluate the tolerance. For
+    /// example, if `accuracy` is `tolerance / 2.0` then we'll guarantee (up to
+    /// some floating-point error) that if the two curves are further than
+    /// `1.5 * tolerance` apart then we'll give them a strict order, and if they're
+    /// less than `tolerance / 2.0` apart then we'll give then an "ish" order.
     pub fn new(tolerance: f64, accuracy: f64) -> Self {
         ComparisonCache {
             inner: HashMap::new(),
@@ -78,7 +89,9 @@ impl ComparisonCache {
         }
     }
 
-    // FIXME: less cloning
+    /// Compares two segments, returning their order.
+    ///
+    /// TODO: this API will change to something with less cloning
     pub fn compare_segments(&mut self, segments: &Segments, i: SegIdx, j: SegIdx) -> CurveOrder {
         if let Some(order) = self.inner.get(&(i, j)) {
             return order.clone();

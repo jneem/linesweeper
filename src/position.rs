@@ -1,3 +1,12 @@
+//! An algorithm for laying out curves in a given order.
+//!
+//! Our boolean ops algorithms work by first deciding horizontal orderings for curves
+//! (with some guarantees about being approximately correct)
+//! and then laying out the curves in a way that has the horizontal orders we decided
+//! on. For this second step, which is the task of this module, we really
+//! guarantee correctness: the curves that we output really have the specified
+//! orders.
+
 use std::collections::BinaryHeap;
 
 use kurbo::{BezPath, CubicBez};
@@ -143,10 +152,17 @@ fn bez_end(path: &BezPath) -> f64 {
     }
 }
 
-// The usize return value tells which segment (if any) in the returned
-// path was the one that was "far" from any other paths. This is really
-// only interesting for diagnosis/visualization so the API should probably
-// be refined somehow to make it optional.
+/// Compute positions for all of the output segments.
+///
+/// The orders between the output segments is specified by `order`. The endpoints
+/// should have been already computed (in a way that satisfies the order), and
+/// are provided in `endpoints`. For each output segment, we return a Bézier
+/// path.
+///
+/// The `usize` return value tells which segment (if any) in the returned
+/// path was the one that was "far" from any other paths. This is really
+/// only interesting for diagnosis/visualization so the API should probably
+/// be refined somehow to make it optional. (TODO)
 pub fn compute_positions(
     segs: &Segments,
     orig_seg_map: &OutputSegVec<SegIdx>,
