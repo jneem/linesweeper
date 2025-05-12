@@ -19,7 +19,8 @@ use crate::{
 
 /// We support boolean operations, so a "winding number" for us is two winding
 /// numbers, one for each shape.
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Default)]
 pub struct WindingNumber {
     /// The winding number of the first shape.
     pub shape_a: i32,
@@ -37,7 +38,8 @@ impl std::fmt::Debug for WindingNumber {
 ///
 /// For simple segments, the winding numbers on two sides only differ by one. Once
 /// we merge segments, they can differ by more.
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Default)]
 pub struct HalfSegmentWindingNumbers {
     /// This half-segment is incident to a point. Imagine you're standing at
     /// that point, looking out along the segment. This is the winding number of
@@ -76,7 +78,8 @@ impl std::fmt::Debug for HalfSegmentWindingNumbers {
 ///
 /// There's no compile-time magic preventing misuse of this index, but you
 /// should only use this to index into the [`Topology`] that you got it from.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize, PartialOrd, Ord)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OutputSegIdx(usize);
 
 impl OutputSegIdx {
@@ -102,7 +105,8 @@ impl OutputSegIdx {
 /// The two ends of an output segment are sweep-line ordered: the "first" half
 /// has a smaller `y` coordinate (or smaller `x` coordinate if the `y`s are
 /// tied) than the "second" half.
-#[derive(Clone, Copy, Hash, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct HalfOutputSegIdx {
     idx: OutputSegIdx,
     first_half: bool,
@@ -134,7 +138,8 @@ impl std::fmt::Debug for HalfOutputSegIdx {
 }
 
 /// A vector indexed by half-output segments.
-#[derive(Clone, Hash, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct HalfOutputSegVec<T> {
     start: Vec<T>,
     end: Vec<T>,
@@ -228,7 +233,8 @@ impl<T> std::ops::IndexMut<HalfOutputSegIdx> for HalfOutputSegVec<T> {
 /// A vector indexed by output segments.
 ///
 /// See [`OutputSegIdx`] for more about output segments.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct OutputSegVec<T> {
     inner: Vec<T>,
 }
@@ -297,10 +303,12 @@ impl<T> std::ops::Index<HalfOutputSegIdx> for OutputSegVec<T> {
 }
 
 /// An index into the set of points.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct PointIdx(usize);
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct PointVec<T> {
     inner: Vec<T>,
 }
@@ -333,7 +341,8 @@ impl<T> std::ops::IndexMut<PointIdx> for PointVec<T> {
     }
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 struct PointNeighbors {
     clockwise: HalfOutputSegIdx,
     counter_clockwise: HalfOutputSegIdx,
@@ -351,7 +360,8 @@ impl std::fmt::Debug for PointNeighbors {
 /// to support more-than-boolean operations, but it only does boolean for now. Also,
 /// it currently requires all input paths to be closed; it could be extended to support
 /// things like clipping a potentially non-closed path to a closed path.
-#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug)]
 pub struct Topology {
     eps: f64,
     /// Indexed by `SegIdx`.
@@ -441,7 +451,7 @@ pub struct Topology {
     // TODO: probably don't have this owned
     /// The collection of segments used to build this topology. Will probably become private
     /// at some point (TODO)
-    #[serde(skip)]
+    #[cfg_attr(test, serde(skip))]
     pub segments: Segments,
 }
 
@@ -1183,7 +1193,8 @@ impl Topology {
 
 /// A summary of all the east-west ordering relations between non-horizontal
 /// output segments.
-#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug)]
 pub struct ScanLineOrder {
     /// Each entry is a list of `(y, west_neighbor)`: starting at `y`, `west_neighbor`
     /// is the segment to my west. The `y`s are in increasing order.
@@ -1246,13 +1257,15 @@ impl ScanLineOrder {
 }
 
 /// An index for a [`Contour`] within [`Contours`].
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct ContourIdx(pub usize);
 
 /// A simple, closed polyline.
 ///
 /// A contour has no repeated points, and its segments do not intersect.
-#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug)]
 pub struct Contour {
     /// The points making up this contour.
     ///
@@ -1356,7 +1369,8 @@ impl Default for Contour {
 /// A collection of [`Contour`]s.
 ///
 /// Can be indexed with a [`ContourIdx`].
-#[derive(Clone, Debug, serde::Serialize, Default)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug, Default)]
 pub struct Contours {
     contours: Vec<Contour>,
 }

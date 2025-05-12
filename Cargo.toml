@@ -24,8 +24,6 @@ default = []
 [dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
 arrayvec = { version = "0.7.6", features = ["serde"] }
-ordered-float = { version = "4.2.0", features = ["serde"] }
-serde = { version = "1.0.216", features = ["derive"] }
 kurbo = { version = "0.11.1", features = ["serde"] }
 
 [dev-dependencies]
@@ -37,6 +35,7 @@ glob = "0.3.2"
 i_overlay = "1.9.4"
 insta = { version = "1.41.1", features = ["serde", "ron"] }
 proptest = "1.4.0"
+serde = { version = "1.0.216", features = ["derive"] }
 svg = { version = "0.18", default-features = false }
 usvg = { version = "0.44.0", default-features = false }
 linesweeper_util = { path = "util" }

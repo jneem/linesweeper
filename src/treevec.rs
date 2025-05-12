@@ -1,4 +1,6 @@
 use arrayvec::ArrayVec;
+
+#[cfg(test)]
 use serde::ser::SerializeSeq;
 
 /// A container with fast random access and random insertion/deletion.
@@ -13,6 +15,7 @@ pub struct TreeVec<T, const B: usize> {
     root: Box<Node<T, B>>,
 }
 
+#[cfg(test)]
 impl<T: serde::Serialize, const B: usize> serde::Serialize for TreeVec<T, B> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -27,7 +30,8 @@ impl<T: serde::Serialize, const B: usize> serde::Serialize for TreeVec<T, B> {
 }
 
 /// A single node in the tree.
-#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug)]
 enum Node<T, const B: usize> {
     Leaf {
         /// Guaranteed to have at least `B/2` elements (and in particular,

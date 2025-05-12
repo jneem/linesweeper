@@ -9,8 +9,9 @@ use std::hash::Hash;
 /// nor does it panic or guard against them on construction. This makes things
 /// substantially faster: I measured a 20% improvement to some benchmarks by
 /// switching from `OrderedFloat` to `CheapOrderedFloat`.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(test, serde(transparent))]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CheapOrderedFloat(f64);
 
 impl std::ops::Add<CheapOrderedFloat> for CheapOrderedFloat {

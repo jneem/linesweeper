@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
+use kurbo::BezPath;
 use linesweeper::{
     boolean_op,
     generators::{checkerboard, slanted_checkerboard, slanties},
@@ -7,7 +8,25 @@ use linesweeper::{
     BooleanOp, FillRule, Point, Segments,
 };
 
-type Contours = Vec<Vec<Point>>;
+fn to_bez(points: &[Vec<Point>]) -> BezPath {
+    fn one(points: &[Point]) -> BezPath {
+        let mut points = points.iter();
+        let p = points.next().unwrap();
+        let mut ret = BezPath::default();
+        ret.move_to(p.to_kurbo());
+        for q in points {
+            ret.line_to(q.to_kurbo());
+        }
+        ret.line_to(p.to_kurbo());
+        ret
+    }
+
+    let mut ret = BezPath::default();
+    for ps in points {
+        ret.extend(one(ps));
+    }
+    ret
+}
 
 fn just_the_sweep(c: &mut Criterion) {
     let (contours_even, contours_odd) = checkerboard(10);
@@ -33,13 +52,15 @@ fn just_the_sweep(c: &mut Criterion) {
 
 fn build_topology(c: &mut Criterion) {
     let (contours_even, contours_odd) = checkerboard(10);
+    let path_even = to_bez(&contours_even);
+    let path_odd = to_bez(&contours_odd);
 
     let eps = 0.01f64;
     c.bench_function("checkerboard: build topology", |b| {
         b.iter(|| {
-            black_box(Topology::from_polylines(
-                contours_even.clone(),
-                contours_odd.clone(),
+            black_box(Topology::from_paths(
+                [path_even.clone()],
+                [path_odd.clone()],
                 eps,
             ))
         });
@@ -60,18 +81,17 @@ fn build_topology(c: &mut Criterion) {
 }
 
 fn xor(c: &mut Criterion) {
-    let to_floats = |contours: Contours| -> Vec<_> {
+    let to_float_arrays = |contours: Vec<Vec<Point>>| -> Vec<Vec<_>> {
         contours
             .into_iter()
-            .map(|ps| ps.into_iter().map(|p| (p.x, p.y)).collect())
+            .map(|ps| ps.into_iter().map(|p| [p.x, p.y]).collect())
             .collect()
     };
-
     let mut group = c.benchmark_group("checkerboard: xor");
     for size in [10, 100, 500] {
         let (contours_even, contours_odd) = checkerboard(size);
-        let contours_even = to_floats(contours_even);
-        let contours_odd = to_floats(contours_odd);
+        let path_even = to_bez(&contours_even);
+        let path_odd = to_bez(&contours_odd);
 
         if size > 100 {
             group.sample_size(10);
@@ -79,20 +99,14 @@ fn xor(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("linesweeper", size), &size, |b, _size| {
             b.iter(|| {
                 black_box(boolean_op(
-                    &contours_even,
-                    &contours_odd,
+                    &path_even,
+                    &path_odd,
                     FillRule::EvenOdd,
                     BooleanOp::Xor,
                 ))
             });
         });
 
-        let to_float_arrays = |contours: Vec<Vec<(f64, f64)>>| -> Vec<Vec<_>> {
-            contours
-                .into_iter()
-                .map(|ps| ps.into_iter().map(|(x, y)| [x, y]).collect())
-                .collect()
-        };
         let contours_even = to_float_arrays(contours_even);
         let contours_odd = to_float_arrays(contours_odd);
 
@@ -113,8 +127,8 @@ fn xor(c: &mut Criterion) {
     let mut group = c.benchmark_group("slanties: xor");
     for size in [10, 100, 500] {
         let (contours_even, contours_odd) = slanties(size);
-        let contours_even = to_floats(contours_even);
-        let contours_odd = to_floats(contours_odd);
+        let path_even = to_bez(&contours_even);
+        let path_odd = to_bez(&contours_odd);
 
         if size > 100 {
             group.sample_size(10);
@@ -122,20 +136,14 @@ fn xor(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("linesweeper", size), &size, |b, _size| {
             b.iter(|| {
                 black_box(boolean_op(
-                    &contours_even,
-                    &contours_odd,
+                    &path_even,
+                    &path_odd,
                     FillRule::EvenOdd,
                     BooleanOp::Xor,
                 ))
             });
         });
 
-        let to_float_arrays = |contours: Vec<Vec<(f64, f64)>>| -> Vec<Vec<_>> {
-            contours
-                .into_iter()
-                .map(|ps| ps.into_iter().map(|(x, y)| [x, y]).collect())
-                .collect()
-        };
         let contours_even = to_float_arrays(contours_even);
         let contours_odd = to_float_arrays(contours_odd);
 
@@ -153,26 +161,20 @@ fn xor(c: &mut Criterion) {
     group.finish();
 
     let (contours_even, contours_odd) = slanted_checkerboard(10);
-    let contours_even = to_floats(contours_even);
-    let contours_odd = to_floats(contours_odd);
+    let path_even = to_bez(&contours_even);
+    let path_odd = to_bez(&contours_odd);
 
     c.bench_function("slanted_checkerboard: xor", |b| {
         b.iter(|| {
             black_box(boolean_op(
-                &contours_even,
-                &contours_odd,
+                &path_even,
+                &path_odd,
                 FillRule::EvenOdd,
                 BooleanOp::Xor,
             ))
         });
     });
 
-    let to_float_arrays = |contours: Vec<Vec<(f64, f64)>>| -> Vec<Vec<_>> {
-        contours
-            .into_iter()
-            .map(|ps| ps.into_iter().map(|(x, y)| [x, y]).collect())
-            .collect()
-    };
     let contours_even = to_float_arrays(contours_even);
     let contours_odd = to_float_arrays(contours_odd);
 

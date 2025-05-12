@@ -17,7 +17,8 @@ use crate::{
 
 use super::{OutputEvent, SweepLineRange, SweepLineRangeBuffers};
 
-#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct SegmentOrderEntry {
     pub(crate) seg: SegIdx,
     /// True if this segment is about to leave the sweep-line.
@@ -139,7 +140,8 @@ impl SegmentOrderEntry {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug)]
 pub(crate) struct SegmentOrder {
     pub(crate) segs: TreeVec<SegmentOrderEntry, 128>,
 }
@@ -915,7 +917,8 @@ impl<'segs> Sweeper<'segs> {
 }
 
 /// Represents a sub-interval of the sweep-line where some subdivisions need to happen.
-#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Debug, Clone)]
 pub struct ChangedInterval {
     // Indices into the sweep-line's segment array.
     pub(crate) segs: std::ops::Range<usize>,

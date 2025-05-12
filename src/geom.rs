@@ -10,7 +10,8 @@ use crate::num::CheapOrderedFloat;
 ///
 /// Points are sorted by `y` and then by `x`, for the convenience of our sweep-line
 /// algorithm (which moves in increasing `y`).
-#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Point {
     /// Vertical coordinate.
     ///
