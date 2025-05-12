@@ -1,6 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
+use kurbo::BezPath;
 use linesweeper::{boolean_op, topology::Topology, BooleanOp, FillRule, Point, Segments};
+use linesweeper_util::svg_to_bezpaths;
 
 fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
     let mut ret = Vec::new();
@@ -71,12 +73,10 @@ fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
 fn just_the_sweep(c: &mut Criterion) {
     let input = include_str!("../examples/linebender.svg");
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
-    let contours = svg_to_contours(&tree);
+    let bezpaths = svg_to_bezpaths(&tree);
 
     let mut segs = Segments::default();
-    for c in contours {
-        segs.add_cycle(c);
-    }
+    segs.add_bez_paths(bezpaths);
 
     c.bench_function("logo: just the sweep", |b| {
         b.iter(|| linesweeper::sweep::sweep(&segs, 0.01, |_, _| {}))
@@ -86,12 +86,12 @@ fn just_the_sweep(c: &mut Criterion) {
 fn build_topology(c: &mut Criterion) {
     let input = include_str!("../examples/linebender.svg");
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
-    let contours = svg_to_contours(&tree);
+    let bezpaths = svg_to_bezpaths(&tree);
 
-    const EMPTY: [[Point; 0]; 0] = [];
+    const EMPTY: [BezPath; 0] = [];
 
     c.bench_function("logo: build topology", |b| {
-        b.iter(|| black_box(Topology::from_polylines(contours.clone(), EMPTY, 0.01)));
+        b.iter(|| black_box(Topology::from_paths(bezpaths.clone(), EMPTY, 0.01)));
     });
 }
 
@@ -99,37 +99,33 @@ fn xor(c: &mut Criterion) {
     let input = include_str!("../examples/linebender.svg");
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
     let contours = svg_to_contours(&tree);
+    let bezpaths = svg_to_bezpaths(&tree);
 
-    let to_floats = |contours: Vec<Vec<Point>>| -> Vec<Vec<_>> {
-        contours
-            .into_iter()
-            .map(|ps| ps.into_iter().map(|p| (p.x, p.y)).collect())
-            .collect()
-    };
-
-    let contours = to_floats(contours);
-    let first_contour = vec![contours.first().unwrap().clone()];
-    let other_contours: Vec<_> = contours[1..].to_vec();
+    let first_path = bezpaths.first().unwrap().clone();
+    let second_path = bezpaths[1..]
+        .iter()
+        .flat_map(|b| b.elements().iter().cloned())
+        .collect();
 
     c.bench_function("logo: xor", |b| {
         b.iter(|| {
             black_box(boolean_op(
-                &first_contour,
-                &other_contours,
+                &first_path,
+                &second_path,
                 FillRule::EvenOdd,
                 BooleanOp::Xor,
             ))
         });
     });
 
-    let to_float_arrays = |contours: Vec<Vec<(f64, f64)>>| -> Vec<Vec<_>> {
+    let to_float_arrays = |contours: Vec<Vec<Point>>| -> Vec<Vec<_>> {
         contours
             .into_iter()
-            .map(|ps| ps.into_iter().map(|(x, y)| [x, y]).collect())
+            .map(|ps| ps.into_iter().map(|p| [p.x, p.y]).collect())
             .collect()
     };
-    let first_contour = to_float_arrays(first_contour);
-    let other_contours = to_float_arrays(other_contours);
+    let first_contour = to_float_arrays(vec![contours.first().unwrap().clone()]);
+    let other_contours = to_float_arrays(contours[1..].to_vec());
 
     c.bench_function("logo: xor i_overlay", |b| {
         b.iter(|| {

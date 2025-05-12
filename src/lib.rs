@@ -16,6 +16,7 @@ pub mod topology;
 pub mod generators;
 
 pub use geom::{Point, Segment};
+use kurbo::Shape;
 pub use segments::{SegIdx, Segments};
 
 // pub so that we can use it in fuzz tests, but it's really private
@@ -58,57 +59,31 @@ pub enum Error {
     NaN,
 }
 
-fn extrema(mut xs: impl Iterator<Item = f64>) -> Result<(f64, f64), Error> {
-    xs.try_fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), x| {
-        if x.is_nan() {
-            Err(Error::NaN)
-        } else {
-            Ok((x.min(min), x.max(max)))
-        }
-    })
-}
-
 /// Computes a boolean operation between two sets, each of which is described as a collection of closed polylines.
 pub fn boolean_op(
-    set_a: &[Vec<(f64, f64)>],
-    set_b: &[Vec<(f64, f64)>],
+    set_a: &kurbo::BezPath,
+    set_b: &kurbo::BezPath,
     fill_rule: FillRule,
     op: BooleanOp,
 ) -> Result<topology::Contours, Error> {
     // Find the extremal values, to figure out how much precision we can support.
-    let (min, max) = extrema(
-        set_a
-            .iter()
-            .flatten()
-            .chain(set_b.iter().flatten())
-            .flat_map(|p| [p.0, p.1]),
-    )?;
+    let bbox = set_a.bounding_box().union(set_b.bounding_box());
+    let min = bbox.min_x().min(bbox.min_y());
+    let max = bbox.max_x().max(bbox.max_y());
     if min.is_infinite() || max.is_infinite() {
         return Err(Error::Infinity);
     }
+    // TODO: check for NaN
 
-    // This is M/2 in the write-up.
+    // TODO: we did some analysis for error bounds in the case of polylines.
+    // Think more about what makes sense for curves.
     let m_2 = min.abs().max(max.abs());
-
-    // The write-up says we can take eps = 64 eps_0 M, where eps_0 is the basic relative
-    // error of addition and subtraction, which is EPSILON / 2.
-    // unwrap: we already checked that min and max are non-NaN. This could overflow to infinity,
-    // but it can't be NaN.
     let eps = m_2 * (f64::EPSILON * 64.0);
+    let eps = eps.max(1e-6);
 
     debug_assert!(eps.is_finite());
 
-    fn pt(p: &(f64, f64)) -> Point {
-        Point::new(p.0, p.1)
-    }
-
-    // unwrap: the conversions only fail for NaN, and we already checked that our points
-    // don't have any of those.
-    let top = Topology::from_polylines(
-        set_a.iter().map(|ps| ps.iter().map(pt)),
-        set_b.iter().map(|ps| ps.iter().map(pt)),
-        eps,
-    );
+    let top = Topology::from_paths([set_a.clone()], [set_b.clone()], eps);
 
     let inside = |windings: WindingNumber| {
         let inside_one = |winding| match fill_rule {
@@ -129,13 +104,31 @@ pub fn boolean_op(
 
 #[cfg(test)]
 mod tests {
+    use kurbo::BezPath;
+
     use super::*;
 
     #[test]
     fn two_squares() {
-        let a = [vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]];
-        let b = [vec![(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)]];
-        let output = boolean_op(&a, &b, FillRule::EvenOdd, BooleanOp::Intersection).unwrap();
+        fn to_bez(mut points: impl Iterator<Item = (f64, f64)>) -> BezPath {
+            let p = points.next().unwrap();
+            let mut ret = BezPath::default();
+            ret.move_to(p);
+            for q in points {
+                ret.line_to(q);
+            }
+            ret.line_to(p);
+            ret
+        }
+        let a = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
+        let b = vec![(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)];
+        let output = boolean_op(
+            &to_bez(a.into_iter()),
+            &to_bez(b.into_iter()),
+            FillRule::EvenOdd,
+            BooleanOp::Intersection,
+        )
+        .unwrap();
 
         insta::assert_ron_snapshot!(output);
     }
