@@ -16,7 +16,7 @@ pub fn float_in_range(
 ) -> Result<f64, arbitrary::Error> {
     let num: u32 = u.arbitrary()?;
     let t = num as f64 / u32::MAX as f64;
-    Ok((1.0 - t) * start + t * end)
+    Ok((start + t * (end - start)).clamp(start, end))
 }
 
 fn float(u: &mut Unstructured<'_>) -> Result<f64, arbitrary::Error> {

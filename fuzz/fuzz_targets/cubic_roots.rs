@@ -15,6 +15,9 @@ fuzz_target!(|data: &[u8]| {
         c.c3.abs() * range.powi(3) + c.c2.abs() * range.powi(2) + c.c1.abs() * range + c.c0.abs();
     let threshold = accuracy * size;
     let roots = c.roots_between(-range, range, threshold);
+    if c.eval(-range).signum() != c.eval(range).signum() {
+        assert!(!roots.is_empty());
+    }
     for r in roots {
         assert!(c.eval(r).abs() <= threshold);
     }

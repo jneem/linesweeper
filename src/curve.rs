@@ -225,6 +225,13 @@ impl CurveOrder {
     /// to both `s1` and `s3`; adding y-slop to that "virtual closeness"
     /// restores transitivity by making `s2` start out "ish" to both `s1`
     /// and `s3`. `y_close_before` is the height where that closeness ends.
+    ///
+    /// TODO: as the strong_comparison fuzz tests show, this is insufficient.
+    /// I think we need to handle this more carefully during the curve comparison
+    /// itself. I think the point is that if we take two small squares s_1 and s_2
+    /// where s_2 is bigger than 2 s_1 then we should guarantee: if c_0 + s_2 <= c_1 + s_2
+    /// at height y then they're strongly ordered, and if they're strongly ordered then
+    /// c_0 + s_1 <= c_1 + s_1. I think this will guarantee the transitivity we need.
     pub fn with_y_slop(self, slop: f64, y_close_before: f64, y_close_after: f64) -> CurveOrder {
         let mut ret = Vec::new();
 
@@ -311,7 +318,7 @@ impl CurveOrder {
 
 /// Find the parameter `t` at which `c` crosses height `y`.
 pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
-    debug_assert!(c.p0.y <= y && y <= c.p3.y);
+    debug_assert!(c.p0.y <= y && y <= c.p3.y && c.p0.y < c.p3.y);
 
     if y == c.p0.y {
         return 0.0;
@@ -326,24 +333,25 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
 
     let cubic = Cubic { c0, c1, c2, c3 };
 
-    let roots = cubic.roots_between(0.0, 1.0, 1e-10);
+    let eps = 1e-10 * cubic.max_coeff().max(1.0);
+    let roots = cubic.roots_between(0.0, 1.0, eps);
     if !roots.is_empty() {
         return roots[0];
     }
 
-    // The sharp cutoff at the endpoint can miss some legitimate internal
-    // points. The 1e-8 threshold is a bit arbitrary, though.
+    // There are situations (discovered by fuzzing) where because of rounding
+    // the cubic doesn't actually change signs. (Mathematically, it does change
+    // signs because it's `c.p0.y - y` at zero and `c.p3.y - y` at one, and we
+    // checked that those have opposite signs.)
     //
-    // TODO: investigate this further. It can be triggered by the sweep-line
-    // perturbation tests
-    if (y - c.p3.y).abs() < 1e-8 {
-        return 1.0;
-    } else if (y - c.p0.y).abs() < 1e-8 {
-        return 0.0;
+    // In this situation, it must be that the cubic was very close to zero
+    // at some endpoint, but after rounding the sign flipped.
+    debug_assert_eq!(cubic.eval(0.0).signum(), cubic.eval(1.0).signum());
+    if (y - c.p1.y).abs() <= (y - c.p3.y).abs() {
+        0.0
+    } else {
+        1.0
     }
-    println!("{:?}", c);
-    println!("{} {} {} {}", c0, c1, c2, c3);
-    panic!("no solution found, y = {}", y);
 }
 
 /// Finds the x coordinate at which `c` crosses through `y`.
@@ -1051,6 +1059,7 @@ fn intersect_cubics_rec(
     accuracy: f64,
     out: &mut CurveOrder,
 ) {
+    // eprintln!("recursing to {y0}..{y1}");
     let mut c0 = y_subsegment(orig_c0, y0, y1);
     let mut c1 = y_subsegment(orig_c1, y0, y1);
     // dbg!(c0, orig_c0);

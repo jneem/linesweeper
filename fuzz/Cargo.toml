@@ -15,6 +15,7 @@ libfuzzer-sys = "0.4"
 
 [dependencies.linesweeper]
 path = ".."
+features = ["arbitrary"]
 
 [[bin]]
 name = "mutation"

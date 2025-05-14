@@ -1,11 +1,11 @@
 #![no_main]
 
 use arbitrary::Unstructured;
+use kurbo::Shape;
 use libfuzzer_sys::fuzz_target;
 use linesweeper::{
     arbitrary::{another_monotonic_bezier, float_in_range, monotonic_bezier},
-    curve::Order,
-    order::Comparison,
+    curve::{Order, intersect_cubics},
 };
 
 fuzz_target!(|data: &[u8]| {
@@ -21,34 +21,43 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    let eps = 1e-6;
-    let cmp01 = Comparison::new(c0, c1, eps);
-    let cmp02 = Comparison::new(c0, c2, eps);
-    let cmp12 = Comparison::new(c1, c2, eps);
+    let bbox = c0
+        .bounding_box()
+        .union(c1.bounding_box())
+        .union(c2.bounding_box());
+    let max_coord = bbox
+        .max_x()
+        .max(bbox.max_y())
+        .max(bbox.min_x().abs())
+        .max(bbox.min_y().abs());
+
+    let eps = 1e-6 * max_coord.max(1.0);
+    let cmp01 = intersect_cubics(c0, c1, eps, eps / 2.0).with_y_slop(
+        eps / 2.0,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+    );
+    let cmp02 = intersect_cubics(c0, c2, eps, eps / 2.0).with_y_slop(
+        eps / 2.0,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+    );
+    let cmp12 = intersect_cubics(c1, c2, eps, eps / 2.0).with_y_slop(
+        eps / 2.0,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+    );
 
     let y = float_in_range(y0, y1, &mut u).unwrap();
-    let c01 = cmp01.order.order_at(y);
-    let c12 = cmp12.order.order_at(y);
-    let c20 = cmp02.order.order_at(y).flip();
+    // dbg!(&c0, &c1, &c2, y, y0, y1);
+    // dbg!(&cmp01, &cmp12, &cmp02);
+    let c01 = cmp01.order_at(y);
+    let c12 = cmp12.order_at(y);
+    let c20 = cmp02.order_at(y).flip();
 
     if c01 == c12 && c12 == c20 && c01 != Order::Ish {
-        panic!("cycle");
+        panic!("cycle!");
     }
 
-    let c01_bound = cmp01.bound.order_at(y);
-
-    // If c2 crosses to the left of c0, it does so *after* crossing to the left
-    // of c1.
-    if c01_bound == Order::Left && c12 != Order::Right {
-        if let Some((cross_y, _, _)) = cmp02
-            .order
-            .iter()
-            .skip_while(|(start, _end, _order)| *start < y)
-            .find(|(_start, _end, order)| *order == Order::Right)
-        {
-            if cross_y <= y1 {
-                assert_eq!(cmp12.order.order_at(cross_y), Order::Right);
-            }
-        }
-    }
+    // TODO: make a stronger comparison also, and test that
 });

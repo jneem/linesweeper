@@ -8,7 +8,7 @@ description = "Robust sweep-line algorithm and two-dimensional boolean ops"
 repository = "https://github.com/jneem/linesweeper"
 
 [workspace]
-members = ["util"]
+members = ["fuzz", "util"]
 
 [workspace.dependencies]
 kurbo = "0.11.1"
