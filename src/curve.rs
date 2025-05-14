@@ -347,7 +347,7 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
     // In this situation, it must be that the cubic was very close to zero
     // at some endpoint, but after rounding the sign flipped.
     debug_assert_eq!(cubic.eval(0.0).signum(), cubic.eval(1.0).signum());
-    if (y - c.p1.y).abs() <= (y - c.p3.y).abs() {
+    if (y - c.p0.y).abs() <= (y - c.p3.y).abs() {
         0.0
     } else {
         1.0
@@ -1293,6 +1293,59 @@ pub fn intersect_cubics(c0: CubicBez, c1: CubicBez, tolerance: f64, accuracy: f6
     ret
 }
 
+#[cfg(any(test, feature = "arbitrary"))]
+#[doc(hidden)]
+pub mod arbtests {
+    use arbitrary::Unstructured;
+    use kurbo::ParamCurve as _;
+
+    use super::{solve_t_for_y, Cubic};
+
+    pub fn cubic_roots(u: &mut Unstructured) -> Result<(), arbitrary::Error> {
+        let c = crate::arbitrary::cubic(1e8, u)?;
+
+        // How much relative accuracy do we expect?
+        let accuracy = 1e-11;
+        let range = crate::arbitrary::float_in_range(1.0, 1e4, u)?;
+
+        let size = c.c3.abs() * range.powi(3)
+            + c.c2.abs() * range.powi(2)
+            + c.c1.abs() * range
+            + c.c0.abs();
+        let threshold = accuracy * size.max(1.0);
+        let roots = c.roots_between(-range, range, threshold);
+        if c.eval(-range).signum() != c.eval(range).signum() {
+            assert!(!roots.is_empty());
+        }
+        for r in roots {
+            assert!(c.eval(r).abs() <= threshold);
+        }
+
+        Ok(())
+    }
+
+    pub fn solve_for_t(u: &mut Unstructured) -> Result<(), arbitrary::Error> {
+        let c = crate::arbitrary::monotonic_bezier(u)?;
+        if c.p0.y == c.p3.y {
+            return Ok(());
+        }
+
+        // How much relative accuracy do we expect?
+        // This was determined empirically: 1e-10 fails fuzz tests.
+        let accuracy = 1e-9;
+        let max_coeff = Cubic::from_bez_x(c)
+            .max_coeff()
+            .max(Cubic::from_bez_y(c).max_coeff());
+        let threshold = accuracy * max_coeff.max(1.0);
+
+        let y = crate::arbitrary::float_in_range(c.p0.y, c.p3.y, u)?;
+        let t = solve_t_for_y(c, y);
+        assert!((c.eval(t).y - y).abs() <= threshold);
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use core::f64;
@@ -1341,6 +1394,16 @@ mod test {
         let y = 0.00016929232880729566;
         let t = solve_t_for_y(c, y);
         assert!(dbg!(c.eval(t).y - y).abs() < 1e-8);
+    }
+
+    #[test]
+    fn cubic_roots_arbtest() {
+        arbtest::arbtest(arbtests::cubic_roots);
+    }
+
+    #[test]
+    fn solve_for_t_arbtest() {
+        arbtest::arbtest(arbtests::solve_for_t);
     }
 
     #[test]

@@ -28,21 +28,22 @@ kurbo = { version = "0.11.1", features = ["serde"] }
 
 [dev-dependencies]
 anyhow = "1.0.80"
+arbtest = "0.3.2"
 assert_matches = "1.5.0"
 clap = { version = "4.5.1", features = ["derive"] }
 criterion = "0.5.1"
 glob = "0.3.2"
 i_overlay = "1.9.4"
 insta = { version = "1.41.1", features = ["serde", "ron"] }
-proptest = "1.4.0"
-serde = { version = "1.0.216", features = ["derive"] }
-svg = { version = "0.18", default-features = false }
-usvg = { version = "0.44.0", default-features = false }
-linesweeper_util = { path = "util" }
-tiny-skia = "0.11.4"
 kompari = { git = "https://github.com/linebender/kompari" }
 libtest-mimic = "0.8.1"
+linesweeper_util = { path = "util" }
+proptest = "1.4.0"
+serde = { version = "1.0.216", features = ["derive"] }
 skrifa = "0.31.0"
+svg = { version = "0.18", default-features = false }
+tiny-skia = "0.11.4"
+usvg = { version = "0.44.0", default-features = false }
 
 [profile.dev.package."*"]
 opt-level = 2

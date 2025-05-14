@@ -59,3 +59,10 @@ path = "fuzz_targets/cubic_roots.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "solve_for_t"
+path = "fuzz_targets/solve_for_t.rs"
+test = false
+doc = false
+bench = false

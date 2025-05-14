@@ -802,6 +802,7 @@ version = "0.0.3"
 dependencies = [
  "anyhow",
  "arbitrary",
+ "arbtest",
  "arrayvec",
  "assert_matches",
  "clap",

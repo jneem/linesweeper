@@ -64,7 +64,10 @@ fn point_at_most(max: f64, u: &mut Unstructured<'_>) -> Result<Point, arbitrary:
 pub fn monotonic_bezier(u: &mut Unstructured<'_>) -> Result<CubicBez, arbitrary::Error> {
     let p0 = point(u)?;
     let p3 = point(u)?;
-    let (p0, p3) = if p0.y < p3.y { (p0, p3) } else { (p3, p0) };
+    let (p0, mut p3) = if p0.y < p3.y { (p0, p3) } else { (p3, p0) };
+    if p3.y == p0.y {
+        p3.y += 1.0;
+    }
 
     let p1 = point_at_least(p0.y, u)?;
     let p2 = point_at_most(p3.y, u)?;
@@ -72,8 +75,10 @@ pub fn monotonic_bezier(u: &mut Unstructured<'_>) -> Result<CubicBez, arbitrary:
     let ret = CubicBez::new(p0, p1, p2, p3);
     Ok(geom::monotonic_pieces(ret)
         .into_iter()
-        .next()
-        .unwrap_or(ret))
+        .find(|c| c.p0.y < c.p3.y)
+        // unwrap: we started with p0 having smaller y, so there must be
+        // a monotonic component that's increasing in y.
+        .unwrap())
 }
 
 /// Generate an arbitrary cubic Bezier, guaranteed to be monotonically increasing in y.
