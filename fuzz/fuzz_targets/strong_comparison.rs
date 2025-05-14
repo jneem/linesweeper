@@ -32,21 +32,9 @@ fuzz_target!(|data: &[u8]| {
         .max(bbox.min_y().abs());
 
     let eps = 1e-6 * max_coord.max(1.0);
-    let cmp01 = intersect_cubics(c0, c1, eps, eps / 2.0).with_y_slop(
-        eps / 2.0,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-    );
-    let cmp02 = intersect_cubics(c0, c2, eps, eps / 2.0).with_y_slop(
-        eps / 2.0,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-    );
-    let cmp12 = intersect_cubics(c1, c2, eps, eps / 2.0).with_y_slop(
-        eps / 2.0,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-    );
+    let cmp01 = intersect_cubics(c0, c1, eps, eps / 2.0).with_y_slop(eps / 2.0);
+    let cmp02 = intersect_cubics(c0, c2, eps, eps / 2.0).with_y_slop(eps / 2.0);
+    let cmp12 = intersect_cubics(c1, c2, eps, eps / 2.0).with_y_slop(eps / 2.0);
 
     let y = float_in_range(y0, y1, &mut u).unwrap();
     // dbg!(&c0, &c1, &c2, y, y0, y1);

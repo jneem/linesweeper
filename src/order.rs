@@ -102,11 +102,8 @@ impl ComparisonCache {
 
         let c0 = segi.to_kurbo();
         let c1 = segj.to_kurbo();
-        let forward = curve::intersect_cubics(c0, c1, self.tolerance, self.accuracy).with_y_slop(
-            self.tolerance,
-            close_start_y(c0, c1, self.tolerance, self.accuracy),
-            close_end_y(c0, c1, self.tolerance, self.accuracy),
-        );
+        let forward = curve::intersect_cubics(c0, c1, self.tolerance, self.accuracy)
+            .with_y_slop(self.tolerance);
         let reverse = forward.flip();
         self.inner.insert((j, i), reverse);
         self.inner.entry((i, j)).insert_entry(forward).get().clone()
@@ -120,6 +117,7 @@ mod tests {
     use super::ComparisonCache;
 
     #[test]
+    #[ignore] // TODO(no-transitivity): this test is only relevant if we have the extra y_slop parameters
     fn slop_regression() {
         let mut segments = Segments::default();
         let eps = 0.1;
@@ -127,8 +125,7 @@ mod tests {
         segments.add_points([(1.0, -1.0), (0.0, 0.0)]);
         let mut cmp_cache = ComparisonCache::new(eps, eps / 2.0);
         assert_eq!(
-            cmp_cache
-                .compare_segments(&segments, SegIdx(0), SegIdx(1))
+            dbg!(cmp_cache.compare_segments(&segments, SegIdx(0), SegIdx(1)))
                 .iter()
                 .next()
                 .unwrap()

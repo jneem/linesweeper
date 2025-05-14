@@ -646,6 +646,10 @@ impl<'segs> Sweeper<'segs> {
                 let seg_j_idx = self.line.seg(j);
                 let cmp = self.compare_segments(left, seg_j_idx);
                 if cmp.order_at(self.y) == Order::Right {
+                    // FIXME(no-transitivity): here we should check whether
+                    // it's actually legal to move seg j to after right_idx.
+                    // If not, we delay the i <-> j intersection. The lack
+                    // of strong ordering loops implies that delay is possible.
                     to_move.push((j, self.line.segs[j]));
                 }
             }
@@ -713,14 +717,23 @@ impl<'segs> Sweeper<'segs> {
             }
         }
 
-        assert!(self
-            .line
-            .find_invalid_order(
-                self.y,
-                self.segments,
-                self.comparisons.borrow_mut().deref_mut(),
-            )
-            .is_none());
+        // TODO(no-transitivity): if we check invariants just after insertion, we should allow
+        // bad orders if there's a matching intersection event queued
+        if let Some(order) = self.line.find_invalid_order(
+            self.y,
+            self.segments,
+            self.comparisons.borrow_mut().deref_mut(),
+        ) {
+            let has_matching_event = self
+                .events
+                .intersection
+                .iter()
+                .take_while(|ev| ev.y == self.y)
+                .any(|ev| ev.left == order.0 && ev.right == order.1);
+            if !has_matching_event {
+                panic!("invalid order {order:?}");
+            }
+        }
 
         for i in 0..self.line.segs.len() {
             if self.line.is_exit(i) {
@@ -965,7 +978,7 @@ impl SegmentOrder {
                 if order.order_at(y) == Order::Right {
                     dbg!(segments);
                     dbg!(&self.segs);
-                    dbg!(&order, y);
+                    dbg!(&order, y, segi, segj);
                     return Some((segi, segj));
                 }
             }
@@ -1789,15 +1802,15 @@ mod tests {
     fn bug() {
         use Perturbation::*;
         let perturbations: Vec<Perturbation<F64Perturbation>> = vec![
-            Base { idx: 0 },
-            Superimposition {
-                left: Box::new(Base { idx: 0 }),
-                right: Box::new(Base { idx: 0 }),
+            Subdivision {
+                t: 0.9394124935587298,
+                idx: 2015950306058370793,
+                next: Box::new(Base { idx: 0 }),
             },
-            Base { idx: 0 },
-            Superimposition {
-                left: Box::new(Base { idx: 0 }),
-                right: Box::new(Base { idx: 0 }),
+            Subdivision {
+                t: 0.13141341476907323,
+                idx: 16536748748586597932,
+                next: Box::new(Base { idx: 0 }),
             },
         ];
         run_perturbation(perturbations);
