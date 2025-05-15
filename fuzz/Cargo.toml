@@ -66,3 +66,10 @@ path = "fuzz_targets/solve_for_t.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "strong_comparison_no_slop"
+path = "fuzz_targets/strong_comparison_no_slop.rs"
+test = false
+doc = false
+bench = false
