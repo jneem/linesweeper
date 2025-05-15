@@ -201,6 +201,8 @@ pub(crate) fn compute_positions(
             let cmp = cmp.compare_segments(segs, orig_seg_map[nbr], orig_seg_map[cur]);
             let (_, cmp_end_y, cmp_order) = cmp.iter().find(|(_, end_y, _)| *end_y > y0).unwrap();
 
+            // TODO: if it's Order::Left, we can look at the west_neighbor_after cmp_end_y
+            // and so on.
             y1 = y1.min(cmp_end_y);
             if cmp_order == Order::Left {
                 break;
@@ -230,6 +232,7 @@ pub(crate) fn compute_positions(
         let mut neighbors = west_scan;
         neighbors.reverse();
         neighbors.extend(east_scan);
+        dbg!(&neighbors);
         if neighbors.len() == 1 {
             let idx = entry.idx;
             // We're far from everything, so just copy the input bezier to the output.
@@ -270,7 +273,7 @@ pub(crate) fn compute_positions(
             }
         }
     }
-    out
+    dbg!(out)
 }
 
 #[cfg(test)]

@@ -138,6 +138,10 @@ impl SegmentOrderEntry {
     pub(crate) fn is_in_changed_interval(&self) -> bool {
         self.in_changed_interval
     }
+
+    pub(crate) fn will_really_exit(&self) -> bool {
+        self.exit && self.old_seg.is_none()
+    }
 }
 
 #[cfg_attr(test, derive(serde::Serialize))]
@@ -161,7 +165,7 @@ impl SegmentOrder {
 
     fn is_exit(&self, i: usize) -> bool {
         let seg = &self.segs[i];
-        seg.exit && seg.old_seg.is_none()
+        seg.will_really_exit()
     }
 }
 
@@ -630,6 +634,44 @@ impl<'segs> Sweeper<'segs> {
             )
             .unwrap();
         if left_idx < right_idx {
+            // We're going to put `left_seg` after `right_seg` in the
+            // sweep line, and while doing so we need to "push" along
+            // all segments that are strictly bigger than `left_seg`
+            // (slight false positives are allowed; no false negatives).
+            let mut to_move = vec![left_idx];
+            for j in (left_idx + 1)..right_idx {
+                let seg_j_entry = &self.line.segs[j];
+                if seg_j_entry.will_really_exit() {
+                    continue;
+                }
+
+                let seg_j_idx = seg_j_entry.seg;
+                let cmp = self.compare_segments(left, seg_j_idx);
+                let (_, y1, left_j_order) = cmp.entry_at(self.y);
+                if left_j_order == Order::Left {
+                    // Because the order isn't transitive, it's possible that
+                    // we've been asked to push `seg_j` to the right of `right`,
+                    // even though `seg_j` compares left of `right`. If this
+                    // happens, we delay the intersection. This delay won't cause
+                    // a bad ordering between `left` and `right`, because that
+                    // would imply an ordering cycle
+                    // (`left` < `seg_j` < `right` < `left`).
+                    let j_cmp = self.compare_segments(seg_j_idx, right);
+                    let (_, y2, j_right_order) = j_cmp.entry_at(self.y);
+                    if j_right_order == Order::Left {
+                        self.events.push(IntersectionEvent {
+                            y: y1.min(y2),
+                            left,
+                            right,
+                        });
+                        return;
+                    }
+
+                    to_move.push(j);
+                }
+            }
+
+            // Keep track of segment movement. TODO: reference a more detailed write-up
             self.segs_needing_positions.extend(left_idx..=right_idx);
             for (i, entry) in self.line.segs.range_mut(left_idx..=right_idx).enumerate() {
                 if entry.old_idx.is_none() {
@@ -637,26 +679,10 @@ impl<'segs> Sweeper<'segs> {
                 }
             }
 
-            // We're going to put `left_seg` after `right_seg` in the
-            // sweep line, and while doing so we need to "push" along
-            // all segments that are strictly bigger than `left_seg`
-            // (slight false positives are allowed; no false negatives).
-            let mut to_move = vec![(left_idx, self.line.segs[left_idx])];
-            for j in (left_idx + 1)..right_idx {
-                let seg_j_idx = self.line.seg(j);
-                let cmp = self.compare_segments(left, seg_j_idx);
-                if cmp.order_at(self.y) == Order::Right {
-                    // FIXME(no-transitivity): here we should check whether
-                    // it's actually legal to move seg j to after right_idx.
-                    // If not, we delay the i <-> j intersection. The lack
-                    // of strong ordering loops implies that delay is possible.
-                    to_move.push((j, self.line.segs[j]));
-                }
-            }
-
             // Remove them in reverse to make indexing easier.
-            for &(j, _) in to_move.iter().rev() {
-                self.line.segs.remove(j);
+            let mut removed = Vec::with_capacity(to_move.len());
+            for &j in to_move.iter().rev() {
+                removed.push(self.line.segs.remove(j));
                 self.scan_for_removal(j);
             }
 
@@ -664,7 +690,7 @@ impl<'segs> Sweeper<'segs> {
             // index changed because of the removal.
             let insertion_pos = right_idx + 1 - to_move.len();
 
-            for (_, seg) in to_move.into_iter().rev() {
+            for seg in removed {
                 self.insert(insertion_pos, seg);
             }
         } else {
@@ -710,20 +736,20 @@ impl<'segs> Sweeper<'segs> {
             );
         }
 
-        // All segments marked as stering or exiting must be in `self.segs_needing_positions`
+        // All segments marked as entering or exiting must be in `self.segs_needing_positions`
         for (idx, seg_entry) in self.line.segs.iter().enumerate() {
             if seg_entry.exit || seg_entry.enter {
                 assert!(self.segs_needing_positions.contains(&idx));
             }
         }
 
-        // TODO(no-transitivity): if we check invariants just after insertion, we should allow
-        // bad orders if there's a matching intersection event queued
         if let Some(order) = self.line.find_invalid_order(
             self.y,
             self.segments,
             self.comparisons.borrow_mut().deref_mut(),
         ) {
+            // We allow invalid orders, as long as there's an intersection event queued
+            // exactly at this `y` value.
             let has_matching_event = self
                 .events
                 .intersection

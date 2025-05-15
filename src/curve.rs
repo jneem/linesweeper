@@ -156,6 +156,7 @@ impl CurveOrder {
         let (y0, y1, order) = iter.next()?;
         // We used to assert that the order was as expected, but with
         // the non-transitivity experiment it might sometimes fail.
+        // (TODO: update this doc)
         // debug_assert_eq!(order, Order::Ish);
         if order == Order::Right {
             return Some(CurveInteraction::Cross(y));
@@ -304,6 +305,15 @@ impl CurveOrder {
             .find(|(_start, end, _order)| end >= &y)
             .unwrap()
             .2
+    }
+
+    /// Returns the first order entry ending after `y`.:w
+    ///
+    /// # Panics
+    ///
+    /// Panics if our comparison range ends at or before `y`.
+    pub fn entry_at(&self, y: f64) -> (f64, f64, Order) {
+        self.iter().find(|(_start, end, _order)| *end > y).unwrap()
     }
 
     /// What's the next definite (`Left` or `Right`) ordering after `y`?
@@ -1346,8 +1356,6 @@ pub mod arbtests {
 
 #[cfg(test)]
 mod test {
-    use core::f64;
-
     use super::*;
 
     #[test]

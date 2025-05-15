@@ -62,11 +62,19 @@ enum InsertResult<T, const B: usize> {
 }
 
 /// The result of removing an element from a subtree.
-enum RemoveResult {
+enum RemoveResult<T> {
     /// It's gone!
-    Done,
+    Done(T),
     /// It's gone, but the root of the subtree now has too few children.
-    Undersize,
+    Undersize(T),
+}
+
+impl<T> RemoveResult<T> {
+    fn into_inner(self) -> T {
+        match self {
+            RemoveResult::Done(ret) | RemoveResult::Undersize(ret) => ret,
+        }
+    }
 }
 
 /// The result of fixing up the sizes of two sibling subtrees.
@@ -300,22 +308,22 @@ impl<T, const B: usize> Node<T, B> {
     ///
     /// This may leave the root of the subtree undersized, in which case the
     /// return value will let you know.
-    fn remove(&mut self, offset: usize) -> RemoveResult {
+    fn remove(&mut self, offset: usize) -> RemoveResult<T> {
         match self {
             Node::Leaf { data } => {
-                data.remove(offset);
+                let ret = data.remove(offset);
                 if data.len() < B / 2 {
-                    RemoveResult::Undersize
+                    RemoveResult::Undersize(ret)
                 } else {
-                    RemoveResult::Done
+                    RemoveResult::Done(ret)
                 }
             }
             Node::Internal { size, children } => {
                 let (idx, offset) = child_idx(size, offset).unwrap();
                 size[idx] -= 1;
                 match children[idx].remove(offset) {
-                    RemoveResult::Done => RemoveResult::Done,
-                    RemoveResult::Undersize => {
+                    RemoveResult::Done(ret) => RemoveResult::Done(ret),
+                    RemoveResult::Undersize(ret) => {
                         // We now have an undersized node at index i. We try
                         // to merge in more from the right neighbor (because
                         // that's the more efficient merge direction in our
@@ -337,15 +345,15 @@ impl<T, const B: usize> Node<T, B> {
                                     size.remove(idx + 1);
 
                                     if children.len() < B / 2 {
-                                        RemoveResult::Undersize
+                                        RemoveResult::Undersize(ret)
                                     } else {
-                                        RemoveResult::Done
+                                        RemoveResult::Done(ret)
                                     }
                                 }
                                 MergeResult::Rebalanced => {
                                     size[idx] = cur.subtree_size();
                                     size[idx + 1] = next.subtree_size();
-                                    RemoveResult::Done
+                                    RemoveResult::Done(ret)
                                 }
                             }
                         } else {
@@ -368,15 +376,15 @@ impl<T, const B: usize> Node<T, B> {
                                     children.remove(idx - 1);
                                     size.remove(idx - 1);
                                     if children.len() < B / 2 {
-                                        RemoveResult::Undersize
+                                        RemoveResult::Undersize(ret)
                                     } else {
-                                        RemoveResult::Done
+                                        RemoveResult::Done(ret)
                                     }
                                 }
                                 MergeResult::Rebalanced => {
                                     size[idx - 1] = prev.subtree_size();
                                     size[idx] = cur.subtree_size();
-                                    RemoveResult::Done
+                                    RemoveResult::Done(ret)
                                 }
                             }
                         }
@@ -510,8 +518,8 @@ impl<T, const B: usize> TreeVec<T, B> {
     ///
     /// Runtime is linear in the height of the tree (logarithmic in the length),
     /// and also linear in `B`.
-    pub fn remove(&mut self, index: usize) {
-        self.root.remove(index);
+    pub fn remove(&mut self, index: usize) -> T {
+        let ret = self.root.remove(index).into_inner();
 
         if let Node::Internal { children, .. } = &mut *self.root {
             if children.len() == 1 {
@@ -519,6 +527,7 @@ impl<T, const B: usize> TreeVec<T, B> {
                 self.root = children.pop().unwrap()
             }
         }
+        ret
     }
 
     /// Asserts that this subtree satisfies our invariants, panicking if not.
