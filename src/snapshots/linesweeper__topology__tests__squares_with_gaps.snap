@@ -4,7 +4,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
 ---
 (Topology(
   eps: 0.01,
-  shape_a: [
+  tag: [
     true,
     true,
     true,
@@ -43,161 +43,161 @@ expression: "(&top, contours, top.build_scan_line_orders())"
   winding: OutputSegVec(
     inner: [
       HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
+        counter_clockwise: BinaryWindingNumber(
           shape_a: -1,
           shape_b: 0,
         ),
-        clockwise: WindingNumber(
+        clockwise: BinaryWindingNumber(
           shape_a: 0,
           shape_b: 0,
         ),
       ),
       HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
+        counter_clockwise: BinaryWindingNumber(
           shape_a: 0,
           shape_b: 0,
         ),
-        clockwise: WindingNumber(
-          shape_a: -1,
-          shape_b: 0,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-        clockwise: WindingNumber(
+        clockwise: BinaryWindingNumber(
           shape_a: -1,
           shape_b: 0,
         ),
       ),
       HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: -1,
-        ),
-        clockwise: WindingNumber(
+        counter_clockwise: BinaryWindingNumber(
           shape_a: 0,
           shape_b: 0,
         ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: -1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: -1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 1,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 1,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: -1,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: -1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: -1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: -1,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: -1,
-        ),
-        clockwise: WindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: WindingNumber(
+        clockwise: BinaryWindingNumber(
           shape_a: -1,
           shape_b: 0,
         ),
-        clockwise: WindingNumber(
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 1,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 1,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 1,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 1,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: -1,
+          shape_b: 0,
+        ),
+        clockwise: BinaryWindingNumber(
           shape_a: 0,
           shape_b: 0,
         ),

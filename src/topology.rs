@@ -17,18 +17,85 @@ use crate::{
     },
 };
 
-/// We support boolean operations, so a "winding number" for us is two winding
-/// numbers, one for each shape.
+/// An abstraction over winding numbers.
+///
+/// The windings numbers of a set can just be represented by integers. But if
+/// you're doing boolean operations over two sets, you need both winding numbers
+/// to determine whether a point is inside or outside the output set. Since we
+/// also want to support more complicated situations (ternary operations, non-closed
+/// paths for which winding numbers aren't defined, etc.), our topologies use generic
+/// winding numbers: anything that implements this trait can be used.
+pub trait WindingNumber:
+    Copy + std::fmt::Debug + std::ops::Add<Output = Self> + std::ops::AddAssign + Default + Eq
+{
+    /// A tag for categorizing segments.
+    ///
+    /// When building a topology, you can assign to each segment a tag, which can then be
+    /// used to figure out that segment's winding number contribution.
+    #[cfg(not(test))]
+    type Tag: Copy + std::fmt::Debug + Eq;
+
+    /// A tag for categorizing segments.
+    ///
+    /// When building a topology, you can assign to each segment a tag, which can then be
+    /// used to figure out that segment's winding number contribution.
+    #[cfg(test)]
+    type Tag: Copy + std::fmt::Debug + Eq + serde::Serialize;
+
+    /// What is the winding number of a simple curve with tag `tag`?
+    fn single(tag: Self::Tag, positive: bool) -> Self;
+}
+
+/// Winding numbers for binary set operations.
+///
+/// This is just two integers, one for each set. Segments are tagged by
+/// booleans, where `true` means that the segment is part of the first set.
 #[cfg_attr(test, derive(serde::Serialize))]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Default)]
-pub struct WindingNumber {
+pub struct BinaryWindingNumber {
     /// The winding number of the first shape.
     pub shape_a: i32,
     /// The winding number of the second shape.
     pub shape_b: i32,
 }
 
-impl std::fmt::Debug for WindingNumber {
+impl WindingNumber for BinaryWindingNumber {
+    type Tag = bool;
+
+    fn single(tag: Self::Tag, positive: bool) -> Self {
+        let sign = if positive { 1 } else { -1 };
+        if tag {
+            Self {
+                shape_a: sign,
+                shape_b: 0,
+            }
+        } else {
+            Self {
+                shape_a: 0,
+                shape_b: sign,
+            }
+        }
+    }
+}
+
+impl std::ops::Add for BinaryWindingNumber {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            shape_a: self.shape_a + rhs.shape_a,
+            shape_b: self.shape_b + rhs.shape_b,
+        }
+    }
+}
+
+impl std::ops::AddAssign for BinaryWindingNumber {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
+impl std::fmt::Debug for BinaryWindingNumber {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}a + {}b", self.shape_a, self.shape_b)
     }
@@ -40,19 +107,19 @@ impl std::fmt::Debug for WindingNumber {
 /// we merge segments, they can differ by more.
 #[cfg_attr(test, derive(serde::Serialize))]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Default)]
-pub struct HalfSegmentWindingNumbers {
+pub struct HalfSegmentWindingNumbers<W: WindingNumber> {
     /// This half-segment is incident to a point. Imagine you're standing at
     /// that point, looking out along the segment. This is the winding number of
     /// the area just counter-clockwise (to the left, from your point of view)
     /// of the segment.
-    pub counter_clockwise: WindingNumber,
+    pub counter_clockwise: W,
     /// This half-segment is incident to a point. Imagine you're standing at
     /// that point, looking out along the segment. This is the winding number of
     /// the area just clockwise (to the right, from your point of view) of the segment.
-    pub clockwise: WindingNumber,
+    pub clockwise: W,
 }
 
-impl HalfSegmentWindingNumbers {
+impl<W: WindingNumber> HalfSegmentWindingNumbers<W> {
     /// A half-segment's winding numbers are trivial if they're the same on both sides.
     /// In this case, the segment is invisible to the topology of the sets.
     fn is_trivial(&self) -> bool {
@@ -68,7 +135,7 @@ impl HalfSegmentWindingNumbers {
     }
 }
 
-impl std::fmt::Debug for HalfSegmentWindingNumbers {
+impl<W: WindingNumber> std::fmt::Debug for HalfSegmentWindingNumbers<W> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} | {:?}", self.clockwise, self.counter_clockwise)
     }
@@ -355,17 +422,12 @@ impl std::fmt::Debug for PointNeighbors {
 }
 
 /// Consumes sweep-line output and computes topology.
-///
-/// Computes winding numbers and boolean operations. In principle this could be extended
-/// to support more-than-boolean operations, but it only does boolean for now. Also,
-/// it currently requires all input paths to be closed; it could be extended to support
-/// things like clipping a potentially non-closed path to a closed path.
 #[cfg_attr(test, derive(serde::Serialize))]
 #[derive(Clone, Debug)]
-pub struct Topology {
+pub struct Topology<W: WindingNumber> {
     eps: f64,
     /// Indexed by `SegIdx`.
-    shape_a: Vec<bool>,
+    tag: Vec<W::Tag>,
     /// Indexed by `SegIdx`.
     ///
     /// For each input segment, this is the list of output segments that we've started
@@ -392,7 +454,7 @@ pub struct Topology {
     /// `HalfSegmentWindingNumbers` for each `HalfOutputSegIdx`. But since the two halves of
     /// the winding numbers are determined by one another, we only store the winding numbers
     /// for the start half of the output segment.
-    winding: OutputSegVec<HalfSegmentWindingNumbers>,
+    winding: OutputSegVec<HalfSegmentWindingNumbers<W>>,
     /// The output points.
     points: PointVec<Point>,
     /// The segment endpoints, as indices into `points`.
@@ -455,7 +517,7 @@ pub struct Topology {
     pub segments: Segments,
 }
 
-impl Topology {
+impl<W: WindingNumber> Topology<W> {
     /// We're working on building up a list of half-segments that all meet at a point.
     /// Maybe we've done a few already, but there's a region where we may add more.
     /// Something like this:
@@ -566,7 +628,7 @@ impl Topology {
         &mut self,
         idx: SegIdx,
         p: PointIdx,
-        winding: HalfSegmentWindingNumbers,
+        winding: HalfSegmentWindingNumbers<W>,
         horizontal: bool,
     ) -> OutputSegIdx {
         let out_idx = OutputSegIdx(self.winding.inner.len());
@@ -593,84 +655,6 @@ impl Topology {
         self.scan_east.inner.push(None);
         self.orig_seg.inner.push(idx);
         out_idx
-    }
-
-    /// Creates a new `Topology` from two collections of Bézier paths.
-    ///
-    /// TODO: this is silly, since a sequence of BezPaths can just be turned into a single
-    /// BezPath.
-    pub fn from_paths(
-        set_a: impl IntoIterator<Item = BezPath>,
-        set_b: impl IntoIterator<Item = BezPath>,
-        eps: f64,
-    ) -> Self {
-        let mut segments = Segments::default();
-        let mut shape_a = Vec::new();
-        segments.add_bez_paths(set_a);
-        shape_a.resize(segments.len(), true);
-        segments.add_bez_paths(set_b);
-        shape_a.resize(segments.len(), false);
-        segments.check_invariants();
-        Self::from_segments(segments, shape_a, eps)
-    }
-
-    /// Creates a new `Topology` for two collections of polylines and a given tolerance.
-    ///
-    /// Each "set" is a collection of sequences of points; each sequence of
-    /// points is interpreted as a closed polyline (i.e. the last point will be
-    /// connected back to the first one).
-    pub fn from_polylines(
-        set_a: impl IntoIterator<Item = impl IntoIterator<Item = Point>>,
-        set_b: impl IntoIterator<Item = impl IntoIterator<Item = Point>>,
-        eps: f64,
-    ) -> Self {
-        let mut segments = Segments::default();
-        let mut shape_a = Vec::new();
-        segments.add_cycles(set_a);
-        shape_a.resize(segments.len(), true);
-        segments.add_cycles(set_b);
-        shape_a.resize(segments.len(), false);
-        Self::from_segments(segments, shape_a, eps)
-    }
-
-    fn from_segments(segments: Segments, shape_a: Vec<bool>, eps: f64) -> Self {
-        let mut ret = Self {
-            eps,
-            shape_a,
-            open_segs: vec![VecDeque::new(); segments.len()],
-
-            // We have at least as many output segments as input segments, so preallocate enough for them.
-            winding: OutputSegVec::with_capacity(segments.len()),
-            points: PointVec::with_capacity(segments.len()),
-            point_idx: HalfOutputSegVec::with_capacity(segments.len()),
-            point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
-            deleted: OutputSegVec::with_capacity(segments.len()),
-            scan_west: OutputSegVec::with_capacity(segments.len()),
-            scan_east: OutputSegVec::with_capacity(segments.len()),
-            scan_after: Vec::new(),
-            orig_seg: OutputSegVec::with_capacity(segments.len()),
-            segments: Segments::default(),
-        };
-        let mut sweep_state = Sweeper::new(&segments, eps);
-        let mut range_bufs = SweepLineRangeBuffers::default();
-        let mut line_bufs = SweepLineBuffers::default();
-        //dbg!(&segments);
-        while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
-            while let Some(positions) = line.next_range(&mut range_bufs, &segments) {
-                let range = positions.seg_range();
-                let scan_west_seg = if range.segs.start == 0 {
-                    None
-                } else {
-                    let prev_seg = positions.line().line_segment(range.segs.start - 1).unwrap();
-                    debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
-                    ret.open_segs[prev_seg.0].front().copied()
-                };
-                ret.process_sweep_line_range(positions, &segments, scan_west_seg);
-            }
-        }
-        ret.segments = segments;
-        ret.merge_coincident();
-        ret
     }
 
     fn process_sweep_line_range(
@@ -717,17 +701,8 @@ impl Topology {
             // Also, calculate their winding numbers and update `winding`.
             seg_buf.clear();
             for new_seg in connected_segs.connected_down() {
-                let winding_dir = if segments.positively_oriented(new_seg) {
-                    1
-                } else {
-                    -1
-                };
                 let prev_winding = winding;
-                if self.shape_a[new_seg.0] {
-                    winding.shape_a += winding_dir;
-                } else {
-                    winding.shape_b += winding_dir;
-                }
+                winding += W::single(self.tag[new_seg.0], segments.positively_oriented(new_seg));
                 let windings = HalfSegmentWindingNumbers {
                     clockwise: prev_winding,
                     counter_clockwise: winding,
@@ -760,17 +735,8 @@ impl Topology {
             let mut w = winding;
             seg_buf.clear();
             for new_seg in hsegs {
-                let winding_dir = if segments.positively_oriented(new_seg) {
-                    1
-                } else {
-                    -1
-                };
                 let prev_w = w;
-                if self.shape_a[new_seg.0] {
-                    w.shape_a += winding_dir;
-                } else {
-                    w.shape_b += winding_dir;
-                }
+                w += W::single(self.tag[new_seg.0], segments.positively_oriented(new_seg));
                 let windings = HalfSegmentWindingNumbers {
                     counter_clockwise: w,
                     clockwise: prev_w,
@@ -886,7 +852,7 @@ impl Topology {
     }
 
     /// Returns the winding numbers of an output half-segment.
-    pub fn winding(&self, idx: HalfOutputSegIdx) -> HalfSegmentWindingNumbers {
+    pub fn winding(&self, idx: HalfOutputSegIdx) -> HalfSegmentWindingNumbers<W> {
         if idx.first_half {
             self.winding[idx.idx]
         } else {
@@ -905,7 +871,7 @@ impl Topology {
     /// if a point with that winding number should be in the resulting set. For example,
     /// to compute a boolean "and" using the non-zero winding rule, `inside` should be
     /// `|w| w.shape_a != 0 && w.shape_b != 0`.
-    pub fn contours(&self, inside: impl Fn(WindingNumber) -> bool) -> Contours {
+    pub fn contours(&self, inside: impl Fn(W) -> bool) -> Contours {
         // We walk contours in sweep-line order of their smallest point. This mostly ensures
         // that we visit outer contours before we visit their children. However, when the inner
         // and outer contours share a point, we run into a problem. For example:
@@ -1188,6 +1154,86 @@ impl Topology {
             // (TODO: explain this better)
             self.eps / 4.0,
         )
+    }
+}
+
+impl Topology<BinaryWindingNumber> {
+    /// Creates a new `Topology` for two collections of polylines and a given tolerance.
+    ///
+    /// Each "set" is a collection of sequences of points; each sequence of
+    /// points is interpreted as a closed polyline (i.e. the last point will be
+    /// connected back to the first one).
+    pub fn from_polylines_binary(
+        set_a: impl IntoIterator<Item = impl IntoIterator<Item = Point>>,
+        set_b: impl IntoIterator<Item = impl IntoIterator<Item = Point>>,
+        eps: f64,
+    ) -> Self {
+        let mut segments = Segments::default();
+        let mut shape_a = Vec::new();
+        segments.add_cycles(set_a);
+        shape_a.resize(segments.len(), true);
+        segments.add_cycles(set_b);
+        shape_a.resize(segments.len(), false);
+        Self::from_segments_binary(segments, shape_a, eps)
+    }
+
+    /// Creates a new `Topology` from two collections of Bézier paths.
+    ///
+    /// TODO: this is silly, since a sequence of BezPaths can just be turned into a single
+    /// BezPath.
+    pub fn from_paths_binary(
+        set_a: impl IntoIterator<Item = BezPath>,
+        set_b: impl IntoIterator<Item = BezPath>,
+        eps: f64,
+    ) -> Self {
+        let mut segments = Segments::default();
+        let mut shape_a = Vec::new();
+        segments.add_bez_paths(set_a);
+        shape_a.resize(segments.len(), true);
+        segments.add_bez_paths(set_b);
+        shape_a.resize(segments.len(), false);
+        segments.check_invariants();
+        Self::from_segments_binary(segments, shape_a, eps)
+    }
+
+    fn from_segments_binary(segments: Segments, shape_a: Vec<bool>, eps: f64) -> Self {
+        let mut ret = Self {
+            eps,
+            tag: shape_a,
+            open_segs: vec![VecDeque::new(); segments.len()],
+
+            // We have at least as many output segments as input segments, so preallocate enough for them.
+            winding: OutputSegVec::with_capacity(segments.len()),
+            points: PointVec::with_capacity(segments.len()),
+            point_idx: HalfOutputSegVec::with_capacity(segments.len()),
+            point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
+            deleted: OutputSegVec::with_capacity(segments.len()),
+            scan_west: OutputSegVec::with_capacity(segments.len()),
+            scan_east: OutputSegVec::with_capacity(segments.len()),
+            scan_after: Vec::new(),
+            orig_seg: OutputSegVec::with_capacity(segments.len()),
+            segments: Segments::default(),
+        };
+        let mut sweep_state = Sweeper::new(&segments, eps);
+        let mut range_bufs = SweepLineRangeBuffers::default();
+        let mut line_bufs = SweepLineBuffers::default();
+        //dbg!(&segments);
+        while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
+            while let Some(positions) = line.next_range(&mut range_bufs, &segments) {
+                let range = positions.seg_range();
+                let scan_west_seg = if range.segs.start == 0 {
+                    None
+                } else {
+                    let prev_seg = positions.line().line_segment(range.segs.start - 1).unwrap();
+                    debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
+                    ret.open_segs[prev_seg.0].front().copied()
+                };
+                ret.process_sweep_line_range(positions, &segments, scan_west_seg);
+            }
+        }
+        ret.segments = segments;
+        ret.merge_coincident();
+        ret
     }
 }
 
@@ -1534,7 +1580,7 @@ mod tests {
     fn square() {
         let segs = [[p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]];
         let eps = 0.01;
-        let top = Topology::from_polylines(segs, EMPTY, eps);
+        let top = Topology::from_polylines_binary(segs, EMPTY, eps);
         //check_intersections(&top);
 
         insta::assert_ron_snapshot!(top);
@@ -1544,7 +1590,7 @@ mod tests {
     fn diamond() {
         let segs = [[p(0.0, 0.0), p(1.0, 1.0), p(0.0, 2.0), p(-1.0, 1.0)]];
         let eps = 0.01;
-        let top = Topology::from_polylines(segs, EMPTY, eps);
+        let top = Topology::from_polylines_binary(segs, EMPTY, eps);
         //check_intersections(&top);
 
         insta::assert_ron_snapshot!(top);
@@ -1555,7 +1601,7 @@ mod tests {
         let square = [[p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]];
         let diamond = [[p(0.0, 0.0), p(1.0, 1.0), p(0.0, 2.0), p(-1.0, 1.0)]];
         let eps = 0.01;
-        let top = Topology::from_polylines(square, diamond, eps);
+        let top = Topology::from_polylines_binary(square, diamond, eps);
         //check_intersections(&top);
 
         insta::assert_ron_snapshot!(top);
@@ -1573,7 +1619,7 @@ mod tests {
             p(0.0, 1.0),
         ]];
         let eps = 0.01;
-        let top = Topology::from_polylines(segs, EMPTY, eps);
+        let top = Topology::from_polylines_binary(segs, EMPTY, eps);
         //check_intersections(&top);
 
         insta::assert_ron_snapshot!(top);
@@ -1584,7 +1630,7 @@ mod tests {
         let outer = [[p(-2.0, -2.0), p(2.0, -2.0), p(2.0, 2.0), p(-2.0, 2.0)]];
         let inner = [[p(-1.0, -1.0), p(1.0, -1.0), p(1.0, 1.0), p(-1.0, 1.0)]];
         let eps = 0.01;
-        let top = Topology::from_polylines(outer, inner, eps);
+        let top = Topology::from_polylines_binary(outer, inner, eps);
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
         insta::assert_ron_snapshot!((&top, contours, top.build_scan_line_orders()));
@@ -1625,7 +1671,7 @@ mod tests {
             [p(4.0, 1.0), p(3.0, 1.0), p(3.0, 0.5), p(4.0, 0.5)],
         ];
         let eps = 0.01;
-        let top = Topology::from_polylines(mid, left_right, eps);
+        let top = Topology::from_polylines_binary(mid, left_right, eps);
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
         insta::assert_ron_snapshot!((&top, contours, top.build_scan_line_orders()));
@@ -1641,7 +1687,7 @@ mod tests {
             // [p(4.0, 1.0), p(3.0, 1.0), p(3.0, 0.5), p(4.0, 0.5)],
         ];
         let eps = 0.5;
-        let top = Topology::from_polylines(big, left, eps);
+        let top = Topology::from_polylines_binary(big, left, eps);
 
         // The output segs coming from the left side of the big square.
         let indices: Vec<_> = top
@@ -1696,7 +1742,7 @@ mod tests {
             [p(-0.1, 0.0), p(0.0, 2.0), p(0.1, 0.0)],
         ];
         let eps = 0.01;
-        let top = Topology::from_polylines(outer, inners, eps);
+        let top = Topology::from_polylines_binary(outer, inners, eps);
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
         insta::assert_ron_snapshot!((top, contours));
@@ -1747,7 +1793,7 @@ mod tests {
             .map(|p| realize_perturbation(&base, p))
             .collect::<Vec<_>>();
         let eps = 0.1;
-        let _top = Topology::from_polylines(perturbed_polylines, EMPTY, eps);
+        let _top = Topology::from_polylines_binary(perturbed_polylines, EMPTY, eps);
         //check_intersections(&top);
     }
 

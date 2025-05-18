@@ -22,7 +22,8 @@ pub fn main() -> anyhow::Result<()> {
     let contours = svg_to_bezpaths(&tree);
 
     let eps = args.epsilon.unwrap_or(0.1);
-    let top = Topology::from_paths([contours[0].clone()], contours[1..].iter().cloned(), eps);
+    let top =
+        Topology::from_paths_binary([contours[0].clone()], contours[1..].iter().cloned(), eps);
 
     let bbox = top.bounding_box();
     let min_x = bbox.min_x();

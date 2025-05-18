@@ -399,7 +399,7 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
         .collect();
 
     let eps = 16.0;
-    let top = Topology::from_paths(bezs, Vec::new(), eps);
+    let top = Topology::from_paths_binary(bezs, Vec::new(), eps);
     let out_paths = top.compute_positions();
 
     let pad = 2.0 * eps;

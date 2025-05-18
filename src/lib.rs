@@ -23,7 +23,7 @@ pub use segments::{SegIdx, Segments};
 #[doc(hidden)]
 pub mod treevec;
 
-use topology::{Topology, WindingNumber};
+use topology::{BinaryWindingNumber, Topology};
 
 #[cfg(test)]
 pub mod perturbation;
@@ -83,9 +83,9 @@ pub fn boolean_op(
 
     debug_assert!(eps.is_finite());
 
-    let top = Topology::from_paths([set_a.clone()], [set_b.clone()], eps);
+    let top = Topology::from_paths_binary([set_a.clone()], [set_b.clone()], eps);
 
-    let inside = |windings: WindingNumber| {
+    let inside = |windings: BinaryWindingNumber| {
         let inside_one = |winding| match fill_rule {
             FillRule::EvenOdd => winding % 2 != 0,
             FillRule::NonZero => winding != 0,

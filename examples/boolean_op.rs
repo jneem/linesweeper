@@ -6,7 +6,7 @@ use svg::Document;
 
 use linesweeper::{
     generators,
-    topology::{OutputSegVec, Topology},
+    topology::{BinaryWindingNumber, OutputSegVec, Topology},
     Point,
 };
 use linesweeper_util::svg_to_bezpaths;
@@ -113,7 +113,7 @@ pub fn main() -> anyhow::Result<()> {
     let (shape_a, shape_b) = get_contours(&args.input)?;
 
     let eps = args.epsilon.unwrap_or(0.1);
-    let top = Topology::from_paths(shape_a.clone(), shape_b.clone(), eps);
+    let top = Topology::from_paths_binary(shape_a.clone(), shape_b.clone(), eps);
     let bbox = top.bounding_box();
     let min_x = bbox.min_x();
     let min_y = bbox.min_y();
@@ -213,7 +213,7 @@ fn add_op(
     mut doc: Document,
     op: Op,
     non_zero: bool,
-    top: &Topology,
+    top: &Topology<BinaryWindingNumber>,
     out_paths: &OutputSegVec<(BezPath, Option<usize>)>,
     x_off: f64,
     y_off: f64,

@@ -58,7 +58,7 @@ fn build_topology(c: &mut Criterion) {
     let eps = 0.01f64;
     c.bench_function("checkerboard: build topology", |b| {
         b.iter(|| {
-            black_box(Topology::from_paths(
+            black_box(Topology::from_paths_binary(
                 [path_even.clone()],
                 [path_odd.clone()],
                 eps,
@@ -71,7 +71,7 @@ fn build_topology(c: &mut Criterion) {
     let eps = 0.01f64;
     c.bench_function("slanted_checkerboard: build topology", |b| {
         b.iter(|| {
-            black_box(Topology::from_polylines(
+            black_box(Topology::from_polylines_binary(
                 contours_even.clone(),
                 contours_odd.clone(),
                 eps,

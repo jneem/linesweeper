@@ -91,7 +91,7 @@ fn build_topology(c: &mut Criterion) {
     const EMPTY: [BezPath; 0] = [];
 
     c.bench_function("logo: build topology", |b| {
-        b.iter(|| black_box(Topology::from_paths(bezpaths.clone(), EMPTY, 0.01)));
+        b.iter(|| black_box(Topology::from_paths_binary(bezpaths.clone(), EMPTY, 0.01)));
     });
 }
 
