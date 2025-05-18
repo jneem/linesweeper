@@ -79,23 +79,22 @@ fn points_to_bez(ps: Vec<Point>) -> BezPath {
     ret
 }
 
-fn contours_to_bezs(
-    (cs0, cs1): (Vec<Vec<Point>>, Vec<Vec<Point>>),
-) -> (Vec<BezPath>, Vec<BezPath>) {
+fn contours_to_bezs((cs0, cs1): (Vec<Vec<Point>>, Vec<Vec<Point>>)) -> (BezPath, BezPath) {
     (
-        cs0.into_iter().map(points_to_bez).collect(),
-        cs1.into_iter().map(points_to_bez).collect(),
+        cs0.into_iter().flat_map(points_to_bez).collect(),
+        cs1.into_iter().flat_map(points_to_bez).collect(),
     )
 }
 
-fn get_contours(input: &Input) -> anyhow::Result<(Vec<BezPath>, Vec<BezPath>)> {
+fn get_contours(input: &Input) -> anyhow::Result<(BezPath, BezPath)> {
     match (&input.input, &input.example) {
         (Some(path), None) => {
             let input = std::fs::read_to_string(path)?;
             let tree = usvg::Tree::from_str(&input, &usvg::Options::default())?;
-            let mut contours = svg_to_bezpaths(&tree);
-            let rest = contours.split_off(1);
-            Ok((contours, rest))
+            let mut contours = svg_to_bezpaths(&tree).into_iter();
+            let first = contours.next().unwrap();
+            let rest = contours.flatten().collect();
+            Ok((first, rest))
         }
         (None, Some(example)) => match example {
             Example::Checkerboard => Ok(contours_to_bezs(generators::checkerboard(10))),
@@ -113,7 +112,7 @@ pub fn main() -> anyhow::Result<()> {
     let (shape_a, shape_b) = get_contours(&args.input)?;
 
     let eps = args.epsilon.unwrap_or(0.1);
-    let top = Topology::from_paths_binary(shape_a.clone(), shape_b.clone(), eps);
+    let top = Topology::from_paths_binary(&shape_a, &shape_b, eps);
     let bbox = top.bounding_box();
     let min_x = bbox.min_x();
     let min_y = bbox.min_y();
@@ -129,7 +128,7 @@ pub fn main() -> anyhow::Result<()> {
     );
 
     // Draw the original document.
-    for c in shape_a.into_iter().chain(shape_b) {
+    for c in [shape_a, shape_b] {
         let p = c.segments().next().unwrap().start();
         let mut data = svg::node::element::path::Data::new();
         data = data.move_to((p.x, p.y));

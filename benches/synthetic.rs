@@ -57,13 +57,7 @@ fn build_topology(c: &mut Criterion) {
 
     let eps = 0.01f64;
     c.bench_function("checkerboard: build topology", |b| {
-        b.iter(|| {
-            black_box(Topology::from_paths_binary(
-                [path_even.clone()],
-                [path_odd.clone()],
-                eps,
-            ))
-        });
+        b.iter(|| black_box(Topology::from_paths_binary(&path_even, &path_odd, eps)));
     });
 
     let (contours_even, contours_odd) = slanted_checkerboard(10);

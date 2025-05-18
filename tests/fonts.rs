@@ -85,7 +85,7 @@ fn test_outline(elts1: Vec<PathElement>, elts2: Vec<PathElement>) -> Result<(), 
 
     let path1: BezPath = elts1.into_iter().map(skrifa_to_kurbo).collect();
     let path2: BezPath = elts2.into_iter().map(skrifa_to_kurbo).collect();
-    let top = Topology::from_paths_binary([path1, path2], Vec::new(), 1e-3);
+    let top = Topology::from_paths_binary(&path1, &path2, 1e-3);
     let _out_paths = top.compute_positions();
     Ok(())
 }

@@ -73,10 +73,13 @@ fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
 fn just_the_sweep(c: &mut Criterion) {
     let input = include_str!("../examples/linebender.svg");
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
-    let bezpaths = svg_to_bezpaths(&tree);
+    let path = svg_to_bezpaths(&tree)
+        .into_iter()
+        .flatten()
+        .collect::<BezPath>();
 
     let mut segs = Segments::default();
-    segs.add_bez_paths(bezpaths);
+    segs.add_bez_path(&path);
 
     c.bench_function("logo: just the sweep", |b| {
         b.iter(|| linesweeper::sweep::sweep(&segs, 0.01, |_, _| {}))
@@ -86,12 +89,13 @@ fn just_the_sweep(c: &mut Criterion) {
 fn build_topology(c: &mut Criterion) {
     let input = include_str!("../examples/linebender.svg");
     let tree = usvg::Tree::from_str(input, &usvg::Options::default()).unwrap();
-    let bezpaths = svg_to_bezpaths(&tree);
-
-    const EMPTY: [BezPath; 0] = [];
+    let path = svg_to_bezpaths(&tree)
+        .into_iter()
+        .flatten()
+        .collect::<BezPath>();
 
     c.bench_function("logo: build topology", |b| {
-        b.iter(|| black_box(Topology::from_paths_binary(bezpaths.clone(), EMPTY, 0.01)));
+        b.iter(|| black_box(Topology::from_paths_binary(&path, &BezPath::new(), 0.01)));
     });
 }
 

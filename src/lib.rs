@@ -83,7 +83,7 @@ pub fn boolean_op(
 
     debug_assert!(eps.is_finite());
 
-    let top = Topology::from_paths_binary([set_a.clone()], [set_b.clone()], eps);
+    let top = Topology::from_paths_binary(set_a, set_b, eps);
 
     let inside = |windings: BinaryWindingNumber| {
         let inside_one = |winding| match fill_rule {

@@ -1812,7 +1812,12 @@ mod tests {
         };
 
         let mut segs = Segments::default();
-        segs.add_bez_paths([to_path(c0), to_path(c1), to_path(c2)]);
+        segs.add_bez_path(
+            &[to_path(c0), to_path(c1), to_path(c2)]
+                .into_iter()
+                .flatten()
+                .collect(),
+        );
         insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.25));
     }
 

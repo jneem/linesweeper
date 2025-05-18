@@ -333,13 +333,13 @@ fn generate_sweep_snapshot(path: PathBuf) -> Result<(), Failed> {
     let tree = usvg::Tree::from_str(&input, &usvg::Options::default()).unwrap();
     let bezs = linesweeper_util::svg_to_bezpaths(&tree);
     let bbox = linesweeper_util::bezier_bounding_box(bezs.iter());
-    let bezs: Vec<_> = bezs
+    let bez: BezPath = bezs
         .into_iter()
-        .map(|p| Affine::translate(-bbox.origin().to_vec2()) * p)
+        .flat_map(|p| Affine::translate(-bbox.origin().to_vec2()) * p)
         .collect();
 
     let mut segments = Segments::default();
-    segments.add_bez_paths(bezs.clone());
+    segments.add_bez_path(&bez);
     segments.check_invariants();
 
     let eps = 16.0;
@@ -366,9 +366,7 @@ fn generate_sweep_snapshot(path: PathBuf) -> Result<(), Failed> {
     let mut b = Rect::new(pad, pad, pad + bbox.width(), pad + bbox.height());
     while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
         while let Some(range) = line.next_range(&mut range_bufs, &segments) {
-            for p in &bezs {
-                draw_orig_path(&mut pixmap, p, b.origin());
-            }
+            draw_orig_path(&mut pixmap, &bez, b.origin());
             draw_sweep_line_range(&mut pixmap, &segments, range, b, pad);
 
             b = b + Vec2::new(0.0, bbox.height() + pad);
@@ -393,13 +391,13 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
     let tree = usvg::Tree::from_str(&input, &usvg::Options::default()).unwrap();
     let bezs = linesweeper_util::svg_to_bezpaths(&tree);
     let bbox = linesweeper_util::bezier_bounding_box(bezs.iter());
-    let bezs: Vec<_> = bezs
+    let bez: BezPath = bezs
         .into_iter()
-        .map(|p| Affine::translate(-bbox.origin().to_vec2()) * p)
+        .flat_map(|p| Affine::translate(-bbox.origin().to_vec2()) * p)
         .collect();
 
     let eps = 16.0;
-    let top = Topology::from_paths_binary(bezs, Vec::new(), eps);
+    let top = Topology::from_paths_binary(&bez, &BezPath::new(), eps);
     let out_paths = top.compute_positions();
 
     let pad = 2.0 * eps;

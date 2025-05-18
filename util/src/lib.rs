@@ -1,5 +1,8 @@
 use kurbo::{BezPath, ParamCurve as _, Rect, Shape};
 
+// TODO: this function also decomposes all the bezier paths so that
+// there are no internal `MoveTo`s. We needed that at some point, but I think
+// not anymore?
 pub fn svg_to_bezpaths(tree: &usvg::Tree) -> Vec<BezPath> {
     let mut ret = Vec::new();
 

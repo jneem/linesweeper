@@ -101,6 +101,18 @@ impl std::fmt::Debug for BinaryWindingNumber {
     }
 }
 
+impl WindingNumber for i32 {
+    type Tag = ();
+
+    fn single((): Self::Tag, positive: bool) -> Self {
+        if positive {
+            1
+        } else {
+            -1
+        }
+    }
+}
+
 /// For a segment, we store two winding numbers (one on each side of the segment).
 ///
 /// For simple segments, the winding numbers on two sides only differ by one. Once
@@ -518,6 +530,64 @@ pub struct Topology<W: WindingNumber> {
 }
 
 impl<W: WindingNumber> Topology<W> {
+    /// Construct a new topology from a collection of paths and tags.
+    ///
+    /// See [`WindingNumber`] about the tags are for.
+    pub fn from_paths<'a, Iter>(paths: Iter, eps: f64) -> Self
+    where
+        Iter: Iterator<Item = (&'a BezPath, W::Tag)>,
+    {
+        let mut segments = Segments::default();
+        let mut tag = Vec::new();
+        for (p, t) in paths {
+            segments.add_path_without_updating_enter_exit(p);
+            tag.resize(segments.len(), t);
+        }
+        segments.update_enter_exit(0);
+        segments.check_invariants();
+        Self::from_segments(segments, tag, eps)
+    }
+
+    fn from_segments(segments: Segments, tag: Vec<W::Tag>, eps: f64) -> Self {
+        let mut ret = Self {
+            eps,
+            tag,
+            open_segs: vec![VecDeque::new(); segments.len()],
+
+            // We have at least as many output segments as input segments, so preallocate enough for them.
+            winding: OutputSegVec::with_capacity(segments.len()),
+            points: PointVec::with_capacity(segments.len()),
+            point_idx: HalfOutputSegVec::with_capacity(segments.len()),
+            point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
+            deleted: OutputSegVec::with_capacity(segments.len()),
+            scan_west: OutputSegVec::with_capacity(segments.len()),
+            scan_east: OutputSegVec::with_capacity(segments.len()),
+            scan_after: Vec::new(),
+            orig_seg: OutputSegVec::with_capacity(segments.len()),
+            segments: Segments::default(),
+        };
+        let mut sweep_state = Sweeper::new(&segments, eps);
+        let mut range_bufs = SweepLineRangeBuffers::default();
+        let mut line_bufs = SweepLineBuffers::default();
+        //dbg!(&segments);
+        while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
+            while let Some(positions) = line.next_range(&mut range_bufs, &segments) {
+                let range = positions.seg_range();
+                let scan_west_seg = if range.segs.start == 0 {
+                    None
+                } else {
+                    let prev_seg = positions.line().line_segment(range.segs.start - 1).unwrap();
+                    debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
+                    ret.open_segs[prev_seg.0].front().copied()
+                };
+                ret.process_sweep_line_range(positions, &segments, scan_west_seg);
+            }
+        }
+        ret.segments = segments;
+        ret.merge_coincident();
+        ret
+    }
+
     /// We're working on building up a list of half-segments that all meet at a point.
     /// Maybe we've done a few already, but there's a region where we may add more.
     /// Something like this:
@@ -1157,6 +1227,13 @@ impl<W: WindingNumber> Topology<W> {
     }
 }
 
+impl Topology<i32> {
+    /// Construct a new topology from a single path.
+    pub fn from_path(path: &BezPath, eps: f64) -> Self {
+        Self::from_paths(std::iter::once((path, ())), eps)
+    }
+}
+
 impl Topology<BinaryWindingNumber> {
     /// Creates a new `Topology` for two collections of polylines and a given tolerance.
     ///
@@ -1174,66 +1251,14 @@ impl Topology<BinaryWindingNumber> {
         shape_a.resize(segments.len(), true);
         segments.add_cycles(set_b);
         shape_a.resize(segments.len(), false);
-        Self::from_segments_binary(segments, shape_a, eps)
+        Self::from_segments(segments, shape_a, eps)
     }
 
-    /// Creates a new `Topology` from two collections of Bézier paths.
+    /// Creates a new `Topology` from two Bézier paths.
     ///
-    /// TODO: this is silly, since a sequence of BezPaths can just be turned into a single
-    /// BezPath.
-    pub fn from_paths_binary(
-        set_a: impl IntoIterator<Item = BezPath>,
-        set_b: impl IntoIterator<Item = BezPath>,
-        eps: f64,
-    ) -> Self {
-        let mut segments = Segments::default();
-        let mut shape_a = Vec::new();
-        segments.add_bez_paths(set_a);
-        shape_a.resize(segments.len(), true);
-        segments.add_bez_paths(set_b);
-        shape_a.resize(segments.len(), false);
-        segments.check_invariants();
-        Self::from_segments_binary(segments, shape_a, eps)
-    }
-
-    fn from_segments_binary(segments: Segments, shape_a: Vec<bool>, eps: f64) -> Self {
-        let mut ret = Self {
-            eps,
-            tag: shape_a,
-            open_segs: vec![VecDeque::new(); segments.len()],
-
-            // We have at least as many output segments as input segments, so preallocate enough for them.
-            winding: OutputSegVec::with_capacity(segments.len()),
-            points: PointVec::with_capacity(segments.len()),
-            point_idx: HalfOutputSegVec::with_capacity(segments.len()),
-            point_neighbors: HalfOutputSegVec::with_capacity(segments.len()),
-            deleted: OutputSegVec::with_capacity(segments.len()),
-            scan_west: OutputSegVec::with_capacity(segments.len()),
-            scan_east: OutputSegVec::with_capacity(segments.len()),
-            scan_after: Vec::new(),
-            orig_seg: OutputSegVec::with_capacity(segments.len()),
-            segments: Segments::default(),
-        };
-        let mut sweep_state = Sweeper::new(&segments, eps);
-        let mut range_bufs = SweepLineRangeBuffers::default();
-        let mut line_bufs = SweepLineBuffers::default();
-        //dbg!(&segments);
-        while let Some(mut line) = sweep_state.next_line(&mut line_bufs) {
-            while let Some(positions) = line.next_range(&mut range_bufs, &segments) {
-                let range = positions.seg_range();
-                let scan_west_seg = if range.segs.start == 0 {
-                    None
-                } else {
-                    let prev_seg = positions.line().line_segment(range.segs.start - 1).unwrap();
-                    debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
-                    ret.open_segs[prev_seg.0].front().copied()
-                };
-                ret.process_sweep_line_range(positions, &segments, scan_west_seg);
-            }
-        }
-        ret.segments = segments;
-        ret.merge_coincident();
-        ret
+    /// The two Bézier paths represent two different sets for the purpose of boolean set operations.
+    pub fn from_paths_binary(set_a: &BezPath, set_b: &BezPath, eps: f64) -> Self {
+        Self::from_paths([(set_a, true), (set_b, false)].into_iter(), eps)
     }
 }
 

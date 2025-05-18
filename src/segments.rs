@@ -259,15 +259,13 @@ impl Segments {
     }
 
     /// Add a collection of Bézier paths to this arena.
-    pub fn add_bez_paths(&mut self, ps: impl IntoIterator<Item = BezPath>) {
+    pub fn add_bez_path(&mut self, p: &BezPath) {
         let old_len = self.segs.len();
-        for p in ps {
-            self.add_path_without_updating_enter_exit(&p);
-        }
+        self.add_path_without_updating_enter_exit(p);
         self.update_enter_exit(old_len);
     }
 
-    fn add_path_without_updating_enter_exit(&mut self, p: &BezPath) {
+    pub(crate) fn add_path_without_updating_enter_exit(&mut self, p: &BezPath) {
         let mut subpaths = Subpaths {
             inner: p.iter().peekable(),
         };
@@ -335,7 +333,7 @@ impl Segments {
         ret
     }
 
-    fn update_enter_exit(&mut self, old_len: usize) {
+    pub(crate) fn update_enter_exit(&mut self, old_len: usize) {
         for idx in old_len..self.len() {
             let seg_idx = SegIdx(idx);
             let seg = &self.segs[seg_idx.0];
