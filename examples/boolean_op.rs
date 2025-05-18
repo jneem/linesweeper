@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 use clap::{Args, Parser};
-use kurbo::{BezPath, ParamCurve as _};
+use kurbo::BezPath;
 use svg::Document;
 
 use linesweeper::{
@@ -129,13 +129,16 @@ pub fn main() -> anyhow::Result<()> {
 
     // Draw the original document.
     for c in [shape_a, shape_b] {
-        let p = c.segments().next().unwrap().start();
         let mut data = svg::node::element::path::Data::new();
-        data = data.move_to((p.x, p.y));
-
-        for s in c.segments() {
-            let c = s.to_cubic();
-            data = data.cubic_curve_to((c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y));
+        for el in c {
+            let p = |point: kurbo::Point| (point.x, point.y);
+            data = match el {
+                kurbo::PathEl::MoveTo(p0) => data.move_to(p(p0)),
+                kurbo::PathEl::LineTo(p0) => data.line_to(p(p0)),
+                kurbo::PathEl::QuadTo(p0, p1) => data.quadratic_curve_to((p(p0), p(p1))),
+                kurbo::PathEl::CurveTo(p0, p1, p2) => data.cubic_curve_to((p(p0), p(p1), p(p2))),
+                kurbo::PathEl::ClosePath => data.close(),
+            };
         }
 
         let path = svg::node::element::Path::new()
