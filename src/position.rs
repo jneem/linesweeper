@@ -168,7 +168,7 @@ pub(crate) fn compute_positions(
     orig_seg_map: &OutputSegVec<SegIdx>,
     cmp: &mut ComparisonCache,
     endpoints: &HalfOutputSegVec<kurbo::Point>,
-    order: &ScanLineOrder,
+    scan_order: &ScanLineOrder,
     accuracy: f64,
 ) -> OutputSegVec<(BezPath, Option<usize>)> {
     let mut out = OutputSegVec::<(BezPath, Option<usize>)>::with_size(orig_seg_map.len());
@@ -197,17 +197,19 @@ pub(crate) fn compute_positions(
         let mut y1 = endpoints[entry.idx.second_half()].y;
         let mut west_scan = vec![entry.idx];
         let mut cur = entry.idx;
-        while let Some(nbr) = order.west_neighbor_after(cur, y0) {
-            let cmp = cmp.compare_segments(segs, orig_seg_map[nbr], orig_seg_map[cur]);
-            let (_, cmp_end_y, cmp_order) = cmp.iter().find(|(_, end_y, _)| *end_y > y0).unwrap();
+        while let Some(nbr) = scan_order.west_neighbor_after(cur, y0) {
+            let order = cmp.compare_segments(segs, orig_seg_map[nbr], orig_seg_map[cur]);
+            let (_, cmp_end_y, cmp_order) = order.iter().find(|(_, end_y, _)| *end_y > y0).unwrap();
 
-            // TODO: if it's Order::Left, we can look at the west_neighbor_after cmp_end_y
-            // and so on.
-            y1 = y1.min(cmp_end_y);
             if cmp_order == Order::Left {
+                let next_close_y = scan_order
+                    .close_west_neighbor_height_after(cur, y0, orig_seg_map, segs, cmp)
+                    .unwrap_or(f64::INFINITY);
+                y1 = y1.min(next_close_y);
                 break;
             } else {
                 debug_assert_eq!(cmp_order, Order::Ish);
+                y1 = y1.min(cmp_end_y);
                 west_scan.push(nbr);
             }
             cur = nbr;
@@ -215,12 +217,16 @@ pub(crate) fn compute_positions(
 
         let mut east_scan = vec![];
         let mut cur = entry.idx;
-        while let Some(nbr) = order.east_neighbor_after(cur, y0) {
-            let cmp = cmp.compare_segments(segs, orig_seg_map[cur], orig_seg_map[nbr]);
-            let (_, cmp_end_y, cmp_order) = cmp.iter().find(|(_, end_y, _)| *end_y > y0).unwrap();
+        while let Some(nbr) = scan_order.east_neighbor_after(cur, y0) {
+            let order = cmp.compare_segments(segs, orig_seg_map[cur], orig_seg_map[nbr]);
+            let (_, cmp_end_y, cmp_order) = order.iter().find(|(_, end_y, _)| *end_y > y0).unwrap();
 
             y1 = y1.min(cmp_end_y);
             if cmp_order == Order::Left {
+                let next_close_y = scan_order
+                    .close_east_neighbor_height_after(cur, y0, orig_seg_map, segs, cmp)
+                    .unwrap_or(f64::INFINITY);
+                y1 = y1.min(next_close_y);
                 break;
             } else {
                 debug_assert_eq!(cmp_order, Order::Ish);
@@ -232,7 +238,6 @@ pub(crate) fn compute_positions(
         let mut neighbors = west_scan;
         neighbors.reverse();
         neighbors.extend(east_scan);
-        dbg!(&neighbors);
         if neighbors.len() == 1 {
             let idx = entry.idx;
             // We're far from everything, so just copy the input bezier to the output.
@@ -273,7 +278,7 @@ pub(crate) fn compute_positions(
             }
         }
     }
-    dbg!(out)
+    out
 }
 
 #[cfg(test)]

@@ -467,44 +467,48 @@ expression: "(&top, contours, top.build_scan_line_orders())"
     ),
   ],
 ), ScanLineOrder(
-  west_map: OutputSegVec(
-    inner: [
-      [],
-      [],
-      [
-        (-2.0, Some(OutputSegIdx(0))),
-        (-1.0, Some(OutputSegIdx(5))),
-        (1.0, Some(OutputSegIdx(0))),
+  west_map: HalfScanLineOrder(
+    inner: OutputSegVec(
+      inner: [
+        [],
+        [],
+        [
+          (-2.0, Some(OutputSegIdx(0))),
+          (-1.0, Some(OutputSegIdx(5))),
+          (1.0, Some(OutputSegIdx(0))),
+        ],
+        [
+          (-1.0, Some(OutputSegIdx(0))),
+        ],
+        [],
+        [
+          (-1.0, Some(OutputSegIdx(3))),
+        ],
+        [],
+        [],
       ],
-      [
-        (-1.0, Some(OutputSegIdx(0))),
-      ],
-      [],
-      [
-        (-1.0, Some(OutputSegIdx(3))),
-      ],
-      [],
-      [],
-    ],
+    ),
   ),
-  east_map: OutputSegVec(
-    inner: [
-      [
-        (-2.0, Some(OutputSegIdx(2))),
-        (-1.0, Some(OutputSegIdx(3))),
-        (1.0, Some(OutputSegIdx(2))),
+  east_map: HalfScanLineOrder(
+    inner: OutputSegVec(
+      inner: [
+        [
+          (-2.0, Some(OutputSegIdx(2))),
+          (-1.0, Some(OutputSegIdx(3))),
+          (1.0, Some(OutputSegIdx(2))),
+        ],
+        [],
+        [],
+        [
+          (-1.0, Some(OutputSegIdx(5))),
+        ],
+        [],
+        [
+          (-1.0, Some(OutputSegIdx(2))),
+        ],
+        [],
+        [],
       ],
-      [],
-      [],
-      [
-        (-1.0, Some(OutputSegIdx(5))),
-      ],
-      [],
-      [
-        (-1.0, Some(OutputSegIdx(2))),
-      ],
-      [],
-      [],
-    ],
+    ),
   ),
 ))

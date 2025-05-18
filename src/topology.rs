@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use kurbo::{BezPath, Rect, Shape};
 
 use crate::{
-    curve::y_subsegment,
+    curve::{y_subsegment, Order},
     geom::Point,
     order::ComparisonCache,
     segments::{SegIdx, Segments},
@@ -1147,7 +1147,7 @@ impl Topology {
             vec.dedup();
         }
 
-        let ret = ScanLineOrder { west_map, east_map };
+        let ret = ScanLineOrder::new(west_map, east_map);
         #[cfg(feature = "slow-asserts")]
         ret.check_invariants(&self.orig_seg, &self.segments);
         ret
@@ -1191,6 +1191,73 @@ impl Topology {
     }
 }
 
+/// One direction of a `ScanLineOrder`.
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Debug)]
+struct HalfScanLineOrder {
+    inner: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
+}
+
+impl HalfScanLineOrder {
+    fn neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
+        // TODO: maybe binary search, if this might get big?
+        self.iter(seg)
+            .take_while(|(y0, _, _)| *y0 <= y)
+            .find(|(_, y1, _)| *y1 > y)
+            .and_then(|(_, _, idx)| idx)
+    }
+
+    /// Returns an iterator over `(y0, y1, maybe_seg)`.
+    ///
+    /// Each item in the iterator tells us that `maybe_seg` is `seg`'s neighbor
+    /// between heights `y0` and `y1`. If `maybe_seg` is `None`, it means `seg`
+    /// has no neighbor between heights `y0` and `y1`. The y intervals in this
+    /// iterator are guaranteed to be in increasing order, which each `y0` equal to
+    /// the previous `y1`. The last `y1` will be `f64::INFINITY`.
+    fn iter(
+        &self,
+        seg: OutputSegIdx,
+    ) -> impl Iterator<Item = (f64, f64, Option<OutputSegIdx>)> + '_ {
+        let ends = self.inner[seg]
+            .iter()
+            .map(|(y0, _)| *y0)
+            .skip(1)
+            .chain(std::iter::once(f64::INFINITY));
+        self.inner[seg]
+            .iter()
+            .zip(ends)
+            .map(|((y0, maybe_seg), y1)| (*y0, y1, *maybe_seg))
+    }
+
+    fn close_neighbor_height_after(
+        &self,
+        seg: OutputSegIdx,
+        y: f64,
+        orig_seg: &OutputSegVec<SegIdx>,
+        segs: &Segments,
+        cmp: &mut ComparisonCache,
+    ) -> Option<f64> {
+        for (_, y1, other_seg) in self.iter(seg) {
+            if y1 <= y {
+                continue;
+            }
+
+            if let Some(other_seg) = other_seg {
+                let order = cmp.compare_segments(segs, orig_seg[seg], orig_seg[other_seg]);
+                let next_ish = order
+                    .iter()
+                    .take_while(|(order_y0, _, _)| *order_y0 < y1)
+                    .filter(|(_, _, order)| *order == Order::Ish)
+                    .find(|(order_y0, _, _)| *order_y0 >= y);
+                if let Some((order_y0, _, _)) = next_ish {
+                    return Some(order_y0);
+                }
+            }
+        }
+        None
+    }
+}
+
 /// A summary of all the east-west ordering relations between non-horizontal
 /// output segments.
 #[cfg_attr(test, derive(serde::Serialize))]
@@ -1198,45 +1265,65 @@ impl Topology {
 pub struct ScanLineOrder {
     /// Each entry is a list of `(y, west_neighbor)`: starting at `y`, `west_neighbor`
     /// is the segment to my west. The `y`s are in increasing order.
-    pub west_map: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
+    west_map: HalfScanLineOrder,
     /// Each entry is a list of `(y, east_neighbor)`: starting at `y`, `east_neighbor`
     /// is the segment to my east. The `y`s are in increasing order.
-    pub east_map: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
+    east_map: HalfScanLineOrder,
 }
 
 impl ScanLineOrder {
-    fn neighbor_after(
-        map: &OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
+    fn new(
+        west: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
+        east: OutputSegVec<Vec<(f64, Option<OutputSegIdx>)>>,
+    ) -> Self {
+        Self {
+            west_map: HalfScanLineOrder { inner: west },
+            east_map: HalfScanLineOrder { inner: east },
+        }
+    }
+
+    /// Returns the neighbor to the west of `seg` just after height `y`.
+    pub fn west_neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
+        self.west_map.neighbor_after(seg, y)
+    }
+
+    /// Returns the neighbor to the east of `seg` just after height `y`.
+    pub fn east_neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
+        self.east_map.neighbor_after(seg, y)
+    }
+
+    /// Returns the next height (greater than or equal to `y`) at which `seg` has a close
+    /// neighbor to the east.
+    pub fn close_east_neighbor_height_after(
+        &self,
         seg: OutputSegIdx,
         y: f64,
-    ) -> Option<OutputSegIdx> {
-        // TODO: maybe binary search, if this might get big?
-        let mut last_idx = None;
-        for (start_y, idx) in map[seg].iter() {
-            if *start_y > y {
-                return last_idx;
-            }
-            last_idx = *idx;
-        }
-        last_idx
+        orig_seg: &OutputSegVec<SegIdx>,
+        segs: &Segments,
+        cmp: &mut ComparisonCache,
+    ) -> Option<f64> {
+        self.east_map
+            .close_neighbor_height_after(seg, y, orig_seg, segs, cmp)
     }
 
-    /// Returns the neighbor to the west of `seg` at height `y`, or just after height `y` if
-    /// is exactly on some sweep-line where things change.
-    pub fn west_neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
-        Self::neighbor_after(&self.west_map, seg, y)
-    }
-
-    /// Returns the neighbor to the east of `seg` at height `y`, or just after height `y` if
-    /// is exactly on some sweep-line where things change.
-    pub fn east_neighbor_after(&self, seg: OutputSegIdx, y: f64) -> Option<OutputSegIdx> {
-        Self::neighbor_after(&self.east_map, seg, y)
+    /// Returns the next height (greater than or equal to `y`) at which `seg` has a close
+    /// neighbor to the west.
+    pub fn close_west_neighbor_height_after(
+        &self,
+        seg: OutputSegIdx,
+        y: f64,
+        orig_seg: &OutputSegVec<SegIdx>,
+        segs: &Segments,
+        cmp: &mut ComparisonCache,
+    ) -> Option<f64> {
+        self.west_map
+            .close_neighbor_height_after(seg, y, orig_seg, segs, cmp)
     }
 
     #[cfg(feature = "slow-asserts")]
     fn check_invariants(&self, orig_seg: &OutputSegVec<SegIdx>, segs: &Segments) {
-        for idx in self.east_map.indices() {
-            for &(y, east_idx) in &self.east_map[idx] {
+        for idx in self.east_map.inner.indices() {
+            for &(y, east_idx) in &self.east_map.inner[idx] {
                 if let Some(east_idx) = east_idx {
                     let seg = &segs[orig_seg[idx]];
                     let east_seg = &segs[orig_seg[east_idx]];
@@ -1244,7 +1331,7 @@ impl ScanLineOrder {
                     assert!(y < seg.p3.y && y < east_seg.p3.y);
                 }
             }
-            for &(y, west_idx) in &self.west_map[idx] {
+            for &(y, west_idx) in &self.west_map.inner[idx] {
                 if let Some(west_idx) = west_idx {
                     let seg = &segs[orig_seg[idx]];
                     let west_seg = &segs[orig_seg[west_idx]];
@@ -1428,9 +1515,11 @@ mod tests {
 
     use crate::{
         geom::Point,
+        order::ComparisonCache,
         perturbation::{
             f64_perturbation, perturbation, realize_perturbation, F64Perturbation, Perturbation,
         },
+        SegIdx,
     };
 
     use super::Topology;
@@ -1540,6 +1629,63 @@ mod tests {
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
         insta::assert_ron_snapshot!((&top, contours, top.build_scan_line_orders()));
+    }
+
+    #[test]
+    fn close_neighbor_height() {
+        let big = [[p(0.0, 0.0), p(0.0, 10.0), p(1.0, 10.0), p(1.0, 0.0)]];
+        let left = [
+            [p(-10.0, 0.5), p(-0.25, 2.0), p(-10.0, 10.0)],
+            [p(-10.0, 0.5), p(-0.25, 10.0), p(-10.0, 10.0)],
+            // [p(4.0, -1.0), p(3.0, -1.0), p(3.0, -0.5), p(4.0, -0.5)],
+            // [p(4.0, 1.0), p(3.0, 1.0), p(3.0, 0.5), p(4.0, 0.5)],
+        ];
+        let eps = 0.5;
+        let top = Topology::from_polylines(big, left, eps);
+
+        // The output segs coming from the left side of the big square.
+        let indices: Vec<_> = top
+            .orig_seg
+            .indices()
+            .filter(|i| top.orig_seg[*i] == SegIdx(0))
+            .collect();
+
+        assert_eq!(indices.len(), 2);
+        let orders = top.build_scan_line_orders();
+        let mut cmp = ComparisonCache::new(eps, eps / 2.0);
+
+        let h = orders
+            .close_west_neighbor_height_after(
+                indices[0],
+                0.0,
+                &top.orig_seg,
+                &top.segments,
+                &mut cmp,
+            )
+            .unwrap();
+        assert!((0.5..=2.0).contains(&h));
+
+        let h = orders
+            .close_west_neighbor_height_after(
+                indices[0],
+                0.6,
+                &top.orig_seg,
+                &top.segments,
+                &mut cmp,
+            )
+            .unwrap();
+        assert!((0.5..=2.0).contains(&h));
+
+        let h = orders
+            .close_west_neighbor_height_after(
+                indices[1],
+                5.0,
+                &top.orig_seg,
+                &top.segments,
+                &mut cmp,
+            )
+            .unwrap();
+        assert!((8.0..=10.0).contains(&h));
     }
 
     #[test]

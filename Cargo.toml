@@ -19,7 +19,7 @@ usvg = { version = "0.44.0", default-features = false }
 arbitrary = ["dep:arbitrary"]
 slow-asserts = []
 generators = []
-default = []
+default = ["arbitrary"] # We need arbitrary for tests. Is there a way to default it just for tests?
 
 [dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
