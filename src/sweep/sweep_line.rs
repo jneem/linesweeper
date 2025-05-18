@@ -408,27 +408,34 @@ impl<'segs> Sweeper<'segs> {
         // We're allowed to take a potentially-smaller height bound by taking
         // into account the current queue. A larger height bound is still ok,
         // just a little slower.
-        // let mut height_bound = seg.end.y;
+        let seg = &self.segments[seg_idx];
+        // Looking explicitly at the ending `y` coordinate is more reliable than
+        // checking `is_exit`, because this method can get called before exits
+        // get processed. (TODO: do we actually need to store exit and enter
+        // as separate states? Can't we just always look at the position?)
+        if seg.p3.y == y {
+            return;
+        }
+        let mut height_bound = seg.p3.y;
 
-        // TODO: reinstate early-exit
         for j in (start_idx + 1)..self.line.segs.len() {
-            if self.line.is_exit(j) {
+            let other_idx = self.line.seg(j);
+            let other = &self.segments[other_idx];
+            if other.p3.y == y {
                 continue;
             }
-            let other_idx = self.line.seg(j);
-            //let other = &self.segments[other_idx];
-            // if seg.quick_left_of(other, two_eps) {
-            //     break;
-            // }
-            // height_bound = height_bound.min(other.end.y);
 
-            // TODO: there's a choice to be made here: do we distinguish
-            // in the event queue between actual intersections and near-intersections
-            // that need to be recorded? For now, no. We will distinguish them
-            // in handle_intersection
+            // TODO: explain this bound
+            if seg.max_x() + 4.0 * self.eps < other.min_x() {
+                break;
+            }
+            height_bound = height_bound.min(other.p3.y);
+
+            // TODO: there's a choice to be made here: do we distinguish in the
+            // event queue between actual intersections and near-touches? For
+            // now, no. We will distinguish them in handle_intersection
 
             let cmp = self.compare_segments(seg_idx, other_idx);
-
             if let Some(touch) = cmp.next_touch_after(y) {
                 let int = match touch {
                     curve::CurveInteraction::Cross(cross_y) => Some((y.max(cross_y), start_idx, j)),
@@ -436,31 +443,23 @@ impl<'segs> Sweeper<'segs> {
                         (touch_y > y).then_some((touch_y, j, start_idx))
                     }
                 };
-                // TODO: the ordering of left/right is a little confusing here, because IntersectionEvent
-                // was originally designed under the assumption that every intersection is a crossing.
-                // Maybe the naming would be better if `IntersectionEvent::left` was the segment on the
-                // left after intersecting?
                 if let Some((int_y, left_idx, right_idx)) = int {
                     self.events.push(IntersectionEvent {
                         y: int_y,
                         left: self.line.seg(left_idx),
                         right: self.line.seg(right_idx),
                     });
+                    height_bound = height_bound.min(int_y);
                 }
-                //height_bound = int_y.min(height_bound);
             }
 
-            // For the early stopping, we need to check whether `seg` is less than `other`'s lower
-            // bound on the whole interesting `y` interval. Since they're lines, it's enough to check
-            // at the two interval endpoints.
-            // let y1 = height_bound;
-            // let threshold = self.eps / 4.0;
-            // let scaled_eps = other.scaled_eps(self.eps);
-            // if threshold <= other.lower_with_scaled_eps(y, self.eps, scaled_eps) - seg.at_y(y)
-            //     && threshold <= other.lower_with_scaled_eps(y1, self.eps, scaled_eps) - seg.at_y(y1)
-            // {
-            //     break;
-            // }
+            let cmp = self.compare_segments_conservatively(seg_idx, other_idx);
+            // unwrap: we checked that the other segment doesn't end at the current sweep-line.
+            // And I think in this method our segment never ends at the current sweep-line (TODO: check)
+            let (_y0, y1, order) = cmp.iter().find(|(_, y1, _)| *y1 > y).unwrap();
+            if order == Order::Left && y1 >= height_bound {
+                break;
+            }
         }
     }
 
@@ -468,11 +467,23 @@ impl<'segs> Sweeper<'segs> {
         let seg_idx = self.line.seg(start_idx);
         let y = self.y;
 
+        let seg = &self.segments[seg_idx];
+        if seg.p3.y == y {
+            return;
+        }
+        let mut height_bound = seg.p3.y;
+
         for j in (0..start_idx).rev() {
-            if self.line.is_exit(j) {
+            let other_idx = self.line.seg(j);
+            let other = &self.segments[other_idx];
+            if other.p3.y == y {
                 continue;
             }
-            let other_idx = self.line.seg(j);
+
+            if seg.min_x() - 4.0 * self.eps > other.max_x() {
+                break;
+            }
+            height_bound = height_bound.min(other.p3.y);
 
             let cmp = self.compare_segments(other_idx, seg_idx);
             if let Some(touch) = cmp.next_touch_after(y) {
@@ -488,7 +499,16 @@ impl<'segs> Sweeper<'segs> {
                         left: self.line.seg(left_idx),
                         right: self.line.seg(right_idx),
                     });
+                    height_bound = height_bound.min(int_y);
                 }
+            }
+
+            let cmp = self.compare_segments_conservatively(other_idx, seg_idx);
+            // unwrap: we checked that the other segment doesn't end at the current sweep-line.
+            // And I think in this method our segment never ends at the current sweep-line (TODO: check)
+            let (_y0, y1, order) = cmp.iter().find(|(_, y1, _)| *y1 > y).unwrap();
+            if order == Order::Left && y1 >= height_bound {
+                break;
             }
         }
     }
