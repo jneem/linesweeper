@@ -49,8 +49,6 @@ fn sweep_snapshot_diffs() -> Vec<Trial> {
         .collect()
 }
 
-// TODO: rewrite this as one test per snapshot, using a single kompari comparison and not the
-// whole DirDiff
 fn position_snapshot_diffs() -> Vec<Trial> {
     let ws = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let paths = glob::glob(&format!("{ws}/tests/snapshots/inputs/position/**/*.svg")).unwrap();

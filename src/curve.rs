@@ -154,10 +154,6 @@ impl CurveOrder {
             .skip_while(|(_start, _end, order)| *order == Order::Left);
 
         let (y0, y1, order) = iter.next()?;
-        // We used to assert that the order was as expected, but with
-        // the non-transitivity experiment it might sometimes fail.
-        // (TODO: update this doc)
-        // debug_assert_eq!(order, Order::Ish);
         if order == Order::Right {
             return Some(CurveInteraction::Cross(y));
         }
@@ -184,61 +180,29 @@ impl CurveOrder {
         }
     }
 
-    /// TODO: if we end up giving up on transitivity, rewrite this...
     /// Adds some vertical imprecision to the order comparison.
     ///
     /// To understand why we need this, note that
     /// - All our computations are approximate, and so the computed `y` values where orders
     ///   change will not be exact. When curves are almost horizontal, this error in `y`
     ///   can lead to a large error in `x`.
-    /// - For the sweep-line algorithm to work, we need the strong order to be transitive:
+    /// - For the sweep-line algorithm to work, we need the strong order to have no loops:
     ///   if at some height `y`, `c0` is left of `c1` and `c1` is left of `c2` then `c0`
-    ///   is left of `c2`.
+    ///   is not allowed to be left of `c2`.
     ///
-    /// Together, these two properties present a problem: the approximation error in `y` can
-    /// lead to transitivity being violated for some specific heights `y` where there's a lot
-    /// of crossing action.
+    /// Together, these two properties present a problem: the approximation
+    /// error in `y` can lead to ordering loops for some specific heights `y`
+    /// where there's a lot of crossing action. (To be honest, I'm not sure that this ever
+    /// actually happens. Fuzzing didn't find an example, and I didn't try too hard to
+    /// find one manually. But the possibility of ordering loops keeps me up at night,
+    /// so let's just assume that they might happen.)
     ///
     /// Our solution to this issue is to admit that all of our `y` values are imprecise,
     /// by expanding the "ish" regions. This method expands all the "ish" regions by `slop`
     /// in both directions. Geometrically, after applying y-slop, you end up with a comparison
     /// where `c0` is declared "left" of `c1` at `y` if a small square around the point on `c0`
-    /// at height `y` stays to the left of `c1`.
-    ///
-    /// `y_close_before` and `y_close_after` are for handling the endpoints. You should set
-    /// `y_close_before` (resp `y_close_after`) to be smaller than the common start height
-    /// (resp larger than the common end height), and it tells the slop-adding algorithm
-    /// to pretend that the two curves were close together up to `y_close_before` (resp after
-    /// `y_close_after`).
-    ///
-    /// The reason you need these two parameters is for situations like:
-    ///
-    /// ```text
-    ///                           -
-    ///                 / \       |
-    ///                /   \      |
-    ///               /     \     | <- s1 and s3 "ish"
-    ///              /   |   \    |
-    ///             /    |    \   -
-    ///            s1   s2    s3
-    /// ```
-    ///
-    /// Here, `s1` and `s3` are "ish" initially, and so after adding y-slop
-    /// we'll say they're "ish" on the labelled interval. On the other hand,
-    /// `s2` starts off far from both `s1` and `s3`, so at the start of `s2`
-    /// we'll say that `s1` is left of `s2` which is left of `s3`, but `s1`
-    /// and `s3` are still "ish", breaking transitivity. Our solution is to
-    /// pretend that `s2` extends upwards, where we notice that it's close
-    /// to both `s1` and `s3`; adding y-slop to that "virtual closeness"
-    /// restores transitivity by making `s2` start out "ish" to both `s1`
-    /// and `s3`. `y_close_before` is the height where that closeness ends.
-    ///
-    /// TODO: as the strong_comparison fuzz tests show, this is insufficient.
-    /// I think we need to handle this more carefully during the curve comparison
-    /// itself. I think the point is that if we take two small squares s_1 and s_2
-    /// where s_2 is bigger than 2 s_1 then we should guarantee: if c_0 + s_2 <= c_1 + s_2
-    /// at height y then they're strongly ordered, and if they're strongly ordered then
-    /// c_0 + s_1 <= c_1 + s_1. I think this will guarantee the transitivity we need.
+    /// at height `y` stays to the left of `c1`. (If one segment is shorter than the other,
+    /// this is not quite true near the endpoints of the shorter segment. But close enough.)
     pub fn with_y_slop(self, slop: f64) -> CurveOrder {
         let mut ret = Vec::new();
 
