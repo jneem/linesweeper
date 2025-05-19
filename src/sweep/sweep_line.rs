@@ -841,6 +841,7 @@ impl<'segs> Sweeper<'segs> {
     fn compute_horizontal_changed_intervals(&mut self) {
         self.horizontals
             .sort_by_key(|seg_idx| CheapOrderedFloat::from(self.segments[*seg_idx].p0.x));
+        let mut last_end = f64::NEG_INFINITY;
 
         for (idx, &seg_idx) in self.horizontals.iter().enumerate() {
             let seg = &self.segments[seg_idx];
@@ -885,11 +886,26 @@ impl<'segs> Sweeper<'segs> {
                     break;
                 }
             }
-            let changed = ChangedInterval {
-                segs: start_idx..end_idx,
-                horizontals: Some(idx..(idx + 1)),
-            };
-            self.changed_intervals.push(changed);
+
+            // If this horizontal interval overlaps with the previous one, extend
+            // the changed interval instead of pushing a new one.
+            if seg.p0.x <= last_end {
+                // unwrap: since our segments are finite, we can only get in this
+                // branch if we already passed through the main loop and added something
+                // to changed_intervals
+                let last = self.changed_intervals.last_mut().unwrap();
+                // unwrap: all our changed intervals in this function have horizontals.
+                last.horizontals.as_mut().unwrap().end = idx + 1;
+                last.segs.end = last.segs.end.max(end_idx);
+            } else {
+                let changed = ChangedInterval {
+                    segs: start_idx..end_idx,
+                    horizontals: Some(idx..(idx + 1)),
+                };
+                self.changed_intervals.push(changed);
+            }
+
+            last_end = last_end.max(seg.p3.x);
         }
     }
 

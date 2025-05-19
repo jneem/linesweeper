@@ -202,6 +202,19 @@ impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
         self.bufs.active_horizontals.iter().map(|hseg| hseg.seg)
     }
 
+    /// Iterates over the horizontal segments that are active at the current position, along
+    /// with a boolean telling you whether the horizontal segment has the same orientation
+    /// as the segment that it belongs to.
+    ///
+    /// This includes the segments that end here, but does not include the ones
+    /// that start here.
+    pub fn active_horizontals_and_orientations(&self) -> impl Iterator<Item = (SegIdx, bool)> + '_ {
+        self.bufs
+            .active_horizontals
+            .iter()
+            .map(|hseg| (hseg.seg, hseg.enter_first))
+    }
+
     /// Returns the collection of all output events that end at the current
     /// position, or `None` if this batcher is finished.
     ///

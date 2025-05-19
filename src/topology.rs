@@ -149,7 +149,11 @@ impl<W: WindingNumber> HalfSegmentWindingNumbers<W> {
 
 impl<W: WindingNumber> std::fmt::Debug for HalfSegmentWindingNumbers<W> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} | {:?}", self.clockwise, self.counter_clockwise)
+        write!(
+            f,
+            "cw {:?} | cc {:?}",
+            self.clockwise, self.counter_clockwise
+        )
     }
 }
 
@@ -158,7 +162,7 @@ impl<W: WindingNumber> std::fmt::Debug for HalfSegmentWindingNumbers<W> {
 /// There's no compile-time magic preventing misuse of this index, but you
 /// should only use this to index into the [`Topology`] that you got it from.
 #[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OutputSegIdx(usize);
 
 impl OutputSegIdx {
@@ -176,6 +180,12 @@ impl OutputSegIdx {
             idx: self,
             first_half: false,
         }
+    }
+}
+
+impl std::fmt::Debug for OutputSegIdx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "o_{}", self.0)
     }
 }
 
@@ -209,9 +219,9 @@ impl HalfOutputSegIdx {
 impl std::fmt::Debug for HalfOutputSegIdx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.first_half {
-            write!(f, "s{}->", self.idx.0)
+            write!(f, "{:?}->", self.idx)
         } else {
-            write!(f, "s{}<-", self.idx.0)
+            write!(f, "->{:?}", self.idx)
         }
     }
 }
@@ -313,7 +323,7 @@ impl<T> std::ops::IndexMut<HalfOutputSegIdx> for HalfOutputSegVec<T> {
 ///
 /// See [`OutputSegIdx`] for more about output segments.
 #[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct OutputSegVec<T> {
     inner: Vec<T>,
 }
@@ -378,6 +388,30 @@ impl<T> std::ops::Index<HalfOutputSegIdx> for OutputSegVec<T> {
 
     fn index(&self, index: HalfOutputSegIdx) -> &Self::Output {
         &self.inner[index.idx.0]
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for OutputSegVec<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        struct Entry<'a, T> {
+            idx: OutputSegIdx,
+            inner: &'a T,
+        }
+
+        impl<T: std::fmt::Debug> std::fmt::Debug for Entry<'_, T> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{idx:?}: {inner:?}", idx = self.idx, inner = self.inner,)
+            }
+        }
+
+        let mut list = f.debug_list();
+        for idx in self.indices() {
+            list.entry(&Entry {
+                idx,
+                inner: &self[idx],
+            });
+        }
+        list.finish()
     }
 }
 
@@ -535,7 +569,7 @@ impl<W: WindingNumber> Topology<W> {
     /// See [`WindingNumber`] about the tags are for.
     pub fn from_paths<'a, Iter>(paths: Iter, eps: f64) -> Self
     where
-        Iter: Iterator<Item = (&'a BezPath, W::Tag)>,
+        Iter: IntoIterator<Item = (&'a BezPath, W::Tag)>,
     {
         let mut segments = Segments::default();
         let mut tag = Vec::new();
@@ -584,7 +618,15 @@ impl<W: WindingNumber> Topology<W> {
             }
         }
         ret.segments = segments;
+
+        #[cfg(feature = "slow-asserts")]
+        ret.check_invariants();
+
         ret.merge_coincident();
+
+        #[cfg(feature = "slow-asserts")]
+        ret.check_invariants();
+
         ret
     }
 
@@ -746,6 +788,8 @@ impl<W: WindingNumber> Topology<W> {
         // The last segment we saw that points down from this sweep line.
         let mut last_connected_down_seg: Option<OutputSegIdx> = None;
 
+        dbg!(y, scan_west, winding);
+
         while let Some(next_x) = pos.x() {
             let p = PointIdx(self.points.inner.len());
             self.points.inner.push(Point::new(next_x, y));
@@ -778,6 +822,7 @@ impl<W: WindingNumber> Topology<W> {
                     counter_clockwise: winding,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, false);
+                eprintln!("created {half_seg:?} from {new_seg:?}");
                 self.scan_west[half_seg] = scan_west;
                 scan_west = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
@@ -798,20 +843,22 @@ impl<W: WindingNumber> Topology<W> {
             // Gather the output segments from horizontal segments starting
             // here. Allocate new output segments for them and calculate their
             // winding numbers.
-            let hsegs = pos.active_horizontals();
+            let hsegs = pos.active_horizontals_and_orientations();
 
             // We don't want to update our "global" winding number state because that's supposed
             // to keep track of the winding number below the current sweep line.
             let mut w = winding;
             seg_buf.clear();
-            for new_seg in hsegs {
+            for (new_seg, same_orientation) in hsegs {
                 let prev_w = w;
-                w += W::single(self.tag[new_seg.0], segments.positively_oriented(new_seg));
+                let orientation = same_orientation == segments.positively_oriented(new_seg);
+                w += W::single(self.tag[new_seg.0], orientation);
                 let windings = HalfSegmentWindingNumbers {
                     counter_clockwise: w,
                     clockwise: prev_w,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, true);
+                eprintln!("created horizontal {half_seg:?} from {new_seg:?}");
                 self.scan_west[half_seg] = scan_west;
                 seg_buf.push(half_seg.first_half());
             }
@@ -1225,6 +1272,22 @@ impl<W: WindingNumber> Topology<W> {
             self.eps / 4.0,
         )
     }
+
+    #[cfg(feature = "slow-asserts")]
+    fn check_invariants(&self) {
+        for out_idx in self.winding.indices() {
+            if !self.deleted[out_idx] {
+                for half in [out_idx.first_half(), out_idx.second_half()] {
+                    let cw_nbr = self.point_neighbors[half].clockwise;
+                    if self.winding(half).clockwise != self.winding(cw_nbr).counter_clockwise {
+                        dbg!(self);
+                        dbg!(half, cw_nbr);
+                        panic!();
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Topology<i32> {
@@ -1258,7 +1321,7 @@ impl Topology<BinaryWindingNumber> {
     ///
     /// The two Bézier paths represent two different sets for the purpose of boolean set operations.
     pub fn from_paths_binary(set_a: &BezPath, set_b: &BezPath, eps: f64) -> Self {
-        Self::from_paths([(set_a, true), (set_b, false)].into_iter(), eps)
+        Self::from_paths([(set_a, true), (set_b, false)], eps)
     }
 }
 
@@ -1629,6 +1692,7 @@ mod tests {
         let top = Topology::from_polylines_binary(square, diamond, eps);
         //check_intersections(&top);
 
+        // FIXME: the output seems wrong here
         insta::assert_ron_snapshot!(top);
     }
 

@@ -88,7 +88,7 @@ Topology(
       ),
       HalfSegmentWindingNumbers(
         counter_clockwise: BinaryWindingNumber(
-          shape_a: -1,
+          shape_a: 1,
           shape_b: -1,
         ),
         clockwise: BinaryWindingNumber(
@@ -98,38 +98,38 @@ Topology(
       ),
       HalfSegmentWindingNumbers(
         counter_clockwise: BinaryWindingNumber(
-          shape_a: -1,
+          shape_a: 1,
           shape_b: -1,
         ),
         clockwise: BinaryWindingNumber(
-          shape_a: -1,
-          shape_b: -1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: BinaryWindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-        clockwise: BinaryWindingNumber(
-          shape_a: 0,
+          shape_a: 1,
           shape_b: -1,
         ),
       ),
       HalfSegmentWindingNumbers(
         counter_clockwise: BinaryWindingNumber(
-          shape_a: -1,
-          shape_b: 1,
-        ),
-        clockwise: BinaryWindingNumber(
           shape_a: 0,
           shape_b: 0,
         ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: -1,
+        ),
       ),
       HalfSegmentWindingNumbers(
         counter_clockwise: BinaryWindingNumber(
           shape_a: -1,
-          shape_b: 1,
+          shape_b: -1,
+        ),
+        clockwise: BinaryWindingNumber(
+          shape_a: 0,
+          shape_b: 0,
+        ),
+      ),
+      HalfSegmentWindingNumbers(
+        counter_clockwise: BinaryWindingNumber(
+          shape_a: -1,
+          shape_b: -1,
         ),
         clockwise: BinaryWindingNumber(
           shape_a: -1,
