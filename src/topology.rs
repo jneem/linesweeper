@@ -788,8 +788,6 @@ impl<W: WindingNumber> Topology<W> {
         // The last segment we saw that points down from this sweep line.
         let mut last_connected_down_seg: Option<OutputSegIdx> = None;
 
-        dbg!(y, scan_west, winding);
-
         while let Some(next_x) = pos.x() {
             let p = PointIdx(self.points.inner.len());
             self.points.inner.push(Point::new(next_x, y));
@@ -822,7 +820,6 @@ impl<W: WindingNumber> Topology<W> {
                     counter_clockwise: winding,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, false);
-                eprintln!("created {half_seg:?} from {new_seg:?}");
                 self.scan_west[half_seg] = scan_west;
                 scan_west = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
@@ -858,7 +855,6 @@ impl<W: WindingNumber> Topology<W> {
                     clockwise: prev_w,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, true);
-                eprintln!("created horizontal {half_seg:?} from {new_seg:?}");
                 self.scan_west[half_seg] = scan_west;
                 seg_buf.push(half_seg.first_half());
             }

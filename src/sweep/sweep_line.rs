@@ -1038,9 +1038,6 @@ impl SegmentOrder {
 
                 let order = cmp.compare_segments(segments, segi, segj);
                 if order.order_at(y) == Order::Right {
-                    dbg!(segments);
-                    dbg!(&self.segs);
-                    dbg!(&order, y, segi, segj);
                     return Some((segi, segj));
                 }
             }
@@ -1555,7 +1552,7 @@ fn merge_adjacent(intervals: &mut Vec<ChangedInterval>) {
         if last_end < cur.segs.start {
             write_idx += 1;
             intervals[write_idx] = cur;
-        } else if last_end < cur.segs.end {
+        } else {
             intervals[write_idx].merge(&cur);
         }
     }
