@@ -275,7 +275,7 @@ pub struct SweepLineBuffers {
 pub struct Sweeper<'a> {
     y: f64,
     eps: f64,
-    line: SegmentOrder,
+    pub(crate) line: SegmentOrder,
     events: EventQueue,
     segments: &'a Segments,
 
@@ -1225,7 +1225,7 @@ fn feasible_horizontal_positions<G: Fn(&SegmentOrderEntry) -> SegIdx>(
 /// above `y` and below `y` will be different.
 #[derive(Debug)]
 pub struct SweepLine<'buf, 'state, 'segs> {
-    state: &'state Sweeper<'segs>,
+    pub(crate) state: &'state Sweeper<'segs>,
     bufs: &'buf mut SweepLineBuffers,
     // Index into state.changed_intervals
     next_changed_interval: usize,
@@ -1235,6 +1235,16 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
     /// The vertical position of this sweep-line.
     pub fn y(&self) -> f64 {
         self.state.y
+    }
+
+    /// Our tolerance parameter.
+    pub fn eps(&self) -> f64 {
+        self.state.eps
+    }
+
+    /// The collection of segments that we're sweeping over.
+    pub fn segments(&self) -> &Segments {
+        self.state.segments
     }
 
     /// Get the line segment at position `idx` in the new order.
@@ -1766,6 +1776,9 @@ mod tests {
         order: SegmentOrder,
         changed: Vec<ChangedInterval>,
     }
+
+    /// Runs a sweep-line on the given segments, collecting the sweep line orders
+    /// at every interesting y.
     fn snapshot_outputs(segs: Segments, eps: f64) -> Vec<Output> {
         let mut outputs = Vec::new();
         let mut sweeper = Sweeper::new(&segs, eps);
@@ -1871,23 +1884,5 @@ mod tests {
         run_perturbation(perturbations);
     }
 
-    }
-
-    #[test]
-    fn bug() {
-        use Perturbation::*;
-        let perturbations: Vec<Perturbation<F64Perturbation>> = vec![
-            Subdivision {
-                t: 0.9394124935587298,
-                idx: 2015950306058370793,
-                next: Box::new(Base { idx: 0 }),
-            },
-            Subdivision {
-                t: 0.13141341476907323,
-                idx: 16536748748586597932,
-                next: Box::new(Base { idx: 0 }),
-            },
-        ];
-        run_perturbation(perturbations);
     }
 }

@@ -123,13 +123,18 @@ impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
         bufs: &'bufs mut SweepLineRangeBuffers,
         changed_interval: ChangedInterval,
     ) -> Self {
-        Self {
+        let ret = Self {
             last_x: None,
             output_events,
             changed_interval,
             line,
             bufs,
-        }
+        };
+
+        #[cfg(feature = "slow-asserts")]
+        ret.check_invariants();
+
+        ret
     }
 
     fn output_events(&self) -> &[OutputEvent] {
@@ -348,6 +353,38 @@ impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
     /// The sweep line that this is a range of.
     pub fn line(&self) -> &SweepLine<'_, '_, 'segs> {
         self.line
+    }
+
+    #[cfg(feature = "slow-asserts")]
+    fn check_invariants(&self) {
+        for ev in self.output_events() {
+            let seg = &self.line.segments()[ev.seg_idx];
+            let y = self.line.y();
+            let eps = self.line.eps();
+
+            // The curve comparison is guaranteed to give a strong
+            // ordering when the curves are 1.5 eps apart in ell_infty.
+            // That means the perturbed points should always be within
+            // 1.5 * sqrt(2) eps in ell_2, which is less than 2.5 eps. We
+            // compute distance to accuracy 0.5 eps, so we'll assert
+            // that our number is less than 3 eps.
+
+            // Ok, this doesn't work because of https://github.com/linebender/kurbo/issues/446
+            // For now, we'll use ell_infty comparisons.
+            //
+            // let n0 = seg.nearest(p0, eps / 2.0);
+            // let n1 = seg.nearest(p1, eps / 2.0);
+
+            // assert!(n0.distance_sq <= eps * eps * 9.0);
+            // assert!(n1.distance_sq <= eps * eps * 9.0);
+
+            let (lower, upper) = if seg.is_horizontal() {
+                (seg.p0.x - 2.0 * eps, seg.p3.x + 2.0 * eps)
+            } else {
+                (seg.lower(y, 2.0 * eps), seg.upper(y, 2.0 * eps))
+            };
+            assert!(lower <= ev.smaller_x() && ev.larger_x() <= upper);
+        }
     }
 }
 
