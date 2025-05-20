@@ -82,6 +82,7 @@ impl Iterator for CurveOrderIter<'_> {
     }
 }
 
+// TODO: we've grown a weird set of convenience methods. Design them better.
 impl CurveOrder {
     fn new(start: f64) -> Self {
         CurveOrder {
@@ -209,6 +210,10 @@ impl CurveOrder {
         // unwrap: cmps is always non-empty
         let last_end = self.cmps.last().unwrap().end;
 
+        if self.start == last_end {
+            return self;
+        }
+
         for (start, end, order) in self.iter() {
             let new_end = if end == last_end { end } else { end - slop };
             if order != Order::Ish {
@@ -261,6 +266,10 @@ impl CurveOrder {
     ///
     /// If `y` is at the boundary of two intervals, takes the first one.
     ///
+    /// TODO: maybe it would be more consistent with the other methods if
+    /// we took the second one. But then we need to be careful about what
+    /// happens at the endpoint...
+    ///
     /// # Panics
     ///
     /// Panics if `y` is outside the range of our ordering.
@@ -284,11 +293,18 @@ impl CurveOrder {
     ///
     /// If there is no definite ordering (everything after `y` is just `Ish`),
     /// returns `Ish`.
+    ///
+    /// As a corner case, if this comparison ends exactly at `y` then we return
+    /// the ordering exactly at `y`.
     pub fn order_after(&self, y: f64) -> Order {
-        self.iter()
-            .skip_while(|(_start, end, _order)| end <= &y)
-            .find(|(_start, _end, order)| *order != Order::Ish)
-            .map_or(Order::Ish, |(_start, _end, order)| order)
+        if y == self.cmps.last().unwrap().end {
+            self.cmps.last().unwrap().order
+        } else {
+            self.iter()
+                .skip_while(|(_start, end, _order)| end <= &y)
+                .find(|(_start, _end, order)| *order != Order::Ish)
+                .map_or(Order::Ish, |(_start, _end, order)| order)
+        }
     }
 }
 
@@ -1443,5 +1459,76 @@ mod test {
         };
 
         assert_eq!(order.clone().with_y_slop(0.5).cmps, order.cmps);
+    }
+
+    #[test]
+    fn y_slop_no_height() {
+        let order = CurveOrder {
+            start: 1.0,
+            cmps: vec![CurveOrderEntry {
+                end: 1.0,
+                order: Order::Right,
+            }],
+        };
+
+        assert_eq!(order.clone().with_y_slop(0.5).cmps, order.cmps);
+    }
+
+    // Cases where two curves share just a single y coordinate.
+    #[test]
+    fn curve_order_no_overlap() {
+        let c0 = CubicBez {
+            p0: (0.0, 0.0).into(),
+            p1: (0.0, 0.0).into(),
+            p2: (0.0, 1.0).into(),
+            p3: (0.0, 1.0).into(),
+        };
+        let c1 = CubicBez {
+            p0: (1.0, 1.0).into(),
+            p1: (1.0, 1.0).into(),
+            p2: (1.0, 2.0).into(),
+            p3: (1.0, 2.0).into(),
+        };
+        let order = intersect_cubics(c0, c1, 0.25, 0.125);
+        assert_eq!(order.start, 1.0);
+        assert_eq!(
+            order.cmps,
+            vec![CurveOrderEntry {
+                end: 1.0,
+                order: Order::Left
+            }]
+        );
+
+        let c1 = CubicBez {
+            p0: (1.0, 1.0).into(),
+            p1: (1.0, 1.0).into(),
+            p2: (0.0, 2.0).into(),
+            p3: (0.0, 2.0).into(),
+        };
+        let order = intersect_cubics(c0, c1, 0.25, 0.125);
+        assert_eq!(order.start, 1.0);
+        assert_eq!(
+            order.cmps,
+            vec![CurveOrderEntry {
+                end: 1.0,
+                order: Order::Left
+            }]
+        );
+
+        let c1 = CubicBez {
+            p0: (0.1, 1.0).into(),
+            p1: (0.1, 1.0).into(),
+            p2: (0.0, 2.0).into(),
+            p3: (0.0, 2.0).into(),
+        };
+        let order = intersect_cubics(c0, c1, 0.25, 0.125);
+        assert_eq!(order.start, 1.0);
+        assert_eq!(
+            order.cmps,
+            vec![CurveOrderEntry {
+                end: 1.0,
+                order: Order::Ish
+            }]
+        );
     }
 }

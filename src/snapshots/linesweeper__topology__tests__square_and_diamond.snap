@@ -88,21 +88,11 @@ Topology(
       ),
       HalfSegmentWindingNumbers(
         counter_clockwise: BinaryWindingNumber(
-          shape_a: 1,
+          shape_a: -1,
           shape_b: -1,
         ),
         clockwise: BinaryWindingNumber(
           shape_a: 0,
-          shape_b: -1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: BinaryWindingNumber(
-          shape_a: 1,
-          shape_b: -1,
-        ),
-        clockwise: BinaryWindingNumber(
-          shape_a: 1,
           shape_b: -1,
         ),
       ),
@@ -114,26 +104,6 @@ Topology(
         clockwise: BinaryWindingNumber(
           shape_a: 0,
           shape_b: -1,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: BinaryWindingNumber(
-          shape_a: -1,
-          shape_b: -1,
-        ),
-        clockwise: BinaryWindingNumber(
-          shape_a: 0,
-          shape_b: 0,
-        ),
-      ),
-      HalfSegmentWindingNumbers(
-        counter_clockwise: BinaryWindingNumber(
-          shape_a: -1,
-          shape_b: -1,
-        ),
-        clockwise: BinaryWindingNumber(
-          shape_a: -1,
-          shape_b: 0,
         ),
       ),
     ],
@@ -158,10 +128,6 @@ Topology(
       ),
       Point(
         y: 1.0,
-        x: 0.01,
-      ),
-      Point(
-        y: 1.0,
         x: 1.0,
       ),
       Point(
@@ -179,22 +145,16 @@ Topology(
       PointIdx(1),
       PointIdx(2),
       PointIdx(3),
-      PointIdx(3),
-      PointIdx(4),
-      PointIdx(4),
       PointIdx(4),
     ],
     end: [
       PointIdx(2),
+      PointIdx(3),
       PointIdx(4),
-      PointIdx(5),
       PointIdx(1),
-      PointIdx(5),
-      PointIdx(6),
       PointIdx(4),
-      PointIdx(4),
-      PointIdx(6),
       PointIdx(5),
+      PointIdx(4),
       PointIdx(5),
     ],
   ),
@@ -262,38 +222,8 @@ Topology(
       ),
       PointNeighbors(
         clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(7),
-          first_half: true,
-        ),
-        counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(7),
-          first_half: true,
-        ),
-      ),
-      PointNeighbors(
-        clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(7),
-          first_half: true,
-        ),
-        counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(7),
-          first_half: true,
-        ),
-      ),
-      PointNeighbors(
-        clockwise: HalfOutputSegIdx(
           idx: OutputSegIdx(1),
           first_half: false,
-        ),
-        counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(9),
-          first_half: true,
-        ),
-      ),
-      PointNeighbors(
-        clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(8),
-          first_half: true,
         ),
         counter_clockwise: HalfOutputSegIdx(
           idx: OutputSegIdx(1),
@@ -302,11 +232,11 @@ Topology(
       ),
       PointNeighbors(
         clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(9),
-          first_half: true,
+          idx: OutputSegIdx(6),
+          first_half: false,
         ),
         counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(1),
+          idx: OutputSegIdx(4),
           first_half: false,
         ),
       ),
@@ -324,11 +254,11 @@ Topology(
       ),
       PointNeighbors(
         clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(9),
+          idx: OutputSegIdx(6),
           first_half: true,
         ),
         counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(8),
+          idx: OutputSegIdx(6),
           first_half: true,
         ),
       ),
@@ -338,7 +268,7 @@ Topology(
           first_half: false,
         ),
         counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(9),
+          idx: OutputSegIdx(6),
           first_half: false,
         ),
       ),
@@ -354,21 +284,11 @@ Topology(
       ),
       PointNeighbors(
         clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(9),
-          first_half: false,
+          idx: OutputSegIdx(7),
+          first_half: true,
         ),
         counter_clockwise: HalfOutputSegIdx(
           idx: OutputSegIdx(2),
-          first_half: false,
-        ),
-      ),
-      PointNeighbors(
-        clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(8),
-          first_half: false,
-        ),
-        counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(8),
           first_half: false,
         ),
       ),
@@ -378,17 +298,17 @@ Topology(
           first_half: false,
         ),
         counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(8),
-          first_half: true,
+          idx: OutputSegIdx(7),
+          first_half: false,
         ),
       ),
       PointNeighbors(
         clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(1),
+          idx: OutputSegIdx(2),
           first_half: false,
         ),
         counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(8),
+          idx: OutputSegIdx(7),
           first_half: true,
         ),
       ),
@@ -399,26 +319,6 @@ Topology(
         ),
         counter_clockwise: HalfOutputSegIdx(
           idx: OutputSegIdx(5),
-          first_half: false,
-        ),
-      ),
-      PointNeighbors(
-        clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(2),
-          first_half: false,
-        ),
-        counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(4),
-          first_half: false,
-        ),
-      ),
-      PointNeighbors(
-        clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(2),
-          first_half: false,
-        ),
-        counter_clockwise: HalfOutputSegIdx(
-          idx: OutputSegIdx(9),
           first_half: false,
         ),
       ),
@@ -432,11 +332,8 @@ Topology(
       false,
       false,
       false,
-      true,
-      true,
       false,
       false,
-      true,
     ],
   ),
   scan_west: OutputSegVec(
@@ -449,16 +346,10 @@ Topology(
       None,
       Some(OutputSegIdx(5)),
       Some(OutputSegIdx(5)),
-      Some(OutputSegIdx(5)),
-      Some(OutputSegIdx(8)),
-      Some(OutputSegIdx(8)),
     ],
   ),
   scan_east: OutputSegVec(
     inner: [
-      None,
-      None,
-      None,
       None,
       None,
       None,
@@ -478,9 +369,6 @@ Topology(
       SegIdx(0),
       SegIdx(1),
       SegIdx(6),
-      SegIdx(3),
-      SegIdx(2),
-      SegIdx(5),
       SegIdx(2),
       SegIdx(5),
     ],

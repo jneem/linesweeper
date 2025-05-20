@@ -1788,6 +1788,17 @@ mod tests {
     }
 
     #[test]
+    fn square_and_diamond() {
+        let square = [p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)];
+        let diamond = [p(0.0, 0.0), p(1.0, 1.0), p(0.0, 2.0), p(-1.0, 1.0)];
+        let eps = 0.01;
+
+        let mut segs = Segments::default();
+        segs.add_cycles([square, diamond]);
+        insta::assert_ron_snapshot!(snapshot_outputs(segs, eps));
+    }
+
+    #[test]
     fn regression_position_state() {
         let ps = [Perturbation::Point {
             perturbation: PointPerturbation {

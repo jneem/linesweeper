@@ -1688,7 +1688,6 @@ mod tests {
         let top = Topology::from_polylines_binary(square, diamond, eps);
         //check_intersections(&top);
 
-        // FIXME: the output seems wrong here
         insta::assert_ron_snapshot!(top);
     }
 
