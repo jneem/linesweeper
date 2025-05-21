@@ -425,8 +425,10 @@ impl<'segs> Sweeper<'segs> {
                 continue;
             }
 
-            // TODO: explain this bound
-            if seg.max_x() + 4.0 * self.eps < other.min_x() {
+            // Our basic comparisons use eps tolerance and eps/2 accuracy, so if
+            // our max_x is 1.5 eps less than their min_x then we're guaranteed
+            // to always compare Order::Left of them.
+            if seg.max_x() + 2.0 * self.eps < other.min_x() {
                 break;
             }
             height_bound = height_bound.min(other.p3.y);
@@ -454,15 +456,15 @@ impl<'segs> Sweeper<'segs> {
             }
 
             let cmp = self.compare_segments_conservatively(seg_idx, other_idx);
-            // unwrap: we checked that the other segment doesn't end at the current sweep-line.
-            // And I think in this method our segment never ends at the current sweep-line (TODO: check)
-            let (_y0, y1, order) = cmp.iter().find(|(_, y1, _)| *y1 > y).unwrap();
-            if order == Order::Left && y1 >= height_bound {
-                break;
+            if let Some((_y0, y1, order)) = cmp.iter().find(|(_, y1, _)| *y1 > y) {
+                if order == Order::Left && y1 >= height_bound {
+                    break;
+                }
             }
         }
     }
 
+    // This is basically the same as `intersection_scan_right`, so maybe it's worth combining them.
     fn intersection_scan_left(&mut self, start_idx: usize) {
         let seg_idx = self.line.seg(start_idx);
         let y = self.y;
@@ -480,7 +482,7 @@ impl<'segs> Sweeper<'segs> {
                 continue;
             }
 
-            if seg.min_x() - 4.0 * self.eps > other.max_x() {
+            if seg.min_x() - 2.0 * self.eps > other.max_x() {
                 break;
             }
             height_bound = height_bound.min(other.p3.y);
@@ -504,11 +506,10 @@ impl<'segs> Sweeper<'segs> {
             }
 
             let cmp = self.compare_segments_conservatively(other_idx, seg_idx);
-            // unwrap: we checked that the other segment doesn't end at the current sweep-line.
-            // And I think in this method our segment never ends at the current sweep-line (TODO: check)
-            let (_y0, y1, order) = cmp.iter().find(|(_, y1, _)| *y1 > y).unwrap();
-            if order == Order::Left && y1 >= height_bound {
-                break;
+            if let Some((_y0, y1, order)) = cmp.iter().find(|(_, y1, _)| *y1 > y) {
+                if order == Order::Left && y1 >= height_bound {
+                    break;
+                }
             }
         }
     }
