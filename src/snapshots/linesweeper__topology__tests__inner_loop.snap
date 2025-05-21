@@ -497,6 +497,21 @@ expression: "(top, contours)"
       SegIdx(2),
     ],
   ),
+  positively_oriented: OutputSegVec(
+    inner: [
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+    ],
+  ),
 ), Contours(
   contours: [
     Contour(

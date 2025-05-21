@@ -337,4 +337,15 @@ Topology(
       SegIdx(5),
     ],
   ),
+  positively_oriented: OutputSegVec(
+    inner: [
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+    ],
+  ),
 )

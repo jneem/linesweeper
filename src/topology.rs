@@ -421,7 +421,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for OutputSegVec<T> {
 pub struct PointIdx(usize);
 
 #[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 struct PointVec<T> {
     inner: Vec<T>,
 }
@@ -431,6 +431,11 @@ impl<T> PointVec<T> {
         Self {
             inner: Vec::with_capacity(cap),
         }
+    }
+
+    /// Returns an iterator over all indices into this vector.
+    pub fn indices(&self) -> impl Iterator<Item = PointIdx> {
+        (0..self.inner.len()).map(PointIdx)
     }
 }
 
@@ -451,6 +456,30 @@ impl<T> std::ops::Index<PointIdx> for PointVec<T> {
 impl<T> std::ops::IndexMut<PointIdx> for PointVec<T> {
     fn index_mut(&mut self, index: PointIdx) -> &mut Self::Output {
         &mut self.inner[index.0]
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for PointVec<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        struct Entry<'a, T> {
+            idx: PointIdx,
+            inner: &'a T,
+        }
+
+        impl<T: std::fmt::Debug> std::fmt::Debug for Entry<'_, T> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{idx:?}: {inner:?}", idx = self.idx, inner = self.inner,)
+            }
+        }
+
+        let mut list = f.debug_list();
+        for idx in self.indices() {
+            list.entry(&Entry {
+                idx,
+                inner: &self[idx],
+            });
+        }
+        list.finish()
     }
 }
 
@@ -561,6 +590,12 @@ pub struct Topology<W: WindingNumber> {
     /// at some point (TODO)
     #[cfg_attr(test, serde(skip))]
     pub segments: Segments,
+    /// Does the sweep-line orientation of each output segment agree with its original
+    /// orientation from the input?
+    ///
+    /// In principle, this is redundant with the winding numbers. But since the winding
+    /// numbers are generic, that information isn't available to us.
+    positively_oriented: OutputSegVec<bool>,
 }
 
 impl<W: WindingNumber> Topology<W> {
@@ -598,6 +633,7 @@ impl<W: WindingNumber> Topology<W> {
             scan_east: OutputSegVec::with_capacity(segments.len()),
             scan_after: Vec::new(),
             orig_seg: OutputSegVec::with_capacity(segments.len()),
+            positively_oriented: OutputSegVec::with_capacity(segments.len()),
             segments: Segments::default(),
         };
         let mut sweep_state = Sweeper::new(&segments, eps);
@@ -742,6 +778,7 @@ impl<W: WindingNumber> Topology<W> {
         p: PointIdx,
         winding: HalfSegmentWindingNumbers<W>,
         horizontal: bool,
+        positively_oriented: bool,
     ) -> OutputSegIdx {
         let out_idx = OutputSegIdx(self.winding.inner.len());
         if horizontal {
@@ -766,6 +803,7 @@ impl<W: WindingNumber> Topology<W> {
         self.scan_west.inner.push(None);
         self.scan_east.inner.push(None);
         self.orig_seg.inner.push(idx);
+        self.positively_oriented.inner.push(positively_oriented);
         out_idx
     }
 
@@ -814,12 +852,13 @@ impl<W: WindingNumber> Topology<W> {
             seg_buf.clear();
             for new_seg in connected_segs.connected_down() {
                 let prev_winding = winding;
-                winding += W::single(self.tag[new_seg.0], segments.positively_oriented(new_seg));
+                let orientation = segments.positively_oriented(new_seg);
+                winding += W::single(self.tag[new_seg.0], orientation);
                 let windings = HalfSegmentWindingNumbers {
                     clockwise: prev_winding,
                     counter_clockwise: winding,
                 };
-                let half_seg = self.new_half_seg(new_seg, p, windings, false);
+                let half_seg = self.new_half_seg(new_seg, p, windings, false, orientation);
                 self.scan_west[half_seg] = scan_west;
                 scan_west = Some(half_seg);
                 seg_buf.push(half_seg.first_half());
@@ -854,7 +893,7 @@ impl<W: WindingNumber> Topology<W> {
                     counter_clockwise: w,
                     clockwise: prev_w,
                 };
-                let half_seg = self.new_half_seg(new_seg, p, windings, true);
+                let half_seg = self.new_half_seg(new_seg, p, windings, true, orientation);
                 self.scan_west[half_seg] = scan_west;
                 seg_buf.push(half_seg.first_half());
             }
@@ -1257,21 +1296,18 @@ impl<W: WindingNumber> Topology<W> {
             &mut cmp,
             &endpoints,
             &self.build_scan_line_orders(),
-            // The eps / 4.0 is (I think) the biggest value where we're
-            // guaranteed correctness, because the sweep-line only guarantees
-            // that curves comparing "ish" will get noticed by the sweep-line,
-            // and only those points within eps/2 are guaranteed to compare
-            // "ish". So then if each of those gets perturbed by up to eps / 4
-            // then we still have the right order.
-            //
-            // (TODO: explain this better)
+            // The sweep-line guarantees that any two segments coming within
+            // eps / 2 will get noticed by the sweep-line. That means we
+            // can perturb things by eps / 4 without causing any unexpected
+            // collisions.
             self.eps / 4.0,
         )
     }
 
     #[cfg(feature = "slow-asserts")]
     fn check_invariants(&self) {
-        for out_idx in self.winding.indices() {
+        // Check that the winding numbers are locally consistent around every point.
+        for out_idx in self.segment_indices() {
             if !self.deleted[out_idx] {
                 for half in [out_idx.first_half(), out_idx.second_half()] {
                     let cw_nbr = self.point_neighbors[half].clockwise;
@@ -1281,6 +1317,94 @@ impl<W: WindingNumber> Topology<W> {
                         panic!();
                     }
                 }
+            }
+        }
+
+        // Check the continuity of contours.
+        let mut out_segs = vec![Vec::<OutputSegIdx>::new(); self.segments.len()];
+        for out_seg in self.winding.indices() {
+            out_segs[self.orig_seg[out_seg].0].push(out_seg);
+        }
+        // For each segment, figure out the first and last points of its output-segment-polyline,
+        // in that segment's natural orientation.
+        let mut realized_endpoints = Vec::new();
+        for (in_seg, out_segs) in out_segs.iter_mut().enumerate() {
+            let in_seg = SegIdx(in_seg);
+
+            // Sort the out segments so that they're in the same order that the segment will
+            // visit them if it's traversed in sweep-line order. This is almost the same as
+            // sorting the out segments by sweep-line order, but there's one little wrinkle
+            // for horizontal segments: in a situation like this:
+            //
+            //            /
+            //           /
+            //    o--o--o
+            //   /
+            //  /
+            //
+            // where there are multiple horizontal out segments on the same sweep line, we
+            // need to sort those segments relative to one another depending on the direction
+            // in which the input segment traverses that sweep line.
+            out_segs.sort_by(|&o1, &o2| {
+                let p11 = self.point(o1.first_half());
+                let p12 = self.point(o1.second_half());
+                let p21 = self.point(o2.first_half());
+                let p22 = self.point(o2.second_half());
+                let horiz1 = p11.y == p12.y;
+                let horiz2 = p21.y == p22.y;
+
+                let cmp = (p11, p12).cmp(&(p21, p22));
+                if horiz1 && horiz2 {
+                    // We can create multiple horizontal segments for a segment in the same
+                    // sweep line, but currently we don't create any backtracking: all the
+                    // horizontal segments we create have the same orientation.
+                    debug_assert_eq!(self.positively_oriented[o1], self.positively_oriented[o2]);
+                    if self.positively_oriented[o1] == self.segments.positively_oriented(in_seg) {
+                        cmp
+                    } else {
+                        cmp.reverse()
+                    }
+                } else {
+                    cmp
+                }
+            });
+
+            let mut first = None;
+            let mut last = None;
+
+            for &out_seg in &*out_segs {
+                let same_orientation =
+                    self.positively_oriented[out_seg] == self.segments.positively_oriented(in_seg);
+                let (first_endpoint, second_endpoint) = if same_orientation {
+                    (out_seg.first_half(), out_seg.second_half())
+                } else {
+                    (out_seg.second_half(), out_seg.first_half())
+                };
+                if first.is_none() {
+                    first = Some(first_endpoint);
+                }
+
+                // When walking the output segments in sweep-line order, the last endpoint of
+                // the previous one should be the first endpoint of this one.
+                if let Some(last) = last {
+                    assert_eq!(self.point_idx[first_endpoint], self.point_idx[last]);
+                }
+                last = Some(second_endpoint);
+            }
+
+            let first = first.unwrap();
+            let last = last.unwrap();
+            let (first, last) = if self.segments.positively_oriented(in_seg) {
+                (first, last)
+            } else {
+                (last, first)
+            };
+            realized_endpoints.push((self.point_idx[first], self.point_idx[last]));
+        }
+
+        for seg in self.segments.indices() {
+            if let Some(prev) = self.segments.contour_prev(seg) {
+                assert_eq!(realized_endpoints[prev.0].1, realized_endpoints[seg.0].0);
             }
         }
     }

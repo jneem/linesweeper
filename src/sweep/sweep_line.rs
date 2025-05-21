@@ -1510,8 +1510,7 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         // Modify the positions so that entering and exiting segments get their exact position.
         //
         // This is the easiest way to maintain the continuity of contours, but
-        // eventually we should change this to minimize horizontal jank. But
-        // first, we should add a test for continuity of contours (TODO).
+        // eventually we should change this to minimize horizontal jank.
         for ev in &mut *events {
             let seg = &segments[ev.seg_idx];
             if !ev.connected_above {

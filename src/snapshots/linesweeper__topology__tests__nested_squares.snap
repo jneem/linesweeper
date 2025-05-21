@@ -383,6 +383,18 @@ expression: "(&top, contours, top.build_scan_line_orders())"
       SegIdx(2),
     ],
   ),
+  positively_oriented: OutputSegVec(
+    inner: [
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+    ],
+  ),
 ), Contours(
   contours: [
     Contour(
