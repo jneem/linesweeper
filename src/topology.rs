@@ -1371,7 +1371,10 @@ impl<W: WindingNumber> Topology<W> {
                 let horiz1 = p11.y == p12.y;
                 let horiz2 = p21.y == p22.y;
 
-                let cmp = (p11, p12).cmp(&(p21, p22));
+                // Compare the y positions first, so that horizontal segments will get sorted
+                // after segments coming from above and before segments going down, no matter the x positions.
+                let cmp = (p11.y, p12.y).partial_cmp(&(p21.y, p22.y)).unwrap();
+                let cmp = cmp.then((p11.x, p12.x).partial_cmp(&(p21.x, p22.x)).unwrap());
                 if horiz1 && horiz2 {
                     // We can create multiple horizontal segments for a segment in the same
                     // sweep line, but currently we don't create any backtracking: all the
