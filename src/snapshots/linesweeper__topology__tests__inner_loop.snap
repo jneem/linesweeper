@@ -515,114 +515,157 @@ expression: "(top, contours)"
 ), Contours(
   contours: [
     Contour(
-      points: [
-        Point(
+      path: BezPath([
+        MoveTo(Point(
+          x: -2.0,
           y: -2.0,
+        )),
+        CurveTo(Point(
           x: -2.0,
-        ),
-        Point(
-          y: 2.0,
+          y: -0.6666666666666667,
+        ), Point(
           x: -2.0,
-        ),
-        Point(
+          y: 0.6666666666666667,
+        ), Point(
+          x: -2.0,
           y: 2.0,
+        )),
+        LineTo(Point(
           x: 0.0,
-        ),
-        Point(
           y: 2.0,
+        )),
+        LineTo(Point(
           x: 2.0,
-        ),
-        Point(
+          y: 2.0,
+        )),
+        CurveTo(Point(
+          x: 2.0,
+          y: 0.6666666666666667,
+        ), Point(
+          x: 2.0,
+          y: -0.6666666666666667,
+        ), Point(
+          x: 2.0,
           y: -2.0,
-          x: 2.0,
-        ),
-      ],
-      segs: [
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(0),
-          first_half: false,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(9),
-          first_half: false,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(10),
-          first_half: false,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(2),
-          first_half: true,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(1),
-          first_half: true,
-        ),
-      ],
+        )),
+        LineTo(Point(
+          x: -2.0,
+          y: -2.0,
+        )),
+        ClosePath,
+      ]),
       parent: None,
       outer: true,
     ),
     Contour(
-      points: [
-        Point(
-          y: 2.0,
+      path: BezPath([
+        MoveTo(Point(
           x: 0.0,
-        ),
-        Point(
-          y: -1.0,
+          y: 2.0,
+        )),
+        QuadTo(Point(
+          x: -0.008055555556111234,
+          y: 1.9838888888877775,
+        ), Point(
+          x: -0.016111111112222517,
+          y: 1.9677777777755552,
+        )),
+        CurveTo(Point(
+          x: -0.5107407407414816,
+          y: 0.9785185185170368,
+        ), Point(
+          x: -1.0053703703707408,
+          y: -0.010740740741481791,
+        ), Point(
           x: -1.5,
-        ),
-        Point(
           y: -1.0,
+        )),
+        LineTo(Point(
           x: 1.5,
-        ),
-      ],
-      segs: [
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(3),
-          first_half: true,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(4),
-          first_half: false,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(5),
-          first_half: false,
-        ),
-      ],
+          y: -1.0,
+        )),
+        CurveTo(Point(
+          x: 1.0053703703707408,
+          y: -0.010740740741481791,
+        ), Point(
+          x: 0.5107407407414816,
+          y: 0.9785185185170368,
+        ), Point(
+          x: 0.016111111112222517,
+          y: 1.9677777777755552,
+        )),
+        QuadTo(Point(
+          x: 0.008055555556111234,
+          y: 1.9838888888877775,
+        ), Point(
+          x: 0.0,
+          y: 2.0,
+        )),
+        ClosePath,
+      ]),
       parent: Some(ContourIdx(0)),
       outer: false,
     ),
     Contour(
-      points: [
-        Point(
-          y: 0.0,
+      path: BezPath([
+        MoveTo(Point(
           x: -0.1,
-        ),
-        Point(
-          y: 2.0,
-          x: 0.0,
-        ),
-        Point(
           y: 0.0,
+        )),
+        CurveTo(Point(
+          x: -0.06850000000001669,
+          y: 0.6299999999996666,
+        ), Point(
+          x: -0.03700000000003334,
+          y: 1.2599999999993334,
+        ), Point(
+          x: -0.00550000000005,
+          y: 1.889999999999,
+        )),
+        QuadTo(Point(
+          x: -0.003555555555636131,
+          y: 1.9288888888872777,
+        ), Point(
+          x: -0.0016111111112222405,
+          y: 1.9677777777755552,
+        )),
+        QuadTo(Point(
+          x: -0.000805555555611143,
+          y: 1.9838888888877775,
+        ), Point(
+          x: 0.0,
+          y: 2.0,
+        )),
+        QuadTo(Point(
+          x: 0.000805555555611143,
+          y: 1.9838888888877775,
+        ), Point(
+          x: 0.0016111111112222405,
+          y: 1.9677777777755552,
+        )),
+        QuadTo(Point(
+          x: 0.003555555555636131,
+          y: 1.9288888888872777,
+        ), Point(
+          x: 0.00550000000005,
+          y: 1.889999999999,
+        )),
+        CurveTo(Point(
+          x: 0.03700000000003334,
+          y: 1.2599999999993334,
+        ), Point(
+          x: 0.06850000000001669,
+          y: 0.6299999999996666,
+        ), Point(
           x: 0.1,
-        ),
-      ],
-      segs: [
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(6),
-          first_half: false,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(8),
-          first_half: true,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(7),
-          first_half: true,
-        ),
-      ],
+          y: 0.0,
+        )),
+        LineTo(Point(
+          x: -0.1,
+          y: 0.0,
+        )),
+        ClosePath,
+      ]),
       parent: Some(ContourIdx(1)),
       outer: true,
     ),

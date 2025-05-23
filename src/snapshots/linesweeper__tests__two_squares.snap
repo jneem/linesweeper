@@ -5,42 +5,41 @@ expression: output
 Contours(
   contours: [
     Contour(
-      points: [
-        Point(
-          y: 0.0,
+      path: BezPath([
+        MoveTo(Point(
           x: 0.0,
-        ),
-        Point(
-          y: 0.5,
-          x: 0.0,
-        ),
-        Point(
-          y: 0.5,
-          x: 0.5,
-        ),
-        Point(
           y: 0.0,
+        )),
+        CurveTo(Point(
+          x: 0.0,
+          y: 0.0,
+        ), Point(
+          x: 0.0,
+          y: 0.25,
+        ), Point(
+          x: 0.0,
+          y: 0.5,
+        )),
+        LineTo(Point(
           x: 0.5,
-        ),
-      ],
-      segs: [
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(3),
-          first_half: false,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(10),
-          first_half: false,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(5),
-          first_half: true,
-        ),
-        HalfOutputSegIdx(
-          idx: OutputSegIdx(4),
-          first_half: true,
-        ),
-      ],
+          y: 0.5,
+        )),
+        CurveTo(Point(
+          x: 0.5,
+          y: 0.5,
+        ), Point(
+          x: 0.5,
+          y: 0.25,
+        ), Point(
+          x: 0.5,
+          y: 0.0,
+        )),
+        LineTo(Point(
+          x: 0.0,
+          y: 0.0,
+        )),
+        ClosePath,
+      ]),
       parent: None,
       outer: true,
     ),

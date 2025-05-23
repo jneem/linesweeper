@@ -1017,6 +1017,31 @@ impl<W: WindingNumber> Topology<W> {
         &self.points[self.point_idx[idx]]
     }
 
+    /// The segments in `segs` form a closed path, and each one is the ending half
+    /// of its segment.
+    fn segs_to_path(
+        &self,
+        segs: &[HalfOutputSegIdx],
+        positions: &OutputSegVec<(BezPath, Option<usize>)>,
+    ) -> BezPath {
+        let mut ret = BezPath::default();
+        ret.move_to(self.point(segs[0].other_half()).to_kurbo());
+        for seg in segs {
+            let path = &positions[seg.idx];
+            if seg.is_first_half() {
+                // skip(1) leaves off the initial MoveTo, which is unnecessary
+                // because this path starts where the last one ended.
+                // TODO: avoid the allocation in reverse_subpaths
+                ret.extend(path.0.reverse_subpaths().iter().skip(1));
+            } else {
+                ret.extend(path.0.iter().skip(1));
+            }
+        }
+
+        ret.close_path();
+        ret
+    }
+
     /// Returns the contours of some set defined by this topology.
     ///
     /// The callback function `inside` takes a winding number and returns `true`
@@ -1028,11 +1053,11 @@ impl<W: WindingNumber> Topology<W> {
         // that we visit outer contours before we visit their children. However, when the inner
         // and outer contours share a point, we run into a problem. For example:
         //
-        // /------------------\
-        // |        /\        |
-        // |       /  \       |
-        // \       \  /      /
-        //  \       \/      /
+        // /---------o--------\
+        // |        / \       |
+        // |       /   \      |
+        // \       \   /     /
+        //  \       \_/     /
         //   \             /
         //    -------------
         // (where the top-middle point is supposed to have 4 segments coming out of it; it's
@@ -1044,6 +1069,7 @@ impl<W: WindingNumber> Topology<W> {
         // outer contour as soon as we start walking it.
         let mut ret = Contours::default();
         let mut seg_contour: Vec<Option<ContourIdx>> = vec![None; self.winding.inner.len()];
+        let positions = self.compute_positions();
 
         let bdy = |idx: OutputSegIdx| -> bool {
             inside(self.winding[idx].clockwise) != inside(self.winding[idx].counter_clockwise)
@@ -1150,14 +1176,8 @@ impl<W: WindingNumber> Topology<W> {
                     for &seg in &segs[seg_idx..] {
                         seg_contour[seg.idx.0] = Some(loop_contour_idx);
                     }
-                    let points = segs[seg_idx..]
-                        .iter()
-                        .map(|s| *self.point(s.other_half()))
-                        .collect();
-                    let contour_segs = segs[seg_idx..].to_vec();
                     ret.contours.push(Contour {
-                        points,
-                        segs: contour_segs,
+                        path: self.segs_to_path(&segs[seg_idx..], &positions),
                         parent: Some(contour_idx),
                         outer: !ret.contours[contour_idx.0].outer,
                     });
@@ -1176,9 +1196,7 @@ impl<W: WindingNumber> Topology<W> {
             for &seg in &segs {
                 seg_contour[seg.idx.0] = Some(contour_idx);
             }
-            ret.contours[contour_idx.0].points =
-                segs.iter().map(|s| *self.point(s.other_half())).collect();
-            ret.contours[contour_idx.0].segs = segs.to_vec();
+            ret.contours[contour_idx.0].path = self.segs_to_path(&segs, &positions);
         }
 
         ret
@@ -1602,22 +1620,15 @@ impl ScanLineOrder {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct ContourIdx(pub usize);
 
-/// A simple, closed polyline.
+/// A simple, closed path.
 ///
 /// A contour has no repeated points, and its segments do not intersect.
 #[cfg_attr(test, derive(serde::Serialize))]
 #[derive(Clone, Debug)]
 pub struct Contour {
-    /// The points making up this contour.
-    ///
-    /// If you're drawing a contour with line segments, don't forget to close it: the last point
-    /// should be connected to the first point.
-    pub points: Vec<Point>,
+    /// The contour's path, which is simple and closed.
+    pub path: BezPath,
 
-    /// `segs[i]` is the segment from `points[i]` to `points[(i + 1) % points.len()]`.
-    pub segs: Vec<HalfOutputSegIdx>,
-
-    // TODO: also gather the output segment indices. (So that we can do positioning)
     /// A contour can have a parent, so that sets with holes can be represented as nested contours.
     /// For example, the shaded set below:
     ///
@@ -1699,8 +1710,7 @@ pub struct Contour {
 impl Default for Contour {
     fn default() -> Self {
         Self {
-            points: Vec::default(),
-            segs: Vec::default(),
+            path: BezPath::default(),
             outer: true,
             parent: None,
         }

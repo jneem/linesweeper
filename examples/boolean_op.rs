@@ -6,7 +6,7 @@ use svg::Document;
 
 use linesweeper::{
     generators,
-    topology::{BinaryWindingNumber, OutputSegVec, Topology},
+    topology::{BinaryWindingNumber, Topology},
     Point,
 };
 use linesweeper_util::svg_to_bezpaths;
@@ -152,14 +152,11 @@ pub fn main() -> anyhow::Result<()> {
         document = document.add(path);
     }
 
-    let out_paths = top.compute_positions();
-
     document = add_op(
         document,
         Op::Union,
         args.non_zero,
         &top,
-        &out_paths,
         one_width,
         0.0,
         stroke_width,
@@ -169,7 +166,6 @@ pub fn main() -> anyhow::Result<()> {
         Op::Intersection,
         args.non_zero,
         &top,
-        &out_paths,
         one_width * 2.0,
         0.0,
         stroke_width,
@@ -179,7 +175,6 @@ pub fn main() -> anyhow::Result<()> {
         Op::Xor,
         args.non_zero,
         &top,
-        &out_paths,
         0.0,
         one_height,
         stroke_width,
@@ -189,7 +184,6 @@ pub fn main() -> anyhow::Result<()> {
         Op::Difference,
         args.non_zero,
         &top,
-        &out_paths,
         one_width,
         one_height,
         stroke_width,
@@ -199,7 +193,6 @@ pub fn main() -> anyhow::Result<()> {
         Op::ReverseDifference,
         args.non_zero,
         &top,
-        &out_paths,
         one_width * 2.0,
         one_height,
         stroke_width,
@@ -216,7 +209,6 @@ fn add_op(
     op: Op,
     non_zero: bool,
     top: &Topology<BinaryWindingNumber>,
-    out_paths: &OutputSegVec<(BezPath, Option<usize>)>,
     x_off: f64,
     y_off: f64,
     stroke_width: f64,
@@ -249,43 +241,22 @@ fn add_op(
         let mut data = svg::node::element::path::Data::new();
 
         for contour_idx in group {
-            let segs = contours[contour_idx].segs.iter().cloned();
-            let mut first = true;
-
-            for seg in segs {
-                let path = if seg.is_first_half() {
-                    out_paths[seg].0.reverse_subpaths()
-                } else {
-                    out_paths[seg].0.clone()
+            let path = &contours[contour_idx].path;
+            for el in path.iter() {
+                data = match el {
+                    kurbo::PathEl::MoveTo(p) => data.move_to((p.x + x_off, p.y + y_off)),
+                    kurbo::PathEl::LineTo(p) => data.line_to((p.x + x_off, p.y + y_off)),
+                    kurbo::PathEl::QuadTo(p0, p1) => data.quadratic_curve_to((
+                        (p0.x + x_off, p0.y + y_off),
+                        (p1.x + x_off, p1.y + y_off),
+                    )),
+                    kurbo::PathEl::CurveTo(p0, p1, p2) => data.cubic_curve_to((
+                        (p0.x + x_off, p0.y + y_off),
+                        (p1.x + x_off, p1.y + y_off),
+                        (p2.x + x_off, p2.y + y_off),
+                    )),
+                    kurbo::PathEl::ClosePath => data.close(),
                 };
-
-                for el in path.iter() {
-                    match el {
-                        kurbo::PathEl::MoveTo(p) => {
-                            if first {
-                                first = !first;
-                                data = data.move_to((p.x + x_off, p.y + y_off));
-                            }
-                        }
-                        kurbo::PathEl::LineTo(p) => {
-                            data = data.line_to((p.x + x_off, p.y + y_off));
-                        }
-                        kurbo::PathEl::QuadTo(p0, p1) => {
-                            data = data.quadratic_curve_to((
-                                (p0.x + x_off, p0.y + y_off),
-                                (p1.x + x_off, p1.y + y_off),
-                            ));
-                        }
-                        kurbo::PathEl::CurveTo(p0, p1, p2) => {
-                            data = data.cubic_curve_to((
-                                (p0.x + x_off, p0.y + y_off),
-                                (p1.x + x_off, p1.y + y_off),
-                                (p2.x + x_off, p2.y + y_off),
-                            ));
-                        }
-                        kurbo::PathEl::ClosePath => todo!(),
-                    }
-                }
             }
             data = data.close();
         }
