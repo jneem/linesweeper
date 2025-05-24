@@ -98,7 +98,7 @@ jobs:
           save-if: ${{ github.event_name != 'merge_group' }}
 
       - name: Run cargo clippy
-        run: cargo clippy --workspace --locked -D warnings
+        run: cargo clippy --workspace --locked -- -D warnings
 
       - name: Run cargo clippy (auxiliary)
         run: cargo clippy --workspace --locked --tests --benches --examples -- -D warnings
