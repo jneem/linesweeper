@@ -9,6 +9,9 @@ use std::hash::Hash;
 /// nor does it panic or guard against them on construction. This makes things
 /// substantially faster: I measured a 20% improvement to some benchmarks by
 /// switching from `OrderedFloat` to `CheapOrderedFloat`.
+///
+/// Ignoring NaNs should be ok: we check input for NaNs and infinities, and
+/// then we make some effort not to introduce them.
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(test, serde(transparent))]
 #[derive(Debug, Clone, Copy, PartialEq)]
