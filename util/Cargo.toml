@@ -9,6 +9,7 @@ repository = "https://github.com/jneem/linesweeper"
 
 [dependencies]
 kurbo.workspace = true
+skrifa.workspace = true
 svg = { workspace = true, default-features = false }
 usvg = { workspace = true, default-features = false }
 

@@ -1,7 +1,9 @@
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
+use anyhow::anyhow;
 use clap::{Args, Parser};
 use kurbo::BezPath;
+use skrifa::{FontRef, MetadataProvider};
 use svg::Document;
 
 use linesweeper::{
@@ -9,7 +11,7 @@ use linesweeper::{
     topology::{BinaryWindingNumber, Topology},
     Point,
 };
-use linesweeper_util::svg_to_bezpaths;
+use linesweeper_util::{outline_to_bezpath, svg_to_bezpaths};
 
 #[derive(Copy, Clone, Debug)]
 enum Op {
@@ -18,21 +20,6 @@ enum Op {
     Xor,
     Difference,
     ReverseDifference,
-}
-
-impl FromStr for Op {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "union" => Ok(Op::Union),
-            "intersection" => Ok(Op::Intersection),
-            "xor" => Ok(Op::Xor),
-            "difference" => Ok(Op::Difference),
-            "reverse_difference" => Ok(Op::ReverseDifference),
-            _ => Err(format!("unknown op {s}")),
-        }
-    }
 }
 
 #[derive(Copy, Clone, Debug, clap::ValueEnum)]
@@ -64,6 +51,9 @@ struct Input {
 
     #[arg(long)]
     example: Option<Example>,
+
+    #[arg(long)]
+    char: Option<Vec<char>>,
 }
 
 fn points_to_bez(ps: Vec<Point>) -> BezPath {
@@ -87,8 +77,8 @@ fn contours_to_bezs((cs0, cs1): (Vec<Vec<Point>>, Vec<Vec<Point>>)) -> (BezPath,
 }
 
 fn get_contours(input: &Input) -> anyhow::Result<(BezPath, BezPath)> {
-    match (&input.input, &input.example) {
-        (Some(path), None) => {
+    match (&input.input, &input.example, &input.char) {
+        (Some(path), None, None) => {
             let input = std::fs::read_to_string(path)?;
             let tree = usvg::Tree::from_str(&input, &usvg::Options::default())?;
             let mut contours = svg_to_bezpaths(&tree).into_iter();
@@ -96,13 +86,33 @@ fn get_contours(input: &Input) -> anyhow::Result<(BezPath, BezPath)> {
             let rest = contours.flatten().collect();
             Ok((first, rest))
         }
-        (None, Some(example)) => match example {
+        (None, Some(example), None) => match example {
             Example::Checkerboard => Ok(contours_to_bezs(generators::checkerboard(10))),
             Example::SlantedCheckerboard => {
                 Ok(contours_to_bezs(generators::slanted_checkerboard(10)))
             }
             Example::Slanties => Ok(contours_to_bezs(generators::slanties(10))),
         },
+        (None, None, Some(chars)) => {
+            let ws = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+            let font_path = format!("{ws}/tests/fonts/Inconsolata-Regular.ttf");
+            let data = std::fs::read(&font_path).unwrap();
+            let font_ref = FontRef::new(&data).unwrap();
+            let charmap = font_ref.charmap();
+            let paths = chars
+                .iter()
+                .map(|c| -> anyhow::Result<_> {
+                    let id = charmap.map(*c).ok_or(anyhow!("{c} not in the charmap"))?;
+                    let outline = font_ref
+                        .outline_glyphs()
+                        .get(id)
+                        .ok_or(anyhow!("missing glyph for {c}"))?;
+                    Ok(outline_to_bezpath(outline))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok((paths[0].clone(), paths[1..].iter().flatten().collect()))
+        }
         _ => unreachable!(),
     }
 }
