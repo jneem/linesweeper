@@ -209,7 +209,7 @@ pub(crate) fn compute_positions(
                 break;
             } else {
                 debug_assert_eq!(cmp_order, Order::Ish);
-                y1 = y1.min(cmp_end_y);
+                y1 = y1.min(cmp_end_y).min(endpoints[cur.second_half()].y);
                 west_scan.push(nbr);
             }
             cur = nbr;
@@ -221,7 +221,6 @@ pub(crate) fn compute_positions(
             let order = cmp.compare_segments(segs, orig_seg_map[cur], orig_seg_map[nbr]);
             let (_, cmp_end_y, cmp_order) = order.iter().find(|(_, end_y, _)| *end_y > y0).unwrap();
 
-            y1 = y1.min(cmp_end_y);
             if cmp_order == Order::Left {
                 let next_close_y = scan_order
                     .close_east_neighbor_height_after(cur, y0, orig_seg_map, segs, cmp)
@@ -230,6 +229,7 @@ pub(crate) fn compute_positions(
                 break;
             } else {
                 debug_assert_eq!(cmp_order, Order::Ish);
+                y1 = y1.min(cmp_end_y).min(endpoints[cur.second_half()].y);
                 east_scan.push(nbr);
             }
             cur = nbr;
