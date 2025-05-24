@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use kurbo::BezPath;
-use linesweeper::{boolean_op, topology::Topology, BooleanOp, FillRule, Point, Segments};
+use linesweeper::{binary_op, topology::Topology, BinaryOp, FillRule, Point, Segments};
 use linesweeper_util::svg_to_bezpaths;
 
 fn svg_to_contours(tree: &usvg::Tree) -> Vec<Vec<Point>> {
@@ -113,11 +113,11 @@ fn xor(c: &mut Criterion) {
 
     c.bench_function("logo: xor", |b| {
         b.iter(|| {
-            black_box(boolean_op(
+            black_box(binary_op(
                 &first_path,
                 &second_path,
                 FillRule::EvenOdd,
-                BooleanOp::Xor,
+                BinaryOp::Xor,
             ))
         });
     });

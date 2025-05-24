@@ -2,10 +2,10 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 
 use kurbo::BezPath;
 use linesweeper::{
-    boolean_op,
+    binary_op,
     generators::{checkerboard, slanted_checkerboard, slanties},
     topology::Topology,
-    BooleanOp, FillRule, Point, Segments,
+    BinaryOp, FillRule, Point, Segments,
 };
 
 fn to_bez(points: &[Vec<Point>]) -> BezPath {
@@ -92,11 +92,11 @@ fn xor(c: &mut Criterion) {
         }
         group.bench_with_input(BenchmarkId::new("linesweeper", size), &size, |b, _size| {
             b.iter(|| {
-                black_box(boolean_op(
+                black_box(binary_op(
                     &path_even,
                     &path_odd,
                     FillRule::EvenOdd,
-                    BooleanOp::Xor,
+                    BinaryOp::Xor,
                 ))
             });
         });
@@ -129,11 +129,11 @@ fn xor(c: &mut Criterion) {
         }
         group.bench_with_input(BenchmarkId::new("linesweeper", size), &size, |b, _size| {
             b.iter(|| {
-                black_box(boolean_op(
+                black_box(binary_op(
                     &path_even,
                     &path_odd,
                     FillRule::EvenOdd,
-                    BooleanOp::Xor,
+                    BinaryOp::Xor,
                 ))
             });
         });
@@ -160,11 +160,11 @@ fn xor(c: &mut Criterion) {
 
     c.bench_function("slanted_checkerboard: xor", |b| {
         b.iter(|| {
-            black_box(boolean_op(
+            black_box(binary_op(
                 &path_even,
                 &path_odd,
                 FillRule::EvenOdd,
-                BooleanOp::Xor,
+                BinaryOp::Xor,
             ))
         });
     });

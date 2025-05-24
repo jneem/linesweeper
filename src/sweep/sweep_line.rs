@@ -163,6 +163,7 @@ impl SegmentOrder {
         self.segs[i].seg
     }
 
+    #[cfg(feature = "slow-asserts")]
     fn is_exit(&self, i: usize) -> bool {
         let seg = &self.segs[i];
         seg.will_really_exit()
