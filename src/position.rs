@@ -241,9 +241,14 @@ pub(crate) fn compute_positions(
         if neighbors.len() == 1 {
             let idx = entry.idx;
             // We're far from everything, so just copy the input bezier to the output.
-            let c = y_subsegment(segs[orig_seg_map[idx]].to_kurbo(), y0, y1);
-            out[idx].1 = Some(out[idx].0.elements().len() - 1);
-            out[idx].0.curve_to(c.p1, c.p2, c.p3);
+            if y0 == y1 {
+                out[idx].1 = Some(out[idx].0.elements().len() - 1);
+                out[idx].0.line_to(endpoints[idx.second_half()]);
+            } else {
+                let c = y_subsegment(segs[orig_seg_map[idx]].to_kurbo(), y0, y1);
+                out[idx].1 = Some(out[idx].0.elements().len() - 1);
+                out[idx].0.curve_to(c.p1, c.p2, c.p3);
+            }
         } else {
             let orig_neighbors = neighbors
                 .iter()
