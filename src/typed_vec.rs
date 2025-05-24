@@ -1,3 +1,15 @@
+/// Implement methods for vectors indexed with typed indices.
+///
+/// We use a lot of indices into arrays: we have arrays indexed by input
+/// segments, arrays indexed by output segments, arrays indexed by output
+/// endpoints, and more. To help keep these straight, we wrap indices
+/// in new types, like `SegIdx`, `OutputSegIdx`, etc., and we wrap `Vec`
+/// in new types, like `SegVec`, `OutputSegVec`, etc. Then you can only
+/// use the right index type with the right vector type.
+///
+/// This macro implements a bunch of useful methods on the new-type
+/// wrappers. It assumes that the index new-type is just a wrapper
+/// around `usize`.
 macro_rules! impl_typed_vec {
     ($vec_name:ident, $idx_name:ident, $dbg_prefix:expr) => {
         impl std::fmt::Debug for $idx_name {

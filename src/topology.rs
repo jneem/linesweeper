@@ -1216,16 +1216,14 @@ impl<W: WindingNumber> Topology<W> {
         }
 
         // Check the continuity of contours.
-        let mut out_segs = vec![Vec::<OutputSegIdx>::new(); self.segments.len()];
+        let mut out_segs = SegVec::<Vec<OutputSegIdx>>::with_size(self.segments.len());
         for out_seg in self.winding.indices() {
-            out_segs[self.orig_seg[out_seg].0].push(out_seg);
+            out_segs[self.orig_seg[out_seg]].push(out_seg);
         }
         // For each segment, figure out the first and last points of its output-segment-polyline,
         // in that segment's natural orientation.
         let mut realized_endpoints = Vec::new();
-        for (in_seg, out_segs) in out_segs.iter_mut().enumerate() {
-            let in_seg = SegIdx(in_seg);
-
+        for (in_seg, out_segs) in out_segs.iter_mut() {
             // Sort the out segments so that they're in the same order that the segment will
             // visit them if it's traversed in sweep-line order. This is almost the same as
             // sorting the out segments by sweep-line order, but there's one little wrinkle

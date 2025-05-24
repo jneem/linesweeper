@@ -19,7 +19,6 @@ usvg = { version = "0.44.0", default-features = false }
 arbitrary = ["dep:arbitrary"]
 slow-asserts = []
 generators = []
-default = ["arbitrary"] # We need arbitrary for tests. Is there a way to default it just for tests?
 
 [dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
@@ -28,6 +27,7 @@ kurbo = { version = "0.11.1", features = ["serde"] }
 
 [dev-dependencies]
 anyhow = "1.0.80"
+arbitrary = { version = "1.4.1", features = ["derive"] }
 arbtest = "0.3.2"
 assert_matches = "1.5.0"
 clap = { version = "4.5.1", features = ["derive"] }

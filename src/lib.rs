@@ -4,7 +4,7 @@
 #[macro_use]
 mod typed_vec;
 
-#[cfg(feature = "arbitrary")]
+#[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
 pub mod curve;
 mod geom;

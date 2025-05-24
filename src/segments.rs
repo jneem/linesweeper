@@ -17,7 +17,7 @@ use crate::{
 /// multiple `Segments` in flight. Just be careful not to mix them up.)
 #[cfg_attr(test, derive(serde::Serialize))]
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct SegIdx(pub usize);
+pub struct SegIdx(pub(crate) usize);
 
 /// A vector indexed by `SegIdx`.
 #[cfg_attr(test, derive(serde::Serialize))]
