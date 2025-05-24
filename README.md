@@ -9,7 +9,7 @@ algorithm, and uses it to provide various two-dimensional geometric primitives
 like boolean operations on sets bounded by Bézier paths.
 It is currently in a pre-alpha state.
 
-![Image of set operations applied to glyphs for L, S, and W][docs/assets/LSW.png]
+![Image of set operations applied to glyphs for L, S, and W](docs/assets/LSW.png)
 
 ## Basic usage
 
