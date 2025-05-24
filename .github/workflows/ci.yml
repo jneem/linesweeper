@@ -117,7 +117,6 @@ jobs:
 
   test-stable:
     name: cargo test
-    needs: prime-lfs-cache
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
