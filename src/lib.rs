@@ -76,7 +76,10 @@ pub fn boolean_op(
     if min.is_infinite() || max.is_infinite() {
         return Err(Error::Infinity);
     }
-    // TODO: check for NaN
+    // If there was any NaN in the input, it should have propagated to the min and max.
+    if min.is_nan() || max.is_nan() {
+        return Err(Error::NaN);
+    }
 
     // TODO: we did some analysis for error bounds in the case of polylines.
     // Think more about what makes sense for curves.
