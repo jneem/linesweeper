@@ -101,7 +101,7 @@ jobs:
         run: cargo clippy --workspace --locked -D warnings
 
       - name: Run cargo clippy (auxiliary)
-        run: cargo clippy --workspace --locked --tests --benches --examples -D warnings
+        run: cargo clippy --workspace --locked --tests --benches --examples -- -D warnings
 
       - name: Run cargo clippy (no debug_assertions)
         if: env.USING_DEBUG_ASSERTIONS == 'true'
@@ -111,7 +111,7 @@ jobs:
 
       - name: Run cargo clippy (auxiliary) (no debug_assertions)
         if: env.USING_DEBUG_ASSERTIONS == 'true'
-        run: cargo clippy --workspace --locked --tests --benches --examples -D warnings
+        run: cargo clippy --workspace --locked --tests --benches --examples -- -D warnings
         env:
           CARGO_PROFILE_CI_DEBUG_ASSERTIONS: "false"
 

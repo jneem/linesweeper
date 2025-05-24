@@ -146,7 +146,7 @@ fn monotonic_cubic(p0: &Point, p1: &Point, p2: &Point, p3: &Point) -> bool {
     }
 
     // The extremum of the quadratic is at t = (q0 - q1) / (q0 - q1 + q2 - q1),
-    // so consider the four possiblities for the signs of q0 - q2 and q2 - q1.
+    // so consider the four possibilities for the signs of q0 - q2 and q2 - q1.
     // If they're both negative, then so is the coefficient of t^2 and so there's
     // no minimum between the endpoints. If one is negative and the other positive,
     // then the extremum is either less than zero or bigger than one, and so again

@@ -512,7 +512,7 @@ together, @lem-basic-order-properties implies that $alpha^k prec.tilde_(y,epsilo
 
 #inexact[
 We might not be able to tell exactly which segments $alpha^k$ between $alpha^i$ and $alpha^j$ satisfy
-$alpha^i prec_(y,epsilon) alpha^k$. Fortunately, we can push a few too many segments while stil maintaining
+$alpha^i prec_(y,epsilon) alpha^k$. Fortunately, we can push a few too many segments while still maintaining
 correctness: it suffices to
 include all segments $alpha^k succ_(y,epsilon) alpha^i$, while also ensuring that we only include $alpha^k$ for which
 $alpha^k_+(y) >= alpha^i_+(y)$.
@@ -578,7 +578,7 @@ because we insisted on including the segment endpoints exactly.
 
 For the "completeness" property, let's focus on the bit between the important heights
 (because everything gets subdivided at the important heights, and so maintaining the
-completeness property there is just a matter of splitting into enough horizontal segements).
+completeness property there is just a matter of splitting into enough horizontal segments).
 Between two important heights, the sweep line is constant, so the new sweep line
 at the old height is the same as the old sweep line at the new height. Thus, all output
 subsegments have the same order when leaving the old sweep line as they do when entering

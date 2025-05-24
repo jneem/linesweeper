@@ -1335,7 +1335,7 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         let x = segments[entry.seg].at_y(self.y());
         if let Some(old_seg) = entry.old_seg {
             // This entry is on a contour, where one segment ends and the next begins.
-            // We ouput two events (one per segment) at the same position.
+            // We output two events (one per segment) at the same position.
             self.bufs.output_events.push(OutputEvent {
                 x0: x,
                 connected_above: true,

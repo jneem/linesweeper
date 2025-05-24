@@ -431,7 +431,7 @@ fn solve_cubic_in_unit_interval(c0: f64, c1: f64, c2: f64, c3: f64) -> ArrayVec<
 //
 // For weird cases, the precise meaning of the "roots" we return is that the
 // quadratic is positive before the first root, negative between them, and
-// positve after the second root.
+// positive after the second root.
 pub(crate) fn monic_quadratic_roots(b: f64, c: f64) -> (f64, f64) {
     let disc = b * b - 4.0 * c;
     let root1 = if disc.is_finite() {

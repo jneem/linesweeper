@@ -50,7 +50,7 @@ fuzz_target!(|data: &[u8]| {
 
             // The quadratic should have the opposite sign between the roots, at least if it's
             // measurably non-zero. We don't check the finiteness of `smaller_root` here because
-            // if it's infinite then the threshold will be inifinity.
+            // if it's infinite then the threshold will be infinity.
             let threshold = threshold.max(accuracy * q.max_coeff().max(signs.smaller_root.powi(2)));
             let mid_val = q.eval((signs.bigger_root + signs.smaller_root) / 2.0);
             if mid_val.abs() > threshold {
