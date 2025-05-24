@@ -1,9 +1,15 @@
 # linesweeper: a robust sweep-line algorithm
 
+[![GitHub Actions CI status.](https://img.shields.io/github/actions/workflow/status/jneem/linesweeper/ci.yml?logo=github&label=CI)](https://github.com/jneem/linesweeper/actions)
+[![Latest published version.](https://img.shields.io/crates/v/linesweeper.svg)](https://crates.io/crates/linesweeper)
+[![Documentation build status.](https://img.shields.io/docsrs/linesweeper.svg)](https://docs.rs/linesweeper)
+
 This rust crate implements a "robust" version of the Bentley-Ottmann sweep-line
 algorithm, and uses it to provide various two-dimensional geometric primitives
 like boolean operations on sets bounded by Bézier paths.
 It is currently in a pre-alpha state.
+
+![Image of set operations applied to glyphs for L, S, and W][docs/assets/LSW.png]
 
 ## Basic usage
 
