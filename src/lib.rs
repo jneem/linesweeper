@@ -42,7 +42,7 @@ pub enum FillRule {
 
 /// Binary operations between sets.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum BooleanOp {
+pub enum BinaryOp {
     /// A point is in the union of two sets if it is in either one.
     Union,
     /// A point is in the intersection of two sets if it is in both.
@@ -63,11 +63,11 @@ pub enum Error {
 }
 
 /// Computes a boolean operation between two sets, each of which is described as a collection of closed polylines.
-pub fn boolean_op(
+pub fn binary_op(
     set_a: &kurbo::BezPath,
     set_b: &kurbo::BezPath,
     fill_rule: FillRule,
-    op: BooleanOp,
+    op: BinaryOp,
 ) -> Result<topology::Contours, Error> {
     // Find the extremal values, to figure out how much precision we can support.
     let bbox = set_a.bounding_box().union(set_b.bounding_box());
@@ -98,10 +98,10 @@ pub fn boolean_op(
         };
 
         match op {
-            BooleanOp::Union => inside_one(windings.shape_a) || inside_one(windings.shape_b),
-            BooleanOp::Intersection => inside_one(windings.shape_a) && inside_one(windings.shape_b),
-            BooleanOp::Xor => inside_one(windings.shape_a) != inside_one(windings.shape_b),
-            BooleanOp::Difference => inside_one(windings.shape_a) && !inside_one(windings.shape_b),
+            BinaryOp::Union => inside_one(windings.shape_a) || inside_one(windings.shape_b),
+            BinaryOp::Intersection => inside_one(windings.shape_a) && inside_one(windings.shape_b),
+            BinaryOp::Xor => inside_one(windings.shape_a) != inside_one(windings.shape_b),
+            BinaryOp::Difference => inside_one(windings.shape_a) && !inside_one(windings.shape_b),
         }
     };
 
@@ -128,11 +128,11 @@ mod tests {
         }
         let a = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
         let b = vec![(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)];
-        let output = boolean_op(
+        let output = binary_op(
             &to_bez(a.into_iter()),
             &to_bez(b.into_iter()),
             FillRule::EvenOdd,
-            BooleanOp::Intersection,
+            BinaryOp::Intersection,
         )
         .unwrap();
 
