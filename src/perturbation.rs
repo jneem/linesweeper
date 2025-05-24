@@ -1,6 +1,8 @@
 #![allow(missing_docs)]
 
 //! Functionality for constructing perturbations for testing.
+// TODO: add support for curves
+// TODO: see how this looks in arbtest
 
 use proptest::{arbitrary::any, prop_oneof, strategy::Strategy};
 

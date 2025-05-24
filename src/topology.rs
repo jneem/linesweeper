@@ -1,4 +1,4 @@
-//! Utilities for computing topological properties of closed polylines.
+//! Utilities for computing topological properties of closed paths.
 //!
 //! This consumes the output of the sweep-line algorithm and does things
 //! like winding number computations and boolean operations.
@@ -11,7 +11,7 @@ use crate::{
     curve::{y_subsegment, Order},
     geom::Point,
     order::ComparisonCache,
-    segments::{SegIdx, Segments},
+    segments::{SegIdx, SegVec, Segments},
     sweep::{
         SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
     },
@@ -183,11 +183,16 @@ impl OutputSegIdx {
     }
 }
 
-impl std::fmt::Debug for OutputSegIdx {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "o_{}", self.0)
-    }
+/// A vector indexed by output segments.
+///
+/// See [`OutputSegIdx`] for more about output segments.
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct OutputSegVec<T> {
+    inner: Vec<T>,
 }
+
+impl_typed_vec!(OutputSegVec, OutputSegIdx, "o");
 
 /// An index that refers to one end of an output segment.
 ///
@@ -319,70 +324,6 @@ impl<T> std::ops::IndexMut<HalfOutputSegIdx> for HalfOutputSegVec<T> {
     }
 }
 
-/// A vector indexed by output segments.
-///
-/// See [`OutputSegIdx`] for more about output segments.
-#[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Hash, PartialEq, Eq)]
-pub struct OutputSegVec<T> {
-    inner: Vec<T>,
-}
-
-impl<T> OutputSegVec<T> {
-    /// Creates a new vector with capacity for at least `cap` output segments before reallocating.
-    pub fn with_capacity(cap: usize) -> Self {
-        Self {
-            inner: Vec::with_capacity(cap),
-        }
-    }
-
-    /// Returns an iterator over all indices into this vector.
-    pub fn indices(&self) -> impl Iterator<Item = OutputSegIdx> {
-        (0..self.inner.len()).map(OutputSegIdx)
-    }
-
-    /// The length of this vector.
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Are we empty?
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-}
-
-impl<T: Default> OutputSegVec<T> {
-    /// Creates a new vector with `size` elements, each initialized with the default value.
-    pub fn with_size(size: usize) -> Self {
-        Self {
-            inner: std::iter::from_fn(|| Some(T::default()))
-                .take(size)
-                .collect(),
-        }
-    }
-}
-
-impl<T> Default for OutputSegVec<T> {
-    fn default() -> Self {
-        Self { inner: Vec::new() }
-    }
-}
-
-impl<T> std::ops::Index<OutputSegIdx> for OutputSegVec<T> {
-    type Output = T;
-
-    fn index(&self, index: OutputSegIdx) -> &Self::Output {
-        &self.inner[index.0]
-    }
-}
-
-impl<T> std::ops::IndexMut<OutputSegIdx> for OutputSegVec<T> {
-    fn index_mut(&mut self, index: OutputSegIdx) -> &mut T {
-        &mut self.inner[index.0]
-    }
-}
-
 impl<T> std::ops::Index<HalfOutputSegIdx> for OutputSegVec<T> {
     type Output = T;
 
@@ -391,33 +332,9 @@ impl<T> std::ops::Index<HalfOutputSegIdx> for OutputSegVec<T> {
     }
 }
 
-impl<T: std::fmt::Debug> std::fmt::Debug for OutputSegVec<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        struct Entry<'a, T> {
-            idx: OutputSegIdx,
-            inner: &'a T,
-        }
-
-        impl<T: std::fmt::Debug> std::fmt::Debug for Entry<'_, T> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{idx:?}: {inner:?}", idx = self.idx, inner = self.inner,)
-            }
-        }
-
-        let mut list = f.debug_list();
-        for idx in self.indices() {
-            list.entry(&Entry {
-                idx,
-                inner: &self[idx],
-            });
-        }
-        list.finish()
-    }
-}
-
 /// An index into the set of points.
 #[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PointIdx(usize);
 
 #[cfg_attr(test, derive(serde::Serialize))]
@@ -426,62 +343,7 @@ struct PointVec<T> {
     inner: Vec<T>,
 }
 
-impl<T> PointVec<T> {
-    fn with_capacity(cap: usize) -> Self {
-        Self {
-            inner: Vec::with_capacity(cap),
-        }
-    }
-
-    /// Returns an iterator over all indices into this vector.
-    pub fn indices(&self) -> impl Iterator<Item = PointIdx> {
-        (0..self.inner.len()).map(PointIdx)
-    }
-}
-
-impl<T> Default for PointVec<T> {
-    fn default() -> Self {
-        Self { inner: Vec::new() }
-    }
-}
-
-impl<T> std::ops::Index<PointIdx> for PointVec<T> {
-    type Output = T;
-
-    fn index(&self, index: PointIdx) -> &Self::Output {
-        &self.inner[index.0]
-    }
-}
-
-impl<T> std::ops::IndexMut<PointIdx> for PointVec<T> {
-    fn index_mut(&mut self, index: PointIdx) -> &mut Self::Output {
-        &mut self.inner[index.0]
-    }
-}
-
-impl<T: std::fmt::Debug> std::fmt::Debug for PointVec<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        struct Entry<'a, T> {
-            idx: PointIdx,
-            inner: &'a T,
-        }
-
-        impl<T: std::fmt::Debug> std::fmt::Debug for Entry<'_, T> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{idx:?}: {inner:?}", idx = self.idx, inner = self.inner,)
-            }
-        }
-
-        let mut list = f.debug_list();
-        for idx in self.indices() {
-            list.entry(&Entry {
-                idx,
-                inner: &self[idx],
-            });
-        }
-        list.finish()
-    }
-}
+impl_typed_vec!(PointVec, PointIdx, "p");
 
 #[cfg_attr(test, derive(serde::Serialize))]
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
@@ -501,10 +363,8 @@ impl std::fmt::Debug for PointNeighbors {
 #[derive(Clone, Debug)]
 pub struct Topology<W: WindingNumber> {
     eps: f64,
-    /// Indexed by `SegIdx`.
-    tag: Vec<W::Tag>,
-    /// Indexed by `SegIdx`.
-    ///
+    /// The user-provided tags for each segment.
+    tag: SegVec<W::Tag>,
     /// For each input segment, this is the list of output segments that we've started
     /// recording but haven't finished with. There can be up to three of them, because
     /// consider a segment that passes through a sweep-line like this:
@@ -522,7 +382,7 @@ pub struct Topology<W: WindingNumber> {
     /// first encounter the output segment pointing down and add an unfinished segment
     /// for that. Then we'll add an output segment for the horizontal line and so
     /// at that point there will be three unfinished output segments.
-    open_segs: Vec<VecDeque<OutputSegIdx>>,
+    open_segs: SegVec<VecDeque<OutputSegIdx>>,
     /// Winding numbers of each segment.
     ///
     /// This is sort of logically indexed by `HalfOutputSegIdx`, because we can look at the
@@ -581,6 +441,23 @@ pub struct Topology<W: WindingNumber> {
     /// created when we process `s1`) and it's redundant with the `scan_west` relation from
     /// `s2` to `s1`.
     scan_east: OutputSegVec<Option<OutputSegIdx>>,
+    /// This stores all the situations where two segments become scan-line
+    /// neighbors because something in between dropped out. For example:
+    ///
+    /// ```text
+    ///  |    \  |      |
+    ///  |     \ |      |
+    ///  |      \|      |
+    ///  |       ◦      | <- y
+    ///  |              |
+    ///  |              |
+    ///  |              |
+    /// (s1)           (s2)
+    /// ```
+    ///
+    /// Here we would add an entry `(y, s1, s2)` to `scan_after`. If `s2`
+    /// weren't there (and there was nothing else further right), we'd add `(y,
+    /// s1, None)` to denote that `s1` has no scan-east neighbor after `y`.
     scan_after: Vec<(f64, Option<OutputSegIdx>, Option<OutputSegIdx>)>,
     /// For each output segment, the input segment that it came from. Will probably become
     /// private at some point (TODO)
@@ -614,14 +491,14 @@ impl<W: WindingNumber> Topology<W> {
         }
         segments.update_enter_exit(0);
         segments.check_invariants();
-        Self::from_segments(segments, tag, eps)
+        Self::from_segments(segments, SegVec::from_vec(tag), eps)
     }
 
-    fn from_segments(segments: Segments, tag: Vec<W::Tag>, eps: f64) -> Self {
+    fn from_segments(segments: Segments, tag: SegVec<W::Tag>, eps: f64) -> Self {
         let mut ret = Self {
             eps,
             tag,
-            open_segs: vec![VecDeque::new(); segments.len()],
+            open_segs: SegVec::with_size(segments.len()),
 
             // We have at least as many output segments as input segments, so preallocate enough for them.
             winding: OutputSegVec::with_capacity(segments.len()),
@@ -647,8 +524,8 @@ impl<W: WindingNumber> Topology<W> {
                     None
                 } else {
                     let prev_seg = positions.line().line_segment(range.segs.start - 1).unwrap();
-                    debug_assert!(!ret.open_segs[prev_seg.0].is_empty());
-                    ret.open_segs[prev_seg.0].front().copied()
+                    debug_assert!(!ret.open_segs[prev_seg].is_empty());
+                    ret.open_segs[prev_seg].front().copied()
                 };
                 ret.process_sweep_line_range(positions, &segments, scan_west_seg);
             }
@@ -753,7 +630,7 @@ impl<W: WindingNumber> Topology<W> {
         segs: impl Iterator<Item = SegIdx> + 'a,
     ) -> impl Iterator<Item = HalfOutputSegIdx> + 'a {
         segs.map(|s| {
-            self.open_segs[s.0]
+            self.open_segs[s]
                 .pop_front()
                 .expect("should be open")
                 .second_half()
@@ -782,9 +659,9 @@ impl<W: WindingNumber> Topology<W> {
     ) -> OutputSegIdx {
         let out_idx = OutputSegIdx(self.winding.inner.len());
         if horizontal {
-            self.open_segs[idx.0].push_front(out_idx);
+            self.open_segs[idx].push_front(out_idx);
         } else {
-            self.open_segs[idx.0].push_back(out_idx);
+            self.open_segs[idx].push_back(out_idx);
         }
         self.point_idx.start.push(p);
         self.point_idx
@@ -853,7 +730,7 @@ impl<W: WindingNumber> Topology<W> {
             for new_seg in connected_segs.connected_down() {
                 let prev_winding = winding;
                 let orientation = segments.positively_oriented(new_seg);
-                winding += W::single(self.tag[new_seg.0], orientation);
+                winding += W::single(self.tag[new_seg], orientation);
                 let windings = HalfSegmentWindingNumbers {
                     clockwise: prev_winding,
                     counter_clockwise: winding,
@@ -888,7 +765,7 @@ impl<W: WindingNumber> Topology<W> {
             for (new_seg, same_orientation) in hsegs {
                 let prev_w = w;
                 let orientation = same_orientation == segments.positively_oriented(new_seg);
-                w += W::single(self.tag[new_seg.0], orientation);
+                w += W::single(self.tag[new_seg], orientation);
                 let windings = HalfSegmentWindingNumbers {
                     counter_clockwise: w,
                     clockwise: prev_w,
@@ -908,7 +785,7 @@ impl<W: WindingNumber> Topology<W> {
         if let Some(seg) = last_connected_down_seg {
             if let Some(east_nbr) = pos.line().line_entry(pos.seg_range().segs.end) {
                 if !east_nbr.is_in_changed_interval() {
-                    self.scan_east[seg] = self.open_segs[east_nbr.seg.0].front().copied()
+                    self.scan_east[seg] = self.open_segs[east_nbr.seg].front().copied()
                 }
             }
         }
@@ -922,8 +799,8 @@ impl<W: WindingNumber> Topology<W> {
                 .checked_sub(1)
                 .and_then(|idx| pos.line().line_segment(idx));
             let east_nbr = pos.line().line_segment(pos.seg_range().segs.end);
-            let west = west_nbr.map(|idx| *self.open_segs[idx.0].front().unwrap());
-            let east = east_nbr.map(|idx| *self.open_segs[idx.0].front().unwrap());
+            let west = west_nbr.map(|idx| *self.open_segs[idx].front().unwrap());
+            let east = east_nbr.map(|idx| *self.open_segs[idx].front().unwrap());
             if west.is_some() || east.is_some() {
                 self.scan_after.push((y, west, east));
             }
@@ -1455,7 +1332,7 @@ impl Topology<BinaryWindingNumber> {
         shape_a.resize(segments.len(), true);
         segments.add_cycles(set_b);
         shape_a.resize(segments.len(), false);
-        Self::from_segments(segments, shape_a, eps)
+        Self::from_segments(segments, SegVec::from_vec(shape_a), eps)
     }
 
     /// Creates a new `Topology` from two Bézier paths.

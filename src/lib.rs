@@ -1,6 +1,9 @@
 #![deny(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+#[macro_use]
+mod typed_vec;
+
 #[cfg(feature = "arbitrary")]
 pub mod arbitrary;
 pub mod curve;

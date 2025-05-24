@@ -19,23 +19,27 @@ use crate::{
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct SegIdx(pub usize);
 
-impl std::fmt::Debug for SegIdx {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "s_{}", self.0)
-    }
+/// A vector indexed by `SegIdx`.
+#[cfg_attr(test, derive(serde::Serialize))]
+#[derive(Clone, Hash, PartialEq, Eq)]
+#[cfg_attr(test, serde(transparent))]
+pub struct SegVec<T> {
+    inner: Vec<T>,
 }
+
+impl_typed_vec!(SegVec, SegIdx, "s");
 
 /// An arena of segments, each of which is a cubic Bézier.
 ///
 /// Segments are indexed by [`SegIdx`] and can be retrieved by indexing (i.e. with square brackets).
 #[derive(Clone, Default)]
 pub struct Segments {
-    segs: Vec<Segment>,
-    contour_prev: Vec<Option<SegIdx>>,
-    contour_next: Vec<Option<SegIdx>>,
+    segs: SegVec<Segment>,
+    contour_prev: SegVec<Option<SegIdx>>,
+    contour_next: SegVec<Option<SegIdx>>,
     /// For each segment, stores true if the sweep-line order (small y to big y)
     /// is the same as the orientation in its original contour.
-    orientation: Vec<bool>,
+    orientation: SegVec<bool>,
 
     /// All the entrance heights, of segments, ordered by height.
     /// This includes horizontal segments.
@@ -74,10 +78,10 @@ impl std::fmt::Debug for SegmentEntryFormatter<'_> {
 impl std::fmt::Debug for Segments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut list = f.debug_list();
-        for idx in 0..self.segs.len() {
+        for (idx, seg) in self.segs.iter() {
             list.entry(&SegmentEntryFormatter {
-                idx: SegIdx(idx),
-                seg: &self.segs[idx],
+                idx,
+                seg,
                 prev: self.contour_prev[idx],
                 next: self.contour_next[idx],
                 oriented: self.orientation[idx],
@@ -153,7 +157,7 @@ impl Segments {
 
     /// Iterate over all segments in this arena.
     pub fn segments(&self) -> impl Iterator<Item = &Segment> {
-        self.segs.iter()
+        self.segs.iter().map(|(_, s)| s)
     }
 
     /// Returns the starting point of the segment at `idx`, relative to the segment's original orientation.
@@ -163,7 +167,7 @@ impl Segments {
     /// orientation of the segment. Use this method to retrieve the segment's
     /// original start point.
     pub fn oriented_start(&self, idx: SegIdx) -> &Point {
-        if self.orientation[idx.0] {
+        if self.orientation[idx] {
             &self[idx].p0
         } else {
             &self[idx].p3
@@ -177,7 +181,7 @@ impl Segments {
     /// orientation of the segment. Use this method to retrieve the segment's
     /// original end point.
     pub fn oriented_end(&self, idx: SegIdx) -> &Point {
-        if self.orientation[idx.0] {
+        if self.orientation[idx] {
             &self[idx].p3
         } else {
             &self[idx].p0
@@ -191,7 +195,7 @@ impl Segments {
     /// always return `Some`, and you might need to be careful to avoid looping
     /// infinitely.
     pub fn contour_next(&self, idx: SegIdx) -> Option<SegIdx> {
-        self.contour_next[idx.0]
+        self.contour_next[idx]
     }
 
     /// Returns the index of the segment preceding `idx`.
@@ -201,12 +205,12 @@ impl Segments {
     /// always return `Some`, and you might need to be careful to avoid looping
     /// infinitely.
     pub fn contour_prev(&self, idx: SegIdx) -> Option<SegIdx> {
-        self.contour_prev[idx.0]
+        self.contour_prev[idx]
     }
 
     /// Does the sweep-line orientation of `idx` agree with its original orientation?
     pub fn positively_oriented(&self, idx: SegIdx) -> bool {
-        self.orientation[idx.0]
+        self.orientation[idx]
     }
 
     /// Add a (non-closed) polyline to this arena.
@@ -227,11 +231,11 @@ impl Segments {
             self.contour_next.push(Some(SegIdx(self.segs.len())));
         }
 
-        if let Some(first) = self.contour_prev.get_mut(old_len) {
-            *first = None;
-        }
-        if let Some(last) = self.contour_next.last_mut() {
-            *last = None;
+        if old_len < self.segs.len() {
+            self.contour_prev[SegIdx(old_len)] = None;
+            // unwrap: contour_next has the same length as `segs`, which is
+            // non-empty because we checked its length
+            *self.contour_next.inner.last_mut().unwrap() = None;
         }
 
         self.update_enter_exit(old_len);
@@ -289,11 +293,11 @@ impl Segments {
                     self.contour_next.push(Some(SegIdx(self.segs.len())));
                 }
             }
-            if let Some(first) = self.contour_prev.get_mut(old_len) {
-                *first = Some(SegIdx(self.segs.len() - 1));
-            }
-            if let Some(last) = self.contour_next.last_mut() {
-                *last = Some(SegIdx(old_len));
+            if old_len < self.segs.len() {
+                self.contour_prev[SegIdx(old_len)] = Some(SegIdx(self.segs.len() - 1));
+                // unwrap: contour_next has the same length as `segs`, which is
+                // non-empty because we checked its length
+                *self.contour_next.inner.last_mut().unwrap() = Some(SegIdx(old_len));
             }
         }
     }
@@ -318,11 +322,11 @@ impl Segments {
             self.contour_next.push(Some(SegIdx(self.segs.len())));
         }
 
-        if let Some(first) = self.contour_prev.get_mut(old_len) {
-            *first = Some(SegIdx(self.segs.len() - 1));
-        }
-        if let Some(last) = self.contour_next.last_mut() {
-            *last = Some(SegIdx(old_len));
+        if old_len < self.segs.len() {
+            self.contour_prev[SegIdx(old_len)] = Some(SegIdx(self.segs.len() - 1));
+            // unwrap: contour_next has the same length as `segs`, which is
+            // non-empty because we checked its length
+            *self.contour_next.inner.last_mut().unwrap() = Some(SegIdx(old_len));
         }
     }
 
@@ -336,7 +340,7 @@ impl Segments {
     pub(crate) fn update_enter_exit(&mut self, old_len: usize) {
         for idx in old_len..self.len() {
             let seg_idx = SegIdx(idx);
-            let seg = &self.segs[seg_idx.0];
+            let seg = &self.segs[seg_idx];
 
             self.enter.push((seg.p0.y, seg_idx));
             if !seg.is_horizontal() {
@@ -351,8 +355,8 @@ impl Segments {
             CheapOrderedFloat::from(*y1)
                 .cmp(&CheapOrderedFloat::from(*y2))
                 .then_with(|| {
-                    CheapOrderedFloat::from(self.segs[seg1.0].at_y(*y1))
-                        .cmp(&CheapOrderedFloat::from(self.segs[seg2.0].at_y(*y1)))
+                    CheapOrderedFloat::from(self.segs[*seg1].at_y(*y1))
+                        .cmp(&CheapOrderedFloat::from(self.segs[*seg2].at_y(*y1)))
                 })
         });
         self.exit.sort_by(|(y1, _), (y2, _)| {
@@ -376,7 +380,7 @@ impl Segments {
 
     /// Checks that we satisfy our internal invariants. For testing only.
     pub fn check_invariants(&self) {
-        for seg in &self.segs {
+        for (_, seg) in self.segs.iter() {
             assert!(seg.p0 <= seg.p3);
         }
     }
@@ -386,6 +390,6 @@ impl std::ops::Index<SegIdx> for Segments {
     type Output = Segment;
 
     fn index(&self, index: SegIdx) -> &Self::Output {
-        &self.segs[index.0]
+        &self.segs[index]
     }
 }
