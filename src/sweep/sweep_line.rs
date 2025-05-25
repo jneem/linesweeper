@@ -598,8 +598,8 @@ impl<'segs> Sweeper<'segs> {
     // A special case of handle-enter, in which the entering segment is
     // continuing the contour of an exiting segment.
     fn handle_contour_continuation(&mut self, seg_idx: SegIdx, seg: &Segment, pos: usize) {
-        let x0 = seg.p0.x;
-        let x1 = seg.p3.x;
+        let x0 = seg.min_x();
+        let x1 = seg.max_x();
         self.line.segs[pos].old_seg = Some(self.line.segs[pos].seg);
         self.line.segs[pos].seg = seg_idx;
         self.line.segs[pos].enter = true;
