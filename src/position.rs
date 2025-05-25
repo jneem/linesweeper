@@ -205,7 +205,7 @@ pub(crate) fn compute_positions(
                 let next_close_y = scan_order
                     .close_west_neighbor_height_after(cur, y0, orig_seg_map, segs, cmp)
                     .unwrap_or(f64::INFINITY);
-                y1 = y1.min(next_close_y);
+                y1 = y1.min(next_close_y.max(cmp_end_y));
                 break;
             } else {
                 debug_assert_eq!(cmp_order, Order::Ish);
@@ -225,7 +225,7 @@ pub(crate) fn compute_positions(
                 let next_close_y = scan_order
                     .close_east_neighbor_height_after(cur, y0, orig_seg_map, segs, cmp)
                     .unwrap_or(f64::INFINITY);
-                y1 = y1.min(next_close_y);
+                y1 = y1.min(next_close_y.max(cmp_end_y));
                 break;
             } else {
                 debug_assert_eq!(cmp_order, Order::Ish);
