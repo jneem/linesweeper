@@ -79,6 +79,11 @@ impl Point {
     pub fn to_kurbo(self) -> kurbo::Point {
         kurbo::Point::new(self.x, self.y)
     }
+
+    /// Compatibility with `kurbo` points.
+    pub fn from_kurbo(c: kurbo::Point) -> Self {
+        Self::new(c.x, c.y)
+    }
 }
 
 impl From<(f64, f64)> for Point {
@@ -263,6 +268,16 @@ impl Segment {
             p2: self.p2.to_kurbo(),
             p3: self.p3.to_kurbo(),
         }
+    }
+
+    /// TODO: maybe From instead?
+    pub fn from_kurbo(c: kurbo::CubicBez) -> Self {
+        Self::new(
+            Point::from_kurbo(c.p0),
+            Point::from_kurbo(c.p1),
+            Point::from_kurbo(c.p2),
+            Point::from_kurbo(c.p3),
+        )
     }
 
     /// A crude lower bound on our minimum horizontal position.
