@@ -13,6 +13,7 @@ pub struct ComparisonCache {
     inner: HashMap<(SegIdx, SegIdx), CurveOrder>,
     accuracy: f64,
     tolerance: f64,
+    y_slop: f64,
 }
 
 impl ComparisonCache {
@@ -29,6 +30,24 @@ impl ComparisonCache {
             inner: HashMap::new(),
             accuracy,
             tolerance,
+            y_slop: tolerance,
+        }
+    }
+
+    /// Creates a new comparison cache.
+    ///
+    /// `tolerance` tells us how close two curves can be to be declared "ish", and
+    /// `accuracy` tells us how closely we need to evaluate the tolerance. For
+    /// example, if `accuracy` is `tolerance / 2.0` then we'll guarantee (up to
+    /// some floating-point error) that if the two curves are further than
+    /// `1.5 * tolerance` apart then we'll give them a strict order, and if they're
+    /// less than `tolerance / 2.0` apart then we'll give then an "ish" order.
+    pub fn new_without_y_slop(tolerance: f64, accuracy: f64) -> Self {
+        ComparisonCache {
+            inner: HashMap::new(),
+            accuracy,
+            tolerance,
+            y_slop: 0.0,
         }
     }
 
@@ -45,8 +64,8 @@ impl ComparisonCache {
 
         let c0 = segi.to_kurbo();
         let c1 = segj.to_kurbo();
-        let forward = curve::intersect_cubics(c0, c1, self.tolerance, self.accuracy)
-            .with_y_slop(self.tolerance);
+        let forward =
+            curve::intersect_cubics(c0, c1, self.tolerance, self.accuracy).with_y_slop(self.y_slop);
         let reverse = forward.flip();
         self.inner.insert((j, i), reverse);
         self.inner.entry((i, j)).insert_entry(forward).get().clone()
