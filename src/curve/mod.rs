@@ -4,6 +4,8 @@ use kurbo::{
     common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, QuadBez, Shape, Vec2,
 };
 
+mod split_quad;
+
 #[derive(Clone, Debug, PartialEq)]
 struct CurveOrderEntry {
     end: f64,
@@ -578,6 +580,26 @@ impl Quadratic {
     /// Evaluates this quadratic at a point.
     pub fn eval(&self, t: f64) -> f64 {
         self.c2 * t * t + self.c1 * t + self.c0
+    }
+
+    /// Shift this quadratic "sideways".
+    ///
+    /// If this quadratic represents the function `q(x)`, returns a quadratic representing `q(x - shift)`.
+    pub fn shift(self, shift: f64) -> Self {
+        Self {
+            c2: self.c2,
+            c1: self.c1 - 2.0 * self.c2 * shift,
+            c0: self.c0 + self.c2 * shift * shift - self.c1 * shift,
+        }
+    }
+}
+
+impl std::ops::Add<f64> for Quadratic {
+    type Output = Quadratic;
+
+    fn add(mut self, rhs: f64) -> Self::Output {
+        self.c0 += rhs;
+        self
     }
 }
 
