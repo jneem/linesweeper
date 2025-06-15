@@ -207,6 +207,10 @@ impl CurveOrder {
     /// at height `y` stays to the left of `c1`. (If one segment is shorter than the other,
     /// this is not quite true near the endpoints of the shorter segment. But close enough.)
     pub fn with_y_slop(self, slop: f64) -> CurveOrder {
+        if slop == 0.0 {
+            return self;
+        }
+
         let mut ret = Vec::new();
 
         // unwrap: cmps is always non-empty
