@@ -297,10 +297,6 @@ pub struct Sweeper<'a> {
 
     comparisons: RefCell<ComparisonCache>,
     conservative_comparisons: RefCell<ComparisonCache>,
-
-    /// TODO: document this. Preferably in the write-up
-    #[cfg(feature = "slow-asserts")]
-    semiconservative_comparisons: RefCell<ComparisonCache>,
 }
 
 impl<'segs> Sweeper<'segs> {
@@ -319,11 +315,6 @@ impl<'segs> Sweeper<'segs> {
             horizontals: Vec::new(),
             comparisons: RefCell::new(ComparisonCache::new(eps, eps / 2.0)),
             conservative_comparisons: RefCell::new(ComparisonCache::new(4.0 * eps, eps / 2.0)),
-            #[cfg(feature = "slow-asserts")]
-            semiconservative_comparisons: RefCell::new(ComparisonCache::new_without_y_slop(
-                4.0 * eps,
-                eps / 2.0,
-            )),
         }
     }
 
@@ -335,13 +326,6 @@ impl<'segs> Sweeper<'segs> {
 
     fn compare_segments_conservatively(&self, i: SegIdx, j: SegIdx) -> CurveOrder {
         self.conservative_comparisons
-            .borrow_mut()
-            .compare_segments(self.segments, i, j)
-    }
-
-    #[cfg(feature = "slow-asserts")]
-    fn compare_segments_semiconservatively(&self, i: SegIdx, j: SegIdx) -> CurveOrder {
-        self.semiconservative_comparisons
             .borrow_mut()
             .compare_segments(self.segments, i, j)
     }
@@ -821,11 +805,11 @@ impl<'segs> Sweeper<'segs> {
                     .range((left_idx + 1)..right_idx)
                     .any(|entry| {
                         let mid_seg = entry.seg;
-                        self.compare_segments_semiconservatively(order.0, mid_seg)
+                        self.compare_segments_conservatively(order.0, mid_seg)
                             .order_at(self.y)
                             == Order::Left
                             || self
-                                .compare_segments_semiconservatively(mid_seg, order.1)
+                                .compare_segments_conservatively(mid_seg, order.1)
                                 .order_at(self.y)
                                 == Order::Left
                     });
@@ -1000,8 +984,7 @@ impl<'segs> Sweeper<'segs> {
                     // comparisons are implemented properly with minkowski sums
                     //debug_assert_eq!(strong_cmp.order_at(self.y), Order::Ish);
                     let cmp = self.compare_segments(seg_idx, next_seg_idx);
-                    //debug_assert_ne!(cmp.order_at(self.y), Order::Right);
-                    if cmp.order_at(self.y) == Order::Ish {
+                    if cmp.order_at(self.y) != Order::Left {
                         for j in end_idx..=i {
                             self.line.segs[j].in_changed_interval = true;
                             self.line.segs[j].set_old_idx_if_unset(j);
@@ -1023,8 +1006,7 @@ impl<'segs> Sweeper<'segs> {
                 } else {
                     //debug_assert_eq!(strong_cmp.order_at(self.y), Order::Ish);
                     let cmp = self.compare_segments(prev_seg_idx, seg_idx);
-                    //debug_assert_ne!(cmp.order_at(self.y), Order::Right);
-                    if cmp.order_at(self.y) == Order::Ish {
+                    if cmp.order_at(self.y) != Order::Left {
                         for j in i..start_idx {
                             self.line.segs[j].in_changed_interval = true;
                             self.line.segs[j].set_old_idx_if_unset(j);
