@@ -1,4 +1,5 @@
 #![allow(missing_docs)]
+#![allow(dead_code)]
 
 use arrayvec::ArrayVec;
 
