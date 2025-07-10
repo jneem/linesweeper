@@ -947,7 +947,7 @@ stopping will work.
 ]<def-weak-order>
 
 In other words, we define $weaklt$ to be the same as $weakprelt$, but if there's ever a situation where the (not-yet-specified)
-early stopping algorithm could miss a mis-ordered pair $alpha weakprelt beta$ by witnessing a gap between $beta'$ and $alpha'$,
+early stopping algorithm could miss a wrongly ordered pair $alpha weakprelt beta$ by witnessing a gap between $beta'$ and $alpha'$,
 then we weaken the $weakprelt$ order and declare instead that $alpha weakeq beta$ instead of $alpha weaklt beta$.
 To see how this solves our tricky example above, note that when instantiating @def-weak-order with $alpha = beta$, $beta = gamma$,
 $beta' = alpha$, and $alpha' = beta$, we see that there *do* exist $alpha', beta' in cal(S)_y$ with the required properties,
