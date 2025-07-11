@@ -963,6 +963,86 @@ impl<'segs> Sweeper<'segs> {
         }
     }
 
+    /// When a segment enters or exits, we insert a horizontal line from
+    /// its negotiated position to its original endpoint position. To ensure
+    /// that the topology gets correctly computed for segments between these
+    /// two horizontal positions, we need to make them all part of a changed
+    /// interval.
+    ///
+    /// This method adds all the changed intervals that are needed to handle this case.
+    fn compute_contour_adjacent_changed_intervals(&mut self) {
+        for &j in &self.segs_needing_positions {
+            let seg_entry = self.line.segs[j];
+
+            if seg_entry.old_seg.is_some() {
+                // We ignore contour continuations that share a slot. This
+                // might not be quite correct right now, because in this case
+                // we currently still insert horizontal segments to the original
+                // endpoints. But those two horizontal segments "cancel out"
+                // topologically (and we'd like to remove them eventually).
+                continue;
+            }
+            if !(seg_entry.enter || seg_entry.exit) {
+                // This only applies to entering or exiting segments.
+                continue;
+            }
+
+            // TODO: this logic is pretty much copied from the horizontals segments
+            // method.
+            let seg = &self.segments[seg_entry.seg];
+            let p = if seg_entry.enter {
+                kurbo::Point::new(seg.p0.x, seg.p0.y)
+            } else {
+                kurbo::Point::new(seg.p3.x, seg.p3.y)
+            };
+            let mut start_idx = j;
+            let mut end_idx = j;
+            for i in (0..j).rev() {
+                let other_entry = &mut self.line.segs[i];
+                let other_seg = &self.segments[other_entry.seg];
+
+                let other_seg = other_seg.to_kurbo();
+                let nearest = other_seg.nearest(p, self.eps / 2.0);
+
+                if nearest.distance_sq <= 4.0 * self.eps * self.eps
+                    || other_seg.eval(nearest.t).x > p.x
+                {
+                    // Ensure that every segment in the changed interval has `old_idx` set;
+                    // see also `compute_changed_intervals`.
+                    self.line.segs[i].set_old_idx_if_unset(i);
+                    start_idx = i;
+                } else {
+                    break;
+                }
+            }
+            for k in (j + 1)..self.line.segs.len() {
+                let other_entry = &mut self.line.segs[k];
+                let other_seg = &self.segments[other_entry.seg];
+
+                let other_seg = other_seg.to_kurbo();
+                let nearest = other_seg.nearest(p, self.eps / 2.0);
+
+                if nearest.distance_sq <= 4.0 * self.eps * self.eps
+                    || other_seg.eval(nearest.t).x < p.x
+                {
+                    // Ensure that every segment in the changed interval has `old_idx` set;
+                    // see also `compute_changed_intervals`.
+                    self.line.segs[k].set_old_idx_if_unset(k);
+                    end_idx = k;
+                } else {
+                    break;
+                }
+            }
+
+            if end_idx > start_idx {
+                self.changed_intervals.push(ChangedInterval {
+                    segs: start_idx..(end_idx + 1),
+                    horizontals: None,
+                });
+            }
+        }
+    }
+
     /// Updates our internal `changed_intervals` state based on the segments marked
     /// as needing positions.
     ///
@@ -971,6 +1051,7 @@ impl<'segs> Sweeper<'segs> {
     fn compute_changed_intervals(&mut self) {
         debug_assert!(self.changed_intervals.is_empty());
         self.compute_horizontal_changed_intervals();
+        self.compute_contour_adjacent_changed_intervals();
 
         for &idx in &self.segs_needing_positions {
             if self.line.segs[idx].in_changed_interval {
@@ -1122,7 +1203,6 @@ impl SegmentOrder {
         seg_idx: SegIdx,
         comparer: &mut ComparisonCache,
     ) -> usize {
-        //dbg!(self, seg_idx);
         let seg = &segments[seg_idx];
         let seg_x = seg.p0.x;
 
