@@ -99,26 +99,24 @@ fn pairs<T>(xs: &[T]) -> impl Iterator<Item = (&T, &T)> {
     xs.windows(2).map(|pair| (&pair[0], &pair[1]))
 }
 
-struct SubpathIter<I> {
-    inner: I,
-    done: bool,
+struct SubpathIter<'a, I: Iterator> {
+    inner: &'a mut Peekable<I>,
+    started: bool,
 }
 
-impl<I> Iterator for SubpathIter<I>
+impl<I> Iterator for SubpathIter<'_, I>
 where
     I: Iterator<Item = kurbo::PathEl>,
 {
     type Item = kurbo::PathEl;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
+        let ret = self.inner.peek()?;
+        if matches!(ret, kurbo::PathEl::MoveTo(_)) && self.started {
             None
         } else {
-            let ret = self.inner.next()?;
-            if matches!(ret, kurbo::PathEl::ClosePath) {
-                self.done = true;
-            }
-            Some(ret)
+            self.started = true;
+            self.inner.next()
         }
     }
 }
@@ -131,13 +129,13 @@ impl<I> Subpaths<I>
 where
     I: Iterator<Item = kurbo::PathEl>,
 {
-    fn next(&mut self) -> Option<SubpathIter<&mut Peekable<I>>> {
+    fn next(&mut self) -> Option<SubpathIter<'_, I>> {
         if self.inner.peek().is_none() {
             None
         } else {
             Some(SubpathIter {
                 inner: &mut self.inner,
-                done: false,
+                started: false,
             })
         }
     }
@@ -380,8 +378,12 @@ impl Segments {
 
     /// Checks that we satisfy our internal invariants. For testing only.
     pub fn check_invariants(&self) {
-        for (_, seg) in self.segs.iter() {
+        for (idx, seg) in self.segs.iter() {
             assert!(seg.p0 <= seg.p3);
+            if let Some(next_idx) = self.contour_next(idx) {
+                assert_eq!(self.oriented_end(idx), self.oriented_start(next_idx));
+                assert_eq!(self.contour_prev(next_idx), Some(idx));
+            }
         }
     }
 }
