@@ -18,6 +18,7 @@ usvg = { version = "0.44.0", default-features = false }
 
 [features]
 arbitrary = ["dep:arbitrary"]
+debug-svg = ["dep:svg"]
 slow-asserts = []
 generators = []
 
@@ -25,6 +26,7 @@ generators = []
 arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
 arrayvec = { version = "0.7.6", features = ["serde"] }
 kurbo = { version = "0.11.1", features = ["serde"] }
+svg = { version = "0.18", default-features = false, optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.80"

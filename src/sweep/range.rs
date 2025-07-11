@@ -383,7 +383,7 @@ impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
             } else {
                 (seg.lower(y, 2.0 * eps), seg.upper(y, 2.0 * eps))
             };
-            assert!(lower <= ev.smaller_x() && ev.larger_x() <= upper);
+            assert!(ev.smaller_x() <= upper && lower <= ev.larger_x());
         }
     }
 }

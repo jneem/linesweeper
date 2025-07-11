@@ -1207,7 +1207,11 @@ impl<W: WindingNumber> Topology<W> {
                 for half in [out_idx.first_half(), out_idx.second_half()] {
                     let cw_nbr = self.point_neighbors[half].clockwise;
                     if self.winding(half).clockwise != self.winding(cw_nbr).counter_clockwise {
-                        dbg!(self);
+                        #[cfg(feature = "debug-svg")]
+                        {
+                            let svg = self.dump_svg(|_| "black".to_owned());
+                            svg::save("out.svg", &svg).unwrap();
+                        }
                         dbg!(half, cw_nbr);
                         panic!();
                     }
@@ -1303,6 +1307,59 @@ impl<W: WindingNumber> Topology<W> {
                 assert_eq!(realized_endpoints[prev.0].1, realized_endpoints[seg.0].0);
             }
         }
+    }
+
+    /// Renders out our state as an svg.
+    #[cfg(feature = "debug-svg")]
+    pub fn dump_svg(&self, tag_color: impl Fn(W::Tag) -> String) -> svg::Document {
+        let mut bbox = Rect::new(
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
+        let mut document = svg::Document::new();
+        let stroke_width = 1.0;
+        let point_radius = 1.5;
+        for seg in self.segment_indices() {
+            let mut data = svg::node::element::path::Data::new();
+            bbox = bbox.union_pt((*self.point(seg.first_half())).into());
+            bbox = bbox.union_pt((*self.point(seg.second_half())).into());
+            let p = |point: Point| (point.x, point.y);
+            data = data.move_to(p(*self.point(seg.first_half())));
+            data = data.line_to(p(*self.point(seg.second_half())));
+            let color = tag_color(self.tag[self.orig_seg[seg]]);
+            let path = svg::node::element::Path::new()
+                .set("id", format!("{seg:?}"))
+                .set("class", format!("{:?}", self.orig_seg[seg]))
+                .set("stroke", color)
+                .set("stroke-width", stroke_width)
+                .set("stroke-linecap", "round")
+                .set("stroke-linejoin", "round")
+                .set("opacity", 0.2)
+                .set("fill", "none")
+                .set("d", data);
+            document = document.add(path);
+        }
+
+        for p_idx in self.points.indices() {
+            let p = self.points[p_idx];
+            let c = svg::node::element::Circle::new()
+                .set("id", format!("{p_idx:?}"))
+                .set("cx", p.x)
+                .set("cy", p.y)
+                .set("r", point_radius)
+                .set("stroke", "none")
+                .set("fill", "black");
+            document = document.add(c);
+        }
+
+        bbox = bbox.inset(2.0);
+        document = document.set(
+            "viewBox",
+            (bbox.min_x(), bbox.min_y(), bbox.width(), bbox.height()),
+        );
+        document
     }
 }
 
@@ -1779,8 +1836,6 @@ mod tests {
         let left = [
             [p(-10.0, 0.5), p(-0.25, 2.0), p(-10.0, 10.0)],
             [p(-10.0, 0.5), p(-0.25, 10.0), p(-10.0, 10.0)],
-            // [p(4.0, -1.0), p(3.0, -1.0), p(3.0, -0.5), p(4.0, -0.5)],
-            // [p(4.0, 1.0), p(3.0, 1.0), p(3.0, 0.5), p(4.0, 0.5)],
         ];
         let eps = 0.5;
         let top = Topology::from_polylines_binary(big, left, eps);
