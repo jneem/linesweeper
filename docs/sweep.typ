@@ -1,5 +1,5 @@
 #import "@preview/ctheorems:1.1.3": *
-#import "@preview/cetz:0.3.1"
+#import "@preview/cetz:0.4.0"
 #import "@preview/lovelace:0.3.0": *
 #set par(justify: true)
 #set math.equation(numbering: "(1)")
@@ -817,3 +817,144 @@ With this $epsilon$, $epsilon + 2 epsilon_0 M) <= 9 epsilon_0 M$ and so $16/3 (e
 Thus, if $alpha$ $(3 delta)/4$-crosses $beta$ then the assumptions of @lem-intersection-height-error are satisfied
 (and in the conclusion, $4 (epsilon + 2 epsilon_0) M <= 36 epsilon_0 M = (9 delta) /16 $.
 ]
+
+= Curves etc.
+
+Let's move on from lines and talk about curves. Each curve is of the form $alpha: [0, 1] -> bb(R)^2$, which we'll sometimes
+in components as $alpha_0: [0, 1] -> bb(R)$ and $alpha_1: [0, 1] -> bb(R)$. We'll assume that each $alpha_0$ is a strictly
+increasing function. Write $S = [-1, 1] times [-1, 1]$ for the unit square in $bb(R)^2$. For a curve $alpha$ and a set $B subset bb(R)^2$, we write
+$alpha + B$ for the set
+
+$
+alpha + B = {(x, y) in bb(R)^2 : exists t in [0, 1] "with" (x, y) - alpha(t) in B}
+$
+
+In other words, $alpha + B$ is the Minkowski sum between $B$ and the locus of $alpha$. For any set $B subset bb(R)^2$,
+let
+
+$
+B_y = {x in bb(R) : (x, y) in B}.
+$
+
+For example, here is a picture of $(alpha + epsilon B)_y$: (TODO)
+
+== The curve orders
+
+When moving to curves, it seems useful to work with more abstract orders. For fixed $epsilon$ and $y$, we'll define
+three of them: the "weak pre-order," the "strong order," and the "weak order."
+
+#let weakprelt = sym.lt.tri
+#let weakpreleq = sym.lt.eq.tri
+#let notweakprelt = sym.lt.tri.not
+#let weakpreeq = sym.eq.dots
+#let weaklt = sym.lt
+#let stronglt = sym.lt.double
+#let weaklt = sym.lt
+#let weakeq = sym.tilde
+
+We begin with the weak pre-order.
+
+#def[
+  For each $epsilon >= 0$ and $y in bb(R)$, let $weakprelt_(y,epsilon)$ be a relation satisfying:
+
+  - if $alpha weakprelt_(y,epsilon) beta$ then $(alpha + epsilon/2 S)_y <= (beta + epsilon/2 S)_y$,
+  - if $(alpha + epsilon S)_y <= (beta + epsilon S)_y$ then $alpha weakprelt_(y,epsilon) beta$,
+  - for any $k >= 1$, there are no $alpha_1, ..., alpha_k$ with $alpha_1 weakprelt_(y,epsilon) alpha_2 weakprelt_(y,epsilon) dots.h.c weakprelt_(y,epsilon) alpha_k weakprelt_(y,epsilon) alpha_1$.
+
+  We call this last condition the "no cycles" condition.
+]
+
+Note that we *do not* assume transitivity: $alpha weakprelt_(y,epsilon) beta
+weakprelt_(y,epsilon) gamma$ does not imply that $alpha weakprelt_(y,epsilon)
+gamma$. We also do not assume anti-symmetry: it's possible to have neither
+$alpha weakprelt_(y,epsilon) beta$ nor $beta weakprelt_(y,epsilon) alpha$. In
+fact, if $(alpha + epsilon/2)_y$ and $(beta + epsilon/2 S)_y$ overlap, it is
+guaranteed that neither of these orderings hold.
+
+#def[
+  If neither $alpha weakprelt_(y,epsilon) beta$ nor $beta weakprelt_(y,epsilon) alpha$, we say that
+
+  $
+  alpha weakpreeq_(y,epsilon) beta.
+  $
+
+  If either $alpha weakprelt_(y,epsilon) beta$ or 
+  $alpha weakpreeq_(y,epsilon) beta$, we write
+  $alpha weakpreleq_(y,epsilon) beta$. Equivalently, 
+  $alpha weakpreleq_(y,epsilon) beta$ is the negation of 
+  $beta weakprelt_(y,epsilon) alpha$.
+]
+
+TODO: draw a picture.
+
+The strong order is similar to the weak pre-order, but with bigger epsilons.
+#def[
+  For each $epsilon >= 0$ and $y in bb(R)$, let $stronglt_(y,epsilon)$ be a relation satisfying:
+
+  - if $alpha stronglt_(y,epsilon) beta$ then $(alpha + 2 epsilon S)_y <= (beta + 2 epsilon S)_y$,
+  - if $(alpha + 3 epsilon S)_y <= (beta + 3 epsilon S)_y$ then $alpha stronglt_(y,epsilon) beta$,
+  - for any $k >= 1$, there are no $alpha_1, ..., alpha_k$ with $alpha_1 stronglt_(y,epsilon) alpha_2 stronglt_(y,epsilon) dots.h.c stronglt_(y,epsilon) alpha_k stronglt_(y,epsilon) alpha_1$.
+]
+
+The definition of the weak order is a little strange at first. The initial idea
+is that we want to ensure that our sweep-line is ordered by the weak pre-order:
+we are going to try to ensure that if our sweep-line at $y$ is $alpha^1, ..., alpha^n$
+then for all $i < j$, $alpha^i weakpreleq_y alpha^j$. Or in other words, we want to
+ensure that whenever $alpha^j$ is definitely to the right of $alpha^i$, it comes after $alpha^i$
+in the sweep-line.
+
+For sweep-line algorithms to be efficient, we need to avoid too many segment comparisons.
+In the classical Bentley-Ottmann algorithm with exact arithmetic this is easy: whenever
+we look for intersections against segment $alpha^i$, we compare it with its sweep-line
+neighbors to the left and right (so, $alpha^(i-1)$ and $alpha^(i+1)$ in our notation).
+Inexact arithmetic will make this a little trickier; we will typically need to look further
+than just the immediate neighbors of $alpha^i$. However, we will need *some* mechanism
+for early stopping, some way to say that after we have compared $alpha^i$ to, say, $alpha^(i-k)$
+through $alpha^(i-1)$, we can be sure that no other $alpha^j$ (for $j < i - k$) needs
+to be checked. The intuitive idea is that if $alpha^(i-k)$ is very far to the left of $alpha^i$
+then we can stop, because then $alpha^(i-k)$ will "shield" $alpha^i$ from segments further
+left, in much the same way that its immediate neighbors "shield" $alpha^i$ in the classical
+sweep-line algorithm.
+
+We would like to use the strong order $stronglt_y$ to check whether $alpha^(i-k)$ is "very far
+to the left" of $alpha^i$, but we run into trouble with examples like this:
+
+TODO: picture.
+
+Here, we clearly see that $alpha$ is to the left of $beta$; in situations like this, if we're
+examining $beta$ for potential intersections and we see $alpha$ to its left, we'd really like
+to stop looking further left. But $gamma$ is a problem: it's almost horizontal, and the
+sweep-line at $y$ is at an ambiguous height, being more than $epsilon / 2$ but less than $epsilon$ below $gamma$.
+According to the definition of our weak pre-order,
+$alpha weakprelt_y gamma$ and $alpha weakpreeq_y gamma$ are
+both allowed, as are both
+$beta weakprelt_y gamma$ and $beta weakpreeq_y gamma$. So imagine that $alpha weakpreeq_y gamma$ and $beta weakprelt_y gamma$.
+Before adding $beta$, the sweep-line could have been $(gamma, alpha)$. Then we could have tried to add $beta$ after $alpha$
+(because clearly $beta$ is to the right of $alpha$), leading to the sweep-line $(gamma, alpha, beta)$.
+Scanning for any intersections with the newly-added $beta$ won't find any because we'll look to the left, see
+$alpha$, and stop. The result of all this is the illegal sweep-line $(gamma, alpha, beta)$, in which
+$beta weakprelt_y gamma$ but $gamma$ comes first in the sweep-line.
+
+Basically, it seems hard to have both early stopping (which we want for efficiency) and the
+ordering invariants that we need for correctness. Our "fix" is to change the definition of
+our ordering (while still keeping it tight enough for the correctness guarantees that we need).
+It looks almost like cheating, because we're going to redefine it precisely so that our early
+stopping will work.
+
+#def[
+  Let $cal(S)_y$ be the set of all segments whose vertical range contains $y$. Say that $alpha weaklt_y beta$
+  if $alpha weakprelt_y beta$ and there do not exist $alpha', beta' in cal(S)_y$ with $beta weakpreleq_y beta' stronglt alpha' weakpreleq_y alpha$.
+]<def-weak-order>
+
+In other words, we define $weaklt$ to be the same as $weakprelt$, but if there's ever a situation where the (not-yet-specified)
+early stopping algorithm could miss a wrongly ordered pair $alpha weakprelt beta$ by witnessing a gap between $beta'$ and $alpha'$,
+then we weaken the $weakprelt$ order and declare instead that $alpha weakeq beta$ instead of $alpha weaklt beta$.
+To see how this solves our tricky example above, note that when instantiating @def-weak-order with $alpha = beta$, $beta = gamma$,
+$beta' = alpha$, and $alpha' = beta$, we see that there *do* exist $alpha', beta' in cal(S)_y$ with the required properties,
+and so in fact $beta$ and $gamma$ are not strictly ordered in the weak order $weaklt$ even though they were strictly ordered
+in the weak pre-order $weakprelt$. In particular, the sweep-line $(gamma, alpha, beta)$ is legal with respect to the weak order $weaklt$.
+
+You might object to @def-weak-order because of how hilariously inefficient it will be to implement. The
+clever part, though, is that we won't need to implement it. Our algorithm will make its decisions based
+only on the weak pre-order $weakprelt$ and the strong order $stronglt$. The inefficient weak order $weaklt$
+will only be used in the correctness proof.

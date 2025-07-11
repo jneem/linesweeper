@@ -4,6 +4,8 @@ use kurbo::{
     common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, QuadBez, Shape, Vec2,
 };
 
+mod split_quad;
+
 #[derive(Clone, Debug, PartialEq)]
 struct CurveOrderEntry {
     end: f64,
@@ -205,6 +207,10 @@ impl CurveOrder {
     /// at height `y` stays to the left of `c1`. (If one segment is shorter than the other,
     /// this is not quite true near the endpoints of the shorter segment. But close enough.)
     pub fn with_y_slop(self, slop: f64) -> CurveOrder {
+        if slop == 0.0 {
+            return self;
+        }
+
         let mut ret = Vec::new();
 
         // unwrap: cmps is always non-empty
@@ -578,6 +584,26 @@ impl Quadratic {
     /// Evaluates this quadratic at a point.
     pub fn eval(&self, t: f64) -> f64 {
         self.c2 * t * t + self.c1 * t + self.c0
+    }
+
+    /// Shift this quadratic "sideways".
+    ///
+    /// If this quadratic represents the function `q(x)`, returns a quadratic representing `q(x - shift)`.
+    pub fn shift(self, shift: f64) -> Self {
+        Self {
+            c2: self.c2,
+            c1: self.c1 - 2.0 * self.c2 * shift,
+            c0: self.c0 + self.c2 * shift * shift - self.c1 * shift,
+        }
+    }
+}
+
+impl std::ops::Add<f64> for Quadratic {
+    type Output = Quadratic;
+
+    fn add(mut self, rhs: f64) -> Self::Output {
+        self.c0 += rhs;
+        self
     }
 }
 
@@ -1336,6 +1362,8 @@ pub mod arbtests {
 
 #[cfg(test)]
 mod test {
+    use crate::Segment;
+
     use super::*;
 
     #[test]
@@ -1530,5 +1558,58 @@ mod test {
                 order: Order::Ish
             }]
         );
+    }
+
+    #[test]
+    fn graphite_example() {
+        // Fiddling with graphite turned up this example, in which c0 and c1 compare "ish",
+        // c1 compares left of c2, and c0 compares right of c2. That's all fine: c1, c2, c0
+        // would be a valid sweep-line order.
+        //
+        // But suppose that we start with c0, c1 and then try to insert c2. Since it's to
+        // the right of c1 even with the bigger thresholds, we think it's ok to put to the
+        // right of c1, and then the bigger threshold comparison stops us from seeing c0
+        // when scanning to the left.
+        //
+        // I think the solution has to be to re-introduce the close_before and close_after
+        // stuff for y-slop.
+        let eps = 1e-6;
+        let tolerance = eps;
+        let accuracy = eps / 2.0;
+        let y = -227.53699416;
+        let c0 = CubicBez::new(
+            (-4.04445106, -227.53699448),
+            (-4.0443963, -227.53699414000002),
+            (-4.0443415400000005, -227.5369938),
+            (-4.04428678, -227.53699347),
+        );
+        let c1 = CubicBez::new(
+            (-4.04445106, -227.53699448),
+            (-4.04445141, -227.53699414000002),
+            (-4.04445176, -227.5369938),
+            (-4.0444521, -227.53699347),
+        );
+        let c2 = CubicBez::new(
+            (-4.04442515, -227.53699416),
+            (-4.04443617, -227.53699411),
+            (-4.0444375500000005, -227.53699405),
+            (-4.04442929, -227.536994),
+        );
+        let cmp01 = intersect_cubics(c0, c1, tolerance, accuracy).with_y_slop(tolerance);
+        let cmp02 = intersect_cubics(c0, c2, tolerance, accuracy).with_y_slop(tolerance);
+        let cmp12 = intersect_cubics(c1, c2, tolerance, accuracy).with_y_slop(tolerance);
+
+        dbg!(&cmp01, &cmp12, &cmp02);
+        dbg!(solve_x_for_y(c0, y));
+        dbg!(solve_x_for_y(c1, y));
+        assert!(c2.p0.x >= dbg!(c1.p0.x.max(c1.p1.x).max(c1.p2.x).max(c1.p3.x)) + 2.0 * eps);
+
+        let c0_seg = Segment::from_kurbo(c0);
+        let c1_seg = Segment::from_kurbo(c1);
+        let c2_seg = Segment::from_kurbo(c2);
+
+        dbg!(c0_seg.lower(y, eps));
+        dbg!(c1_seg.lower(y, eps));
+        dbg!(c2_seg.lower(y, eps));
     }
 }

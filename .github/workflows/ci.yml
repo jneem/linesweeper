@@ -19,10 +19,6 @@ env:
 # Using cargo-hack also allows us to more easily test the feature matrix of our packages.
 # We use --each-feature & --optional-deps which will run a separate check for every feature.
 #
-# We use cargo-nextest, which has a faster concurrency model for running tests.
-# However cargo-nextest does not support running doc tests, so we also have a cargo test --doc step.
-# For more information see https://github.com/nextest-rs/nextest/issues/16
-#
 # The MSRV jobs run only cargo check because different clippy versions can disagree on goals and
 # running tests introduces dev dependencies which may require a higher MSRV than the bare package.
 # Checking is limited to packages that are intended for publishing to keep MSRV as low as possible.
@@ -126,26 +122,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@52039f232923165906a3c824622a332e84ca4560
-        with:
-          tool: cargo-nextest
-
       - name: Restore cache
         uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6
         with:
           save-if: ${{ github.event_name != 'merge_group' }}
 
-      - name: Run cargo nextest
-        run: cargo nextest run --workspace --locked --all-features --no-fail-fast
+      - name: Run cargo test
+        run: cargo test --workspace --locked --all-features --no-fail-fast
         env:
           # We do not run the masonry render tests on platforms without a working GPU,
           # because those require Vello rendering to be working
           # See also https://github.com/linebender/vello/pull/610
           SKIP_RENDER_TESTS: ${{ matrix.skip_gpu }}
-
-      - name: Run cargo test --doc
-        run: cargo test --doc --workspace --locked --all-features --no-fail-fast
 
   doc:
     name: cargo doc
