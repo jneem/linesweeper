@@ -65,6 +65,10 @@ name = "boolean_op"
 required-features = ["generators"]
 
 [[test]]
+name = "regression"
+harness = false
+
+[[test]]
 name = "snapshots"
 harness = false
 

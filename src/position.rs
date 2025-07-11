@@ -208,8 +208,7 @@ pub(crate) fn compute_positions(
                 y1 = y1.min(next_close_y.max(cmp_end_y));
                 break;
             } else {
-                debug_assert_eq!(cmp_order, Order::Ish);
-                y1 = y1.min(cmp_end_y).min(endpoints[cur.second_half()].y);
+                y1 = y1.min(cmp_end_y).min(endpoints[nbr.second_half()].y);
                 west_scan.push(nbr);
             }
             cur = nbr;
@@ -228,8 +227,7 @@ pub(crate) fn compute_positions(
                 y1 = y1.min(next_close_y.max(cmp_end_y));
                 break;
             } else {
-                debug_assert_eq!(cmp_order, Order::Ish);
-                y1 = y1.min(cmp_end_y).min(endpoints[cur.second_half()].y);
+                y1 = y1.min(cmp_end_y).min(endpoints[nbr.second_half()].y);
                 east_scan.push(nbr);
             }
             cur = nbr;
