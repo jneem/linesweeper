@@ -23,7 +23,7 @@ pub fn main() -> anyhow::Result<()> {
 
     let eps = args.epsilon.unwrap_or(0.1);
     let top =
-        Topology::from_paths_binary(&contours[0], &contours[1..].iter().flatten().collect(), eps);
+        Topology::from_paths_binary(&contours[0], &contours[1..].iter().flatten().collect(), eps)?;
 
     let bbox = top.bounding_box();
     let min_x = bbox.min_x();

@@ -50,7 +50,7 @@ fn test_outline(path1: BezPath, path2: BezPath) -> Result<(), Failed> {
         return Ok(());
     }
 
-    let top = Topology::from_paths_binary(&path1, &path2, 1e-3);
+    let top = Topology::from_paths_binary(&path1, &path2, 1e-3).unwrap();
     let _out_paths = top.compute_positions();
     Ok(())
 }
