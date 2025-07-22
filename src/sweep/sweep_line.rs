@@ -1911,7 +1911,7 @@ mod tests {
             .collect::<Vec<_>>();
         let mut segs = Segments::default();
         for poly in perturbed_polylines {
-            segs.add_cycle(poly);
+            segs.add_closed_polyline(poly);
         }
         let eps = 0.1;
         crate::sweep::sweep(&segs, eps, |_, _| {});
@@ -1943,7 +1943,7 @@ mod tests {
     #[test]
     fn square() {
         let segs =
-            Segments::from_closed_cycle([p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]);
+            Segments::from_closed_polyline([p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]);
         insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.01));
     }
 
@@ -1954,7 +1954,7 @@ mod tests {
         let eps = 0.01;
 
         let mut segs = Segments::default();
-        segs.add_cycles([square, diamond]);
+        segs.add_closed_polylines([square, diamond]);
         insta::assert_ron_snapshot!(snapshot_outputs(segs, eps));
     }
 
@@ -1982,7 +1982,7 @@ mod tests {
             .collect::<Vec<_>>();
         let mut segs = Segments::default();
         for poly in perturbed_polylines {
-            segs.add_cycle(poly);
+            segs.add_closed_polyline(poly);
         }
         insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.1));
     }
@@ -1992,8 +1992,8 @@ mod tests {
         let a = vec![p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)];
         let b = vec![p(-0.5, -0.5), p(0.5, -0.5), p(0.5, 0.5), p(-0.5, 0.5)];
         let mut segs = Segments::default();
-        segs.add_cycle(a);
-        segs.add_cycle(b);
+        segs.add_closed_polyline(a);
+        segs.add_closed_polyline(b);
         insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.1));
     }
 
@@ -2016,12 +2016,13 @@ mod tests {
         };
 
         let mut segs = Segments::default();
-        segs.add_bez_path(
+        segs.add_non_closed_bez_path(
             &[to_path(c0), to_path(c1), to_path(c2)]
                 .into_iter()
                 .flatten()
                 .collect(),
-        );
+        )
+        .unwrap();
         insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.25));
     }
 

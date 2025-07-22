@@ -28,6 +28,8 @@ pub mod treevec;
 
 use topology::{BinaryWindingNumber, Topology};
 
+use crate::segments::NonClosedPath;
+
 #[cfg(test)]
 pub mod perturbation;
 
@@ -53,14 +55,34 @@ pub enum BinaryOp {
     Xor,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 /// The input points were faulty.
 pub enum Error {
     /// At least one of the inputs was infinite.
     Infinity,
     /// At least one of the inputs was not a number.
     NaN,
+    /// One of the inputs had a non-closed path.
+    NonClosedPath(NonClosedPath),
 }
+
+impl From<NonClosedPath> for Error {
+    fn from(ncp: NonClosedPath) -> Self {
+        Error::NonClosedPath(ncp)
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Infinity => write!(f, "one of the inputs was infinite"),
+            Error::NaN => write!(f, "one of the inputs had a NaN"),
+            Error::NonClosedPath(_) => write!(f, "one of the inputs had a non-closed path"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 /// Computes a boolean operation between two sets, each of which is described as a collection of closed polylines.
 pub fn binary_op(
@@ -89,7 +111,7 @@ pub fn binary_op(
 
     debug_assert!(eps.is_finite());
 
-    let top = Topology::from_paths_binary(set_a, set_b, eps);
+    let top = Topology::from_paths_binary(set_a, set_b, eps)?;
     #[cfg(feature = "debug-svg")]
     {
         svg::save(

@@ -33,7 +33,7 @@ fn just_the_sweep(c: &mut Criterion) {
 
     let eps = 0.01f64;
     let mut segs = Segments::default();
-    segs.add_cycles(contours_even.into_iter().chain(contours_odd));
+    segs.add_closed_polylines(contours_even.into_iter().chain(contours_odd));
 
     c.bench_function("checkerboard: just the sweep", |b| {
         b.iter(|| linesweeper::sweep::sweep(&segs, eps, |_, _| {}))
@@ -43,7 +43,7 @@ fn just_the_sweep(c: &mut Criterion) {
 
     let eps = 0.01f64;
     let mut segs = Segments::default();
-    segs.add_cycles(contours_even.into_iter().chain(contours_odd));
+    segs.add_closed_polylines(contours_even.into_iter().chain(contours_odd));
 
     c.bench_function("slanted_checkerboard: just the sweep", |b| {
         b.iter(|| linesweeper::sweep::sweep(&segs, eps, |_, _| {}))

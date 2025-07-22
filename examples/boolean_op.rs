@@ -122,7 +122,7 @@ pub fn main() -> anyhow::Result<()> {
     let (shape_a, shape_b) = get_contours(&args.input)?;
 
     let eps = args.epsilon.unwrap_or(0.1);
-    let top = Topology::from_paths_binary(&shape_a, &shape_b, eps);
+    let top = Topology::from_paths_binary(&shape_a, &shape_b, eps)?;
     let bbox = top.bounding_box();
     let min_x = bbox.min_x();
     let min_y = bbox.min_y();
