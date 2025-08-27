@@ -73,7 +73,8 @@ pub fn main() -> anyhow::Result<()> {
             (&modifier, Tag::Modifier),
         ],
         eps,
-    );
+    )
+    .unwrap();
     let bbox = top.bounding_box();
     let min_x = bbox.min_x();
     let min_y = bbox.min_y();

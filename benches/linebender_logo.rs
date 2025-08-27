@@ -79,7 +79,7 @@ fn just_the_sweep(c: &mut Criterion) {
         .collect::<BezPath>();
 
     let mut segs = Segments::default();
-    segs.add_bez_path(&path);
+    segs.add_bez_path(&path).unwrap();
 
     c.bench_function("logo: just the sweep", |b| {
         b.iter(|| linesweeper::sweep::sweep(&segs, 0.01, |_, _| {}))

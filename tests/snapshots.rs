@@ -337,7 +337,7 @@ fn generate_sweep_snapshot(path: PathBuf) -> Result<(), Failed> {
         .collect();
 
     let mut segments = Segments::default();
-    segments.add_bez_path(&bez);
+    segments.add_bez_path(&bez).unwrap();
     segments.check_invariants();
 
     let eps = 16.0;
@@ -395,7 +395,7 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
         .collect();
 
     let eps = 16.0;
-    let top = Topology::from_paths_binary(&bez, &BezPath::new(), eps);
+    let top = Topology::from_paths_binary(&bez, &BezPath::new(), eps).unwrap();
     let out_paths = top.compute_positions();
 
     let pad = 2.0 * eps;

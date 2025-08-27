@@ -11,7 +11,7 @@ use crate::{
     curve::{y_subsegment, Order},
     geom::Point,
     order::ComparisonCache,
-    segments::{SegIdx, SegVec, Segments},
+    segments::{NonClosedPath, SegIdx, SegVec, Segments},
     sweep::{
         SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
     },
@@ -479,19 +479,19 @@ impl<W: WindingNumber> Topology<W> {
     /// Construct a new topology from a collection of paths and tags.
     ///
     /// See [`WindingNumber`] about the tags are for.
-    pub fn from_paths<'a, Iter>(paths: Iter, eps: f64) -> Self
+    pub fn from_paths<'a, Iter>(paths: Iter, eps: f64) -> Result<Self, NonClosedPath>
     where
         Iter: IntoIterator<Item = (&'a BezPath, W::Tag)>,
     {
         let mut segments = Segments::default();
         let mut tag = Vec::new();
         for (p, t) in paths {
-            segments.add_path_without_updating_enter_exit(p);
+            segments.add_path_without_updating_enter_exit(p, true)?;
             tag.resize(segments.len(), t);
         }
         segments.update_enter_exit(0);
         segments.check_invariants();
-        Self::from_segments(segments, SegVec::from_vec(tag), eps)
+        Ok(Self::from_segments(segments, SegVec::from_vec(tag), eps))
     }
 
     fn from_segments(segments: Segments, tag: SegVec<W::Tag>, eps: f64) -> Self {
@@ -1365,7 +1365,7 @@ impl<W: WindingNumber> Topology<W> {
 
 impl Topology<i32> {
     /// Construct a new topology from a single path.
-    pub fn from_path(path: &BezPath, eps: f64) -> Self {
+    pub fn from_path(path: &BezPath, eps: f64) -> Result<Self, NonClosedPath> {
         Self::from_paths(std::iter::once((path, ())), eps)
     }
 }
@@ -1383,9 +1383,9 @@ impl Topology<BinaryWindingNumber> {
     ) -> Self {
         let mut segments = Segments::default();
         let mut shape_a = Vec::new();
-        segments.add_cycles(set_a);
+        segments.add_closed_polylines(set_a);
         shape_a.resize(segments.len(), true);
-        segments.add_cycles(set_b);
+        segments.add_closed_polylines(set_b);
         shape_a.resize(segments.len(), false);
         Self::from_segments(segments, SegVec::from_vec(shape_a), eps)
     }
@@ -1393,7 +1393,11 @@ impl Topology<BinaryWindingNumber> {
     /// Creates a new `Topology` from two Bézier paths.
     ///
     /// The two Bézier paths represent two different sets for the purpose of boolean set operations.
-    pub fn from_paths_binary(set_a: &BezPath, set_b: &BezPath, eps: f64) -> Self {
+    pub fn from_paths_binary(
+        set_a: &BezPath,
+        set_b: &BezPath,
+        eps: f64,
+    ) -> Result<Self, NonClosedPath> {
         Self::from_paths([(set_a, true), (set_b, false)], eps)
     }
 }
