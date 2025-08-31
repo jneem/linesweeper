@@ -50,7 +50,7 @@ expression: "snapshot_outputs(segs, 0.25)"
     ],
   ),
   Output(
-    y: 0.5,
+    y: 0.5000000000000001,
     order: SegmentOrder(
       segs: [
         SegmentOrderEntry(

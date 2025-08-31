@@ -3,6 +3,7 @@ use arrayvec::ArrayVec;
 use kurbo::{
     common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, QuadBez, Shape, Vec2,
 };
+use poly_cool::Cubic;
 
 mod split_quad;
 
@@ -314,6 +315,22 @@ impl CurveOrder {
     }
 }
 
+fn cubic_from_bez(a0: f64, a1: f64, a2: f64, a3: f64) -> Cubic {
+    let c3 = a3 - 3.0 * a2 + 3.0 * a1 - a0;
+    let c2 = 3.0 * (a2 - 2.0 * a1 + a0);
+    let c1 = 3.0 * (a1 - a0);
+    let c0 = a0;
+    Cubic::new([c0, c1, c2, c3])
+}
+
+fn cubic_from_bez_x(c: CubicBez) -> Cubic {
+    cubic_from_bez(c.p0.x, c.p1.x, c.p2.x, c.p3.x)
+}
+
+fn cubic_from_bez_y(c: CubicBez) -> Cubic {
+    cubic_from_bez(c.p0.y, c.p1.y, c.p2.y, c.p3.y)
+}
+
 /// Find the parameter `t` at which `c` crosses height `y`.
 pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
     debug_assert!(c.p0.y <= y && y <= c.p3.y && c.p0.y < c.p3.y);
@@ -324,14 +341,14 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
     if y == c.p3.y {
         return 1.0;
     }
+
     let c3 = c.p3.y - 3.0 * c.p2.y + 3.0 * c.p1.y - c.p0.y;
     let c2 = 3.0 * (c.p2.y - 2.0 * c.p1.y + c.p0.y);
     let c1 = 3.0 * (c.p1.y - c.p0.y);
     let c0 = c.p0.y - y;
+    let cubic = Cubic::new([c0, c1, c2, c3]);
 
-    let cubic = Cubic { c0, c1, c2, c3 };
-
-    let eps = 1e-10 * cubic.max_coeff().max(1.0);
+    let eps = 1e-12 * cubic.magnitude().max(1.0);
     let roots = cubic.roots_between(0.0, 1.0, eps);
     if !roots.is_empty() {
         return roots[0];
@@ -604,128 +621,6 @@ impl std::ops::Add<f64> for Quadratic {
     fn add(mut self, rhs: f64) -> Self::Output {
         self.c0 += rhs;
         self
-    }
-}
-
-/// A cubic in one variable, represented as `c3 * x^3 + c2 * x^2 + c1 * x + c0`.
-#[derive(Clone, Copy, Debug)]
-pub struct Cubic {
-    /// The cubic coefficient.
-    pub c3: f64,
-    /// The quadratic coefficient.
-    pub c2: f64,
-    /// The linear coefficient.
-    pub c1: f64,
-    /// The constant coefficient.
-    pub c0: f64,
-}
-
-impl Cubic {
-    /// Returns the cubic function representing the `y` coordinate of a cubic Bézier.
-    pub fn from_bez_y(c: CubicBez) -> Self {
-        let c3 = c.p3.y - 3.0 * c.p2.y + 3.0 * c.p1.y - c.p0.y;
-        let c2 = 3.0 * (c.p2.y - 2.0 * c.p1.y + c.p0.y);
-        let c1 = 3.0 * (c.p1.y - c.p0.y);
-        let c0 = c.p0.y;
-        Self { c3, c2, c1, c0 }
-    }
-
-    /// Returns the cubic function representing the `x` coordinate of a cubic Bézier.
-    pub fn from_bez_x(c: CubicBez) -> Self {
-        let c3 = c.p3.x - 3.0 * c.p2.x + 3.0 * c.p1.x - c.p0.x;
-        let c2 = 3.0 * (c.p2.x - 2.0 * c.p1.x + c.p0.x);
-        let c1 = 3.0 * (c.p1.x - c.p0.x);
-        let c0 = c.p0.x;
-        Self { c3, c2, c1, c0 }
-    }
-
-    /// Evaluates this cubic at a point.
-    pub fn eval(&self, t: f64) -> f64 {
-        self.c3 * t * t * t + self.c2 * t * t + self.c1 * t + self.c0
-    }
-
-    /// Returns the derivative of this cubic.
-    pub fn deriv(&self) -> Quadratic {
-        Quadratic {
-            c2: 3.0 * self.c3,
-            c1: 2.0 * self.c2,
-            c0: self.c1,
-        }
-    }
-
-    fn one_root(&self, mut lower: f64, mut upper: f64, accuracy: f64) -> f64 {
-        let val_lower = self.eval(lower);
-        let val_upper = self.eval(upper);
-        debug_assert_ne!(val_lower.signum(), val_upper.signum());
-
-        // We do one "binary search" step before the truncated Newton
-        // iterations. If the range `(lower, upper)` doesn't include any
-        // critical points, this guarantees that the Newton method converges (as
-        // pointed out by Yuksel): Newton can only oscillate if it crosses an
-        // inflection point, and chopping the inter-critical-point range in half
-        // guarantees that it doesn't contain an inflection point.
-        let mut x = (upper + lower) / 2.0;
-        let mut val_x = self.eval(x);
-        if val_x.signum() == val_lower.signum() {
-            lower = x;
-        } else {
-            upper = x;
-        }
-
-        while val_x.abs() >= accuracy {
-            let deriv_x = self.deriv().eval(x);
-
-            let step = -val_x / deriv_x;
-            x = (x + step).clamp(lower, upper);
-            val_x = self.eval(x);
-            //dbg!(val_x, deriv_x, x, step);
-        }
-        x
-    }
-
-    /// Computes all roots between `lower` and `upper`, to the desired accuracy.
-    ///
-    /// "Accuracy" is measured with respect to the cubic's value: if this cubic
-    /// is called `f` and we find some `x` with `|f(x)| < accuracy` (and `x` is
-    /// contained between two endpoints where `f` has opposite signs) then we'll
-    /// call `x` a root.
-    ///
-    /// We make no guarantees about multiplicity. In fact, if there's a
-    /// double-root that isn't a triple-root (and therefore has no sign change
-    /// nearby) then there's a good chance we miss it altogether. This is
-    /// fine if you're using this root-finding to optimize a quartic, because
-    /// double-roots of the derivative aren't local extrema.
-    pub fn roots_between(&self, lower: f64, upper: f64, accuracy: f64) -> ArrayVec<f64, 3> {
-        let q = self.deriv();
-        let q_roots = q.signs();
-
-        let possible_endpoints = [q_roots.smaller_root, q_roots.bigger_root, upper];
-
-        let mut last = lower;
-        let mut last_sign = self.eval(last).signum();
-        let mut ret = ArrayVec::new();
-
-        for x in possible_endpoints {
-            if x > last && x <= upper {
-                let sign = self.eval(x).signum();
-                if sign != last_sign {
-                    ret.push(self.one_root(last, x, accuracy));
-                }
-
-                last = x;
-                last_sign = sign;
-            }
-        }
-        ret
-    }
-
-    /// Returns the largest absolute value of any coefficient.
-    pub fn max_coeff(&self) -> f64 {
-        self.c3
-            .abs()
-            .max(self.c2.abs())
-            .max(self.c1.abs())
-            .max(self.c0.abs())
     }
 }
 
@@ -1313,30 +1208,7 @@ pub mod arbtests {
     use arbitrary::Unstructured;
     use kurbo::ParamCurve as _;
 
-    use super::{solve_t_for_y, Cubic};
-
-    pub fn cubic_roots(u: &mut Unstructured) -> Result<(), arbitrary::Error> {
-        let c = crate::arbitrary::cubic(1e8, u)?;
-
-        // How much relative accuracy do we expect?
-        let accuracy = 1e-11;
-        let range = crate::arbitrary::float_in_range(1.0, 1e4, u)?;
-
-        let size = c.c3.abs() * range.powi(3)
-            + c.c2.abs() * range.powi(2)
-            + c.c1.abs() * range
-            + c.c0.abs();
-        let threshold = accuracy * size.max(1.0);
-        let roots = c.roots_between(-range, range, threshold);
-        if c.eval(-range).signum() != c.eval(range).signum() {
-            assert!(!roots.is_empty());
-        }
-        for r in roots {
-            assert!(c.eval(r).abs() <= threshold);
-        }
-
-        Ok(())
-    }
+    use super::{cubic_from_bez_x, cubic_from_bez_y, solve_t_for_y};
 
     pub fn solve_for_t(u: &mut Unstructured) -> Result<(), arbitrary::Error> {
         let c = crate::arbitrary::monotonic_bezier(u)?;
@@ -1347,9 +1219,9 @@ pub mod arbtests {
         // How much relative accuracy do we expect?
         // This was determined empirically: 1e-10 fails fuzz tests.
         let accuracy = 1e-9;
-        let max_coeff = Cubic::from_bez_x(c)
-            .max_coeff()
-            .max(Cubic::from_bez_y(c).max_coeff());
+        let max_coeff = cubic_from_bez_x(c)
+            .magnitude()
+            .max(cubic_from_bez_y(c).magnitude());
         let threshold = accuracy * max_coeff.max(1.0);
 
         let y = crate::arbitrary::float_in_range(c.p0.y, c.p3.y, u)?;
@@ -1408,11 +1280,6 @@ mod test {
         let y = 0.00016929232880729566;
         let t = solve_t_for_y(c, y);
         assert!(dbg!(c.eval(t).y - y).abs() < 1e-8);
-    }
-
-    #[test]
-    fn cubic_roots_arbtest() {
-        arbtest::arbtest(arbtests::cubic_roots);
     }
 
     #[test]
