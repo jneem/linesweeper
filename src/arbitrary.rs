@@ -3,10 +3,7 @@
 use arbitrary::Unstructured;
 use kurbo::{CubicBez, Point};
 
-use crate::{
-    curve::{Cubic, Quadratic},
-    geom,
-};
+use crate::{curve::Quadratic, geom};
 
 /// Generate an arbitrary float in some range.
 pub fn float_in_range(
@@ -131,34 +128,6 @@ pub fn quadratic(size: f64, u: &mut Unstructured<'_>) -> Result<Quadratic, arbit
             c2: scale,
             c1: -scale * (r1 + r2),
             c0: scale * r1 * r2,
-        })
-    }
-}
-
-/// Generate an arbitrary cubic function, with coefficients of roughly the scale `size`.
-pub fn cubic(size: f64, u: &mut Unstructured<'_>) -> Result<Cubic, arbitrary::Error> {
-    let use_coeffs: bool = u.arbitrary()?;
-    if use_coeffs {
-        let c3 = float_in_range(-size, size, u)?;
-        let c2 = another_float_in_range(c3, -size, size, u)?;
-        let c1 = another_float_in_range(c2, -size, size, u)?;
-        let c0 = another_float_in_range(c1, -size, size, u)?;
-
-        Ok(Cubic { c3, c2, c1, c0 })
-    } else {
-        // Generate the roots, with a bias towards roots being almost-repeated.
-        let size = size.sqrt().sqrt();
-
-        let r1 = float_in_range(-size, size, u)?;
-        let r2 = another_float_in_range(r1, -size, size, u)?;
-        let r3 = another_float_in_range(r2, -size, size, u)?;
-        let scale = float_in_range(-size, size, u)?;
-
-        Ok(Cubic {
-            c3: scale,
-            c2: -scale * (r1 + r2 + r3),
-            c1: scale * (r1 * r2 + r1 * r3 + r2 * r3),
-            c0: -scale * r1 * r2 * r3,
         })
     }
 }

@@ -814,6 +814,7 @@ dependencies = [
  "kurbo",
  "libtest-mimic",
  "linesweeper_util",
+ "poly-cool",
  "proptest",
  "serde",
  "skrifa",
@@ -968,6 +969,15 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "poly-cool"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8370a553db72b99cd797d84e98f4f3a43bc7b57a3d9f0c9f095cbb24683694c1"
+dependencies = [
+ "arrayvec",
 ]
 
 [[package]]

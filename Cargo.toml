@@ -26,6 +26,7 @@ generators = []
 arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
 arrayvec = { version = "0.7.6", features = ["serde"] }
 kurbo = { version = "0.11.1", features = ["serde"] }
+poly-cool = "0.3.2"
 svg = { version = "0.18", default-features = false, optional = true }
 
 [dev-dependencies]
