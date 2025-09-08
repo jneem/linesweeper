@@ -905,19 +905,7 @@ impl<'segs> Sweeper<'segs> {
             let start_idx = self.line.segs.partition_point(|other_entry| {
                 let other_seg = &self.segments[other_entry.seg];
 
-                // We test using Euclidean distance instead of just comparing
-                // x coordinates because if other_seg is almost horizontal then
-                // a tiny error in solving it for y will make a big error in
-                // its x coordinate.
-                let p = kurbo::Point::new(seg.p0.x, seg.p0.y);
-                let other_seg = other_seg.to_kurbo();
-                let nearest = other_seg.nearest(p, self.eps / 2.0);
-
-                // "other's nearest point to p is to the left of p" is a reasonable
-                // and robust proxy for "other crosses self.y to the left of p", because
-                // "other" is monotonic in y
-                nearest.distance_sq > 4.0 * self.eps * self.eps
-                    && other_seg.eval(nearest.t).x < seg.p0.x
+                other_seg.upper(self.y, self.eps) + self.eps <= seg.p0.x
             });
 
             let mut end_idx = start_idx;
@@ -925,13 +913,7 @@ impl<'segs> Sweeper<'segs> {
                 let other_entry = &mut self.line.segs[j];
                 let other_seg = &self.segments[other_entry.seg];
 
-                let p = kurbo::Point::new(seg.p3.x, seg.p3.y);
-                let other_seg = other_seg.to_kurbo();
-                let nearest = other_seg.nearest(p, self.eps / 2.0);
-
-                if nearest.distance_sq <= 4.0 * self.eps * self.eps
-                    || other_seg.eval(nearest.t).x < seg.p3.x
-                {
+                if other_seg.lower(self.y, self.eps) - self.eps <= seg.p3.x {
                     // Ensure that every segment in the changed interval has `old_idx` set;
                     // see also `compute_changed_intervals`.
                     self.line.segs[j].set_old_idx_if_unset(j);
