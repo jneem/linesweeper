@@ -174,4 +174,26 @@ mod tests {
 
         insta::assert_ron_snapshot!(output);
     }
+
+    // This example has a union of two not-quite-axis-aligned crosses. It
+    // suffers from some extra quadratic segments near the intersection points,
+    // but it used to be worse.
+    #[test]
+    fn path_blowup() {
+        let path1 = "M-90.03662872314453,-212 L-90.03662872314453,212 L90.03565216064453,212 L90.03565216064453,-212 L-90.03662872314453,-212 Z";
+        let path2 = "M211.99964904785156,-90.03582000732422 L-212.00035095214844,-90.03646087646484 L-212.00062561035156,90.03582000732422 L211.99937438964844,90.03646087646484 L211.99964904785156,-90.03582000732422 Z";
+        if let Ok(output) = binary_op(
+            &BezPath::from_svg(path1).unwrap(),
+            &BezPath::from_svg(path2).unwrap(),
+            FillRule::NonZero,
+            BinaryOp::Union,
+        ) {
+            let output = output.contours().next().unwrap();
+            let path_length = output.path.elements().len();
+            // This should ideally be more like 12, but most
+            // intersection points have like 2 spurious quadratics.
+            // It used to be 77, though...
+            assert!(path_length < 30);
+        }
+    }
 }

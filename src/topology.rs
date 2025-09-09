@@ -1323,11 +1323,13 @@ impl<W: WindingNumber> Topology<W> {
         let point_radius = 1.5;
         for seg in self.segment_indices() {
             let mut data = svg::node::element::path::Data::new();
-            bbox = bbox.union_pt((*self.point(seg.first_half())).into());
-            bbox = bbox.union_pt((*self.point(seg.second_half())).into());
             let p = |point: Point| (point.x, point.y);
-            data = data.move_to(p(*self.point(seg.first_half())));
-            data = data.line_to(p(*self.point(seg.second_half())));
+            let p0 = p(*self.point(seg.first_half()));
+            let p1 = p(*self.point(seg.second_half()));
+            bbox = bbox.union_pt(p0.into());
+            bbox = bbox.union_pt(p1.into());
+            data = data.move_to(p0);
+            data = data.line_to(p1);
             let color = tag_color(self.tag[self.orig_seg[seg]]);
             let path = svg::node::element::Path::new()
                 .set("id", format!("{seg:?}"))
@@ -1340,6 +1342,13 @@ impl<W: WindingNumber> Topology<W> {
                 .set("fill", "none")
                 .set("d", data);
             document = document.add(path);
+
+            let text = svg::node::element::Text::new(format!("{seg:?}",))
+                .set("font-size", 8.0)
+                .set("text-anchor", "middle")
+                .set("x", (p0.0 + p1.0) / 2.0)
+                .set("y", (p0.1 + p1.1) / 2.0);
+            document = document.add(text);
         }
 
         for p_idx in self.points.indices() {

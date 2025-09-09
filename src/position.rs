@@ -55,6 +55,7 @@ fn ordered_curves_all_close(
                 .0
                 .quad_to((x_mid_max_so_far, y_mid), (x1_max_so_far, next_y0));
         }
+        approxes.clear();
 
         y0 = next_y0;
     }
@@ -109,7 +110,7 @@ fn approximate(
             let factor = horizontal_error_weight(cubic);
 
             let too_short = y1 <= y0 + accuracy;
-            let accurate = approx.dmax.max(-approx.dmin) < factor * accuracy;
+            let accurate = approx.dmax.max(-approx.dmin) * factor < accuracy;
             if !too_short && !accurate {
                 // TODO: can we be smarter about this?
                 y1 = (y0 + y1) / 2.0;
@@ -286,7 +287,9 @@ pub(crate) fn compute_positions(
 
 #[cfg(test)]
 mod tests {
-    use kurbo::{CubicBez, Line, PathSeg};
+    use kurbo::{BezPath, CubicBez, Line, PathSeg};
+
+    use crate::Segments;
 
     use super::horizontal_error_weight;
 
@@ -310,5 +313,32 @@ mod tests {
         // Diagonal lines have a weight of about 1/sqrt(2).
         let c: CubicBez = PathSeg::from(Line::new((0.0, 0.0), (1.0, 1.0))).to_cubic();
         assert_eq!(horizontal_error_weight(c), 1.0 / 2.0f64.sqrt());
+    }
+
+    // Here's an example of lines where we used to have a bad
+    // approximation. Check that they only require a single
+    // approximation step.
+    #[test]
+    fn linear_approx() {
+        let mut p0 = BezPath::new();
+        p0.move_to((-212.00062561035156, 90.03582000732422));
+        p0.line_to((211.99937438964844, 90.03646087646484));
+        p0.close_path();
+
+        let mut p1 = BezPath::new();
+        p1.move_to((211.99964904785153, -90.0358200073242));
+        p1.line_to((211.99937438964844, 90.03646087646484));
+        p1.close_path();
+
+        let mut segs = Segments::default();
+        segs.add_bez_path(&p0).unwrap();
+        segs.add_bez_path(&p1).unwrap();
+        let s0 = segs.indices().next().unwrap();
+        let s1 = segs.indices().nth(2).unwrap();
+
+        let mut out = Vec::new();
+        let y1 = 90.03646087646484;
+        let next_y0 = super::approximate(90.03645987646233, y1, &[s0, s1], &segs, 2.5e-7, &mut out);
+        assert_eq!(next_y0, y1);
     }
 }

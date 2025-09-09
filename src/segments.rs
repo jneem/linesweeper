@@ -313,7 +313,7 @@ impl Segments {
             let old_len = self.segs.len();
             for seg in kurbo::segments(subpath) {
                 // TODO: could have a fast path for line segments
-                let cubic = seg.to_cubic();
+                let cubic = to_cubic(seg);
                 let cubics = monotonic_pieces(cubic);
                 for c in cubics {
                     let (p0, p1, p2, p3, orient) = if (c.p0.y, c.p0.x) <= (c.p3.y, c.p3.x) {
@@ -436,6 +436,22 @@ impl Segments {
                 assert_eq!(self.contour_prev(next_idx), Some(idx));
             }
         }
+    }
+}
+
+// kurbo's PathSeg::to_cubic turns lines into degenerate cubics, which are numerically
+// annoying (e.g. they confuse the monotonicity checker). So we roll our own version,
+// but eventually we should just handle lines and quadratics without converting them.
+fn to_cubic(seg: kurbo::PathSeg) -> kurbo::CubicBez {
+    match seg {
+        kurbo::PathSeg::Line(kurbo::Line { p0, p1 }) => kurbo::CubicBez {
+            p0,
+            p1: p0 + (p1 - p0) * (1.0 / 3.0),
+            p2: p0 + (p1 - p0) * (2.0 / 3.0),
+            p3: p1,
+        },
+        kurbo::PathSeg::Quad(_) => seg.to_cubic(),
+        kurbo::PathSeg::Cubic(c) => c,
     }
 }
 
