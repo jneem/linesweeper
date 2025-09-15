@@ -190,10 +190,10 @@ mod tests {
         ) {
             let output = output.contours().next().unwrap();
             let path_length = output.path.elements().len();
-            // This should ideally be more like 12, but most
-            // intersection points have like 2 spurious quadratics.
+            // This should ideally be more like 12, but there
+            // are some small horizontal segments in the output.
             // It used to be 77, though...
-            assert!(path_length < 30);
+            assert!(path_length <= 16);
         }
     }
 }

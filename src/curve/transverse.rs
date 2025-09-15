@@ -95,10 +95,10 @@ pub fn transversal_before(left: CubicBez, right: CubicBez, y0: f64) -> bool {
     // Reflect everything in y.
     let p = |q: kurbo::Point| kurbo::Point { x: q.x, y: -q.y };
     let c = |d: CubicBez| CubicBez {
-        p0: p(d.p0),
-        p1: p(d.p1),
-        p2: p(d.p2),
-        p3: p(d.p3),
+        p0: p(d.p3),
+        p1: p(d.p2),
+        p2: p(d.p1),
+        p3: p(d.p0),
     };
     transversal_after(c(left), c(right), -y0)
 }

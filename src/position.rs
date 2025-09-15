@@ -12,7 +12,10 @@ use std::collections::BinaryHeap;
 use kurbo::{BezPath, CubicBez};
 
 use crate::{
-    curve::{transverse::transversal_after, y_subsegment, EstParab, Order},
+    curve::{
+        transverse::{transversal_after, transversal_before},
+        y_subsegment, EstParab, Order,
+    },
     num::CheapOrderedFloat,
     order::ComparisonCache,
     topology::{HalfOutputSegVec, OutputSegIdx, OutputSegVec, ScanLineOrder},
@@ -39,17 +42,26 @@ fn ordered_curves_all_close(
 
         let p0 = bez_end(&out[o0].0);
         let p1 = bez_end(&out[o1].0);
+        let q0 = endpoints[o0.second_half()];
+        let q1 = endpoints[o1.second_half()];
 
         if p0.y == y0 && p1.y == y0 {
-            let c0 = next_subsegment(&segs[s0], &out[o0].0, y1, endpoints[o0.second_half()]);
-            let c1 = next_subsegment(&segs[s1], &out[o1].0, y1, endpoints[o1.second_half()]);
+            let c0 = next_subsegment(&segs[s0], &out[o0].0, y1, q0);
+            let c1 = next_subsegment(&segs[s1], &out[o1].0, y1, q1);
 
             if transversal_after(c0, c1, y1) {
                 return;
             }
         }
 
-        // TODO: for checking transversal_before, we need the endpoint.
+        if q0.y == y1 && q1.y == y1 {
+            let c0 = next_subsegment(&segs[s0], &out[o0].0, y1, q0);
+            let c1 = next_subsegment(&segs[s1], &out[o1].0, y1, q1);
+
+            if transversal_before(c0, c1, y0) {
+                return;
+            }
+        }
     }
 
     // Ensure everything in `out` goes up to `y0`. Anything that doesn't go up to `y0` is
