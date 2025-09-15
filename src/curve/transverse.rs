@@ -37,7 +37,8 @@ fn quad_min_between(a: f64, b: f64, c: f64, range: std::ops::RangeInclusive<f64>
 }
 
 pub fn transversal_after(left: CubicBez, right: CubicBez, y1: f64) -> bool {
-    debug_assert_eq!(left.start(), right.start());
+    debug_assert_eq!(left.start().y, right.start().y);
+    debug_assert!(left.start().x <= right.start().x);
     debug_assert!(left.start().y < y1);
 
     // First, check if they're transversal at the initial point. We exclude

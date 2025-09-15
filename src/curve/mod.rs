@@ -6,7 +6,7 @@ use kurbo::{
 use poly_cool::Cubic;
 
 mod split_quad;
-mod transverse;
+pub(crate) mod transverse;
 
 #[derive(Clone, Debug, PartialEq)]
 struct CurveOrderEntry {

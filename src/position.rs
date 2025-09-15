@@ -12,13 +12,15 @@ use std::collections::BinaryHeap;
 use kurbo::{BezPath, CubicBez};
 
 use crate::{
-    curve::{y_subsegment, EstParab, Order},
+    curve::{transverse::transversal_after, y_subsegment, EstParab, Order},
     num::CheapOrderedFloat,
     order::ComparisonCache,
     topology::{HalfOutputSegVec, OutputSegIdx, OutputSegVec, ScanLineOrder},
-    SegIdx, Segments,
+    SegIdx, Segment, Segments,
 };
 
+// TODO: maybe a Context type to keep the parameters in check?
+#[allow(clippy::too_many_arguments)]
 fn ordered_curves_all_close(
     segs: &Segments,
     order: &[SegIdx],
@@ -26,8 +28,46 @@ fn ordered_curves_all_close(
     out: &mut OutputSegVec<(BezPath, Option<usize>)>,
     mut y0: f64,
     y1: f64,
+    endpoints: &HalfOutputSegVec<kurbo::Point>,
     accuracy: f64,
 ) {
+    if order.len() == 2 {
+        let s0 = order[0];
+        let s1 = order[1];
+        let o0 = output_order[0];
+        let o1 = output_order[1];
+
+        let p0 = bez_end(&out[o0].0);
+        let p1 = bez_end(&out[o1].0);
+
+        if p0.y == y0 && p1.y == y0 {
+            let c0 = next_subsegment(&segs[s0], &out[o0].0, y1, endpoints[o0.second_half()]);
+            let c1 = next_subsegment(&segs[s1], &out[o1].0, y1, endpoints[o1.second_half()]);
+
+            if transversal_after(c0, c1, y1) {
+                return;
+            }
+        }
+
+        // TODO: for checking transversal_before, we need the endpoint.
+    }
+
+    // Ensure everything in `out` goes up to `y0`. Anything that doesn't go up to `y0` is
+    // an output where we can just copy from the input.
+    for (&seg_idx, &out_idx) in order.iter().zip(output_order) {
+        let out_bez = &mut out[out_idx].0;
+        if bez_end_y(out_bez) < y0 {
+            let c = next_subsegment(
+                &segs[seg_idx],
+                out_bez,
+                y0,
+                endpoints[out_idx.second_half()],
+            );
+            out[out_idx].1 = Some(out[out_idx].0.elements().len() - 1);
+            out[out_idx].0.curve_to(c.p1, c.p2, c.p3);
+        }
+    }
+
     let mut approxes = Vec::new();
 
     // The recentering helps, but there are still some issues with approximation when almost horizontal
@@ -143,14 +183,28 @@ impl PartialOrd for HeapEntry {
     }
 }
 
-fn bez_end(path: &BezPath) -> f64 {
+fn bez_end(path: &BezPath) -> kurbo::Point {
     match path.elements().last().unwrap() {
         kurbo::PathEl::MoveTo(p)
         | kurbo::PathEl::LineTo(p)
         | kurbo::PathEl::QuadTo(_, p)
-        | kurbo::PathEl::CurveTo(_, _, p) => p.y,
+        | kurbo::PathEl::CurveTo(_, _, p) => *p,
         kurbo::PathEl::ClosePath => unreachable!(),
     }
+}
+
+fn bez_end_y(path: &BezPath) -> f64 {
+    bez_end(path).y
+}
+
+fn next_subsegment(seg: &Segment, out: &BezPath, y1: f64, endpoint: kurbo::Point) -> CubicBez {
+    let p0 = bez_end(out);
+    let mut c = y_subsegment(seg.to_kurbo(), p0.y, y1);
+    c.p0 = p0;
+    if endpoint.y == y1 {
+        c.p3 = endpoint;
+    }
+    c
 }
 
 /// Compute positions for all of the output segments.
@@ -173,6 +227,11 @@ pub(crate) fn compute_positions(
     accuracy: f64,
 ) -> OutputSegVec<(BezPath, Option<usize>)> {
     let mut out = OutputSegVec::<(BezPath, Option<usize>)>::with_size(orig_seg_map.len());
+    // We try to build `out` lazily, by avoiding copying input segments to outputs segments
+    // until they're needed (by copying in one go, we avoid excess subdivisions). That means
+    // we need to separately keep track of how far down we've looked at each output. If
+    // we weren't lazy, that would just be the last `y` coordinate in `out`.
+    let mut last_y = OutputSegVec::<f64>::with_size(orig_seg_map.len());
     let mut queue = BinaryHeap::<HeapEntry>::new();
     for idx in out.indices() {
         let p = endpoints[idx.first_half()];
@@ -190,8 +249,7 @@ pub(crate) fn compute_positions(
     while let Some(entry) = queue.pop() {
         // Maybe this entry was already handled by one of its neighbors, in which case we skip it.
         let y0 = entry.y.into_inner();
-        if bez_end(&out[entry.idx].0) != y0 {
-            debug_assert!(bez_end(&out[entry.idx].0) > y0);
+        if last_y[entry.idx] > y0 {
             continue;
         }
 
@@ -239,14 +297,13 @@ pub(crate) fn compute_positions(
         neighbors.extend(east_scan);
         if neighbors.len() == 1 {
             let idx = entry.idx;
-            // We're far from everything, so just copy the input bezier to the output.
+            // We're far from everything, so we can just copy the input bezier to the output.
+            // We only actually do this eagerly for horizontal segments: for other segments
+            // we'll hold off on the copying because it might allow us to avoid further
+            // subdivision.
             if y0 == y1 {
                 out[idx].1 = Some(out[idx].0.elements().len() - 1);
                 out[idx].0.line_to(endpoints[idx.second_half()]);
-            } else {
-                let c = y_subsegment(segs[orig_seg_map[idx]].to_kurbo(), y0, y1);
-                out[idx].1 = Some(out[idx].0.elements().len() - 1);
-                out[idx].0.curve_to(c.p1, c.p2, c.p3);
             }
         } else {
             let orig_neighbors = neighbors
@@ -261,6 +318,7 @@ pub(crate) fn compute_positions(
                 &mut out,
                 y0,
                 y1,
+                endpoints,
                 accuracy,
             );
         }
@@ -268,17 +326,31 @@ pub(crate) fn compute_positions(
             let y_end = endpoints[idx.second_half()].y;
             if y1 < y_end {
                 queue.push(HeapEntry { y: y1.into(), idx });
-            } else {
-                debug_assert_eq!(y1, y_end);
-                match out[idx].0.elements_mut().last_mut().unwrap() {
-                    kurbo::PathEl::MoveTo(p)
-                    | kurbo::PathEl::LineTo(p)
-                    | kurbo::PathEl::QuadTo(_, p)
-                    | kurbo::PathEl::CurveTo(_, _, p) => {
-                        *p = endpoints[idx.second_half()];
-                    }
-                    kurbo::PathEl::ClosePath => unreachable!(),
+            }
+            last_y[idx] = y1;
+        }
+    }
+
+    for out_idx in out.indices() {
+        let y0 = bez_end_y(&out[out_idx].0);
+        let y1 = endpoints[out_idx.second_half()].y;
+        if y0 != y1 {
+            debug_assert!(y0 < y1);
+            let c = y_subsegment(segs[orig_seg_map[out_idx]].to_kurbo(), y0, y1);
+            out[out_idx].1 = Some(out[out_idx].0.elements().len() - 1);
+            out[out_idx].0.curve_to(c.p1, c.p2, c.p3);
+        } else {
+            // The quadratic approximations don't respect the fixed endpoints, so tidy them
+            // up. Since both the quadratic approximations and the endpoints satisfy
+            // the ordering, this doesn't mess up the ordering.
+            match out[out_idx].0.elements_mut().last_mut().unwrap() {
+                kurbo::PathEl::MoveTo(p)
+                | kurbo::PathEl::LineTo(p)
+                | kurbo::PathEl::QuadTo(_, p)
+                | kurbo::PathEl::CurveTo(_, _, p) => {
+                    *p = endpoints[out_idx.second_half()];
                 }
+                kurbo::PathEl::ClosePath => unreachable!(),
             }
         }
     }
