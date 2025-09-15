@@ -51,7 +51,7 @@ pub fn transversal_after(left: CubicBez, right: CubicBez, y1: f64) -> bool {
     }
     let cross = left_tangent.cross(right_tangent);
     if left_tangent.dot(right_tangent) > 0.0
-        && cross * cross < left_tangent.hypot2() * right_tangent.hypot2()
+        && cross * cross < 1e-2 * left_tangent.hypot2() * right_tangent.hypot2()
     {
         return false;
     }

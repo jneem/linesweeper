@@ -345,10 +345,15 @@ pub(crate) fn compute_positions(
 
     for out_idx in out.indices() {
         let y0 = bez_end_y(&out[out_idx].0);
-        let y1 = endpoints[out_idx.second_half()].y;
-        if y0 != y1 {
-            debug_assert!(y0 < y1);
-            let c = y_subsegment(segs[orig_seg_map[out_idx]].to_kurbo(), y0, y1);
+        let end_point = endpoints[out_idx.second_half()];
+        if y0 != end_point.y {
+            debug_assert!(y0 < end_point.y);
+            let c = next_subsegment(
+                &segs[orig_seg_map[out_idx]],
+                &out[out_idx].0,
+                end_point.y,
+                end_point,
+            );
             out[out_idx].1 = Some(out[out_idx].0.elements().len() - 1);
             out[out_idx].0.curve_to(c.p1, c.p2, c.p3);
         } else {
