@@ -185,11 +185,11 @@ impl Segments {
     /// point has the smaller y coordinate) regardless of the original
     /// orientation of the segment. Use this method to retrieve the segment's
     /// original start point.
-    pub fn oriented_start(&self, idx: SegIdx) -> &Point {
+    pub fn oriented_start(&self, idx: SegIdx) -> Point {
         if self.orientation[idx] {
-            &self[idx].p0
+            self[idx].start()
         } else {
-            &self[idx].p3
+            self[idx].end()
         }
     }
 
@@ -199,11 +199,11 @@ impl Segments {
     /// point has the smaller y coordinate) regardless of the original
     /// orientation of the segment. Use this method to retrieve the segment's
     /// original end point.
-    pub fn oriented_end(&self, idx: SegIdx) -> &Point {
+    pub fn oriented_end(&self, idx: SegIdx) -> Point {
         if self.orientation[idx] {
-            &self[idx].p3
+            self[idx].end()
         } else {
-            &self[idx].p0
+            self[idx].start()
         }
     }
 
@@ -321,8 +321,12 @@ impl Segments {
                     } else {
                         (c.p3, c.p2, c.p1, c.p0, false)
                     };
-                    self.segs
-                        .push(Segment::new(p0.into(), p1.into(), p2.into(), p3.into()));
+                    self.segs.push(Segment::monotonic_cubic(
+                        p0.into(),
+                        p1.into(),
+                        p2.into(),
+                        p3.into(),
+                    ));
                     self.orientation.push(orient);
                     self.contour_prev
                         .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
@@ -391,9 +395,9 @@ impl Segments {
             let seg_idx = SegIdx(idx);
             let seg = &self.segs[seg_idx];
 
-            self.enter.push((seg.p0.y, seg_idx));
+            self.enter.push((seg.start().y, seg_idx));
             if !seg.is_horizontal() {
-                self.exit.push((seg.p3.y, seg_idx));
+                self.exit.push((seg.end().y, seg_idx));
             }
         }
 
@@ -430,7 +434,7 @@ impl Segments {
     /// Checks that we satisfy our internal invariants. For testing only.
     pub fn check_invariants(&self) {
         for (idx, seg) in self.segs.iter() {
-            assert!(seg.p0 <= seg.p3);
+            assert!(seg.start() <= seg.end());
             if let Some(next_idx) = self.contour_next(idx) {
                 assert_eq!(self.oriented_end(idx), self.oriented_start(next_idx));
                 assert_eq!(self.contour_prev(next_idx), Some(idx));

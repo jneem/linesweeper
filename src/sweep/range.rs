@@ -379,7 +379,7 @@ impl<'bufs, 'state, 'segs> SweepLineRange<'bufs, 'state, 'segs> {
             // assert!(n1.distance_sq <= eps * eps * 9.0);
 
             let (lower, upper) = if seg.is_horizontal() {
-                (seg.p0.x - 2.0 * eps, seg.p3.x + 2.0 * eps)
+                (seg.start().x - 2.0 * eps, seg.end().x + 2.0 * eps)
             } else {
                 (seg.lower(y, 2.0 * eps), seg.upper(y, 2.0 * eps))
             };

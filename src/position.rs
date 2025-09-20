@@ -151,7 +151,7 @@ fn approximate(
     'retry: loop {
         let y_mid = (y0 + y1) / 2.0;
         for seg_idx in order {
-            let cubic = segs[*seg_idx].to_kurbo();
+            let cubic = segs[*seg_idx].to_kurbo_cubic();
             let mut cubic = y_subsegment(cubic, y0, y1);
             cubic.p0.y -= y_mid;
             cubic.p1.y -= y_mid;
@@ -211,7 +211,7 @@ fn bez_end_y(path: &BezPath) -> f64 {
 
 fn next_subsegment(seg: &Segment, out: &BezPath, y1: f64, endpoint: kurbo::Point) -> CubicBez {
     let p0 = bez_end(out);
-    let mut c = y_subsegment(seg.to_kurbo(), p0.y, y1);
+    let mut c = y_subsegment(seg.to_kurbo_cubic(), p0.y, y1);
     c.p0 = p0;
     if endpoint.y == y1 {
         c.p3 = endpoint;

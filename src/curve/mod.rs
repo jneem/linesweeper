@@ -1472,9 +1472,9 @@ mod test {
         dbg!(solve_x_for_y(c1, y));
         assert!(c2.p0.x >= dbg!(c1.p0.x.max(c1.p1.x).max(c1.p2.x).max(c1.p3.x)) + 2.0 * eps);
 
-        let c0_seg = Segment::from_kurbo(c0);
-        let c1_seg = Segment::from_kurbo(c1);
-        let c2_seg = Segment::from_kurbo(c2);
+        let c0_seg = Segment::from_kurbo_cubic(c0);
+        let c1_seg = Segment::from_kurbo_cubic(c1);
+        let c2_seg = Segment::from_kurbo_cubic(c2);
 
         dbg!(c0_seg.lower(y, eps));
         dbg!(c1_seg.lower(y, eps));

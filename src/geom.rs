@@ -112,13 +112,13 @@ impl From<kurbo::Point> for Point {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Segment {
     /// The initial, on-curve, control point.
-    pub p0: Point,
+    p0: Point,
     /// The first off-curve control point.
-    pub p1: Point,
+    p1: Point,
     /// The second off-curve control point.
-    pub p2: Point,
+    p2: Point,
     /// The final, on-curve, control point.
-    pub p3: Point,
+    p3: Point,
 }
 
 impl std::fmt::Debug for Segment {
@@ -237,15 +237,15 @@ pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
 }
 
 impl Segment {
-    /// Create a new segment.
-    ///
-    /// `start` must be less than `end`.
-    pub fn new(p0: Point, p1: Point, p2: Point, p3: Point) -> Self {
+    /// Create a new cubic segment that must be increasing in `y`.
+    pub fn monotonic_cubic(p0: Point, p1: Point, p2: Point, p3: Point) -> Self {
         debug_assert!(monotonic_cubic(&p0, &p1, &p2, &p3));
         Self { p0, p1, p2, p3 }
     }
 
     /// Create a new segment that's just a straight line.
+    ///
+    /// `start` must be less than `end`.
     pub fn straight(start: Point, end: Point) -> Self {
         let p0 = start;
         let p1 = Point::new(
@@ -257,11 +257,21 @@ impl Segment {
             start.y + 2.0 * (end.y - start.y) / 3.0,
         );
         let p3 = end;
-        Self::new(p0, p1, p2, p3)
+        Self::monotonic_cubic(p0, p1, p2, p3)
+    }
+
+    /// The starting point (smallest in the sweep-line order) of this segment.
+    pub fn start(&self) -> Point {
+        self.p0
+    }
+
+    /// The ending point (largest in the sweep-line order) of this segment.
+    pub fn end(&self) -> Point {
+        self.p3
     }
 
     /// Compatibility with `kurbo`'s cubics.
-    pub fn to_kurbo(&self) -> kurbo::CubicBez {
+    pub fn to_kurbo_cubic(&self) -> kurbo::CubicBez {
         kurbo::CubicBez {
             p0: self.p0.to_kurbo(),
             p1: self.p1.to_kurbo(),
@@ -271,8 +281,8 @@ impl Segment {
     }
 
     /// TODO: maybe From instead?
-    pub fn from_kurbo(c: kurbo::CubicBez) -> Self {
-        Self::new(
+    pub fn from_kurbo_cubic(c: kurbo::CubicBez) -> Self {
+        Self::monotonic_cubic(
             Point::from_kurbo(c.p0),
             Point::from_kurbo(c.p1),
             Point::from_kurbo(c.p2),
@@ -306,7 +316,7 @@ impl Segment {
         if self.is_horizontal() {
             self.p1.x
         } else {
-            solve_x_for_y(self.to_kurbo(), y)
+            solve_x_for_y(self.to_kurbo_cubic(), y)
         }
     }
 
@@ -314,7 +324,7 @@ impl Segment {
         let start_y = (y - eps).max(self.p0.y);
         let end_y = (y + eps).min(self.p3.y);
 
-        let c = self.to_kurbo();
+        let c = self.to_kurbo_cubic();
         let t_min = solve_t_for_y(c, start_y);
         let t_max = solve_t_for_y(c, end_y);
 

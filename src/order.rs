@@ -62,8 +62,8 @@ impl ComparisonCache {
         let segi = &segments[i];
         let segj = &segments[j];
 
-        let c0 = segi.to_kurbo();
-        let c1 = segj.to_kurbo();
+        let c0 = segi.to_kurbo_cubic();
+        let c1 = segj.to_kurbo_cubic();
         let forward =
             curve::intersect_cubics(c0, c1, self.tolerance, self.accuracy).with_y_slop(self.y_slop);
         let reverse = forward.flip();

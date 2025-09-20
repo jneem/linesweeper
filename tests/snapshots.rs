@@ -144,7 +144,7 @@ fn skia_cubic(s: &kurbo::CubicBez) -> tiny_skia::Path {
 }
 
 fn skia_segment(s: &Segment) -> tiny_skia::Path {
-    skia_cubic(&s.to_kurbo())
+    skia_cubic(&s.to_kurbo_cubic())
 }
 
 fn line(p: impl Into<Point>, q: impl Into<Point>) -> tiny_skia::Path {
