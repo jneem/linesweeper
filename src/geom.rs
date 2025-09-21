@@ -104,27 +104,34 @@ impl From<kurbo::Point> for Point {
     }
 }
 
-/// A contour segment, in sweep-line order.
-///
-/// This is basically the same as `kurbo::CubicBez` except that the ordering is
-/// different. I'm not sure if we care about the ordering, so maybe we can
-/// drop this in favor of `kurbo::CubicBez`.
+/// A contour segment.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Segment {
-    /// The initial, on-curve, control point.
-    pub p0: Point,
-    /// The first off-curve control point.
-    pub p1: Point,
-    /// The second off-curve control point.
-    pub p2: Point,
-    /// The final, on-curve, control point.
-    pub p3: Point,
+    inner: SegmentInner,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum SegmentInner {
+    Line {
+        p0: Point,
+        p1: Point,
+    },
+    Cubic {
+        p0: Point,
+        p1: Point,
+        p2: Point,
+        p3: Point,
+    },
 }
 
 impl std::fmt::Debug for Segment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Segment { p0, p1, p2, p3 } = self;
-        write!(f, "{p0:?} -- {p1:?} -- {p2:?} -- {p3:?}",)
+        match self.inner {
+            SegmentInner::Line { p0, p1 } => write!(f, "{p0:?} -- {p1:?}"),
+            SegmentInner::Cubic { p0, p1, p2, p3 } => {
+                write!(f, "{p0:?} -- {p1:?} -- {p2:?} -- {p3:?}")
+            }
+        }
     }
 }
 
@@ -237,42 +244,67 @@ pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
 }
 
 impl Segment {
-    /// Create a new segment.
-    ///
-    /// `start` must be less than `end`.
-    pub fn new(p0: Point, p1: Point, p2: Point, p3: Point) -> Self {
+    /// Create a new cubic segment that must be increasing in `y`.
+    pub fn monotonic_cubic(p0: Point, p1: Point, p2: Point, p3: Point) -> Self {
         debug_assert!(monotonic_cubic(&p0, &p1, &p2, &p3));
-        Self { p0, p1, p2, p3 }
+        if p3.y == p0.y {
+            // Ensure that horizontal segments are just represented by straight lines.
+            // TODO: maybe we should do something about degenerate S-shaped curves?
+            Self::straight(p0, p3)
+        } else {
+            Self {
+                inner: SegmentInner::Cubic { p0, p1, p2, p3 },
+            }
+        }
     }
 
     /// Create a new segment that's just a straight line.
+    ///
+    /// `start` must be less than `end`.
     pub fn straight(start: Point, end: Point) -> Self {
-        let p0 = start;
-        let p1 = Point::new(
-            start.x + (end.x - start.x) / 3.0,
-            start.y + (end.y - start.y) / 3.0,
-        );
-        let p2 = Point::new(
-            start.x + 2.0 * (end.x - start.x) / 3.0,
-            start.y + 2.0 * (end.y - start.y) / 3.0,
-        );
-        let p3 = end;
-        Self::new(p0, p1, p2, p3)
+        debug_assert!(start <= end);
+        Self {
+            inner: SegmentInner::Line { p0: start, p1: end },
+        }
+    }
+
+    /// The starting point (smallest in the sweep-line order) of this segment.
+    pub fn start(&self) -> Point {
+        match self.inner {
+            SegmentInner::Line { p0, .. } | SegmentInner::Cubic { p0, .. } => p0,
+        }
+    }
+
+    /// The ending point (largest in the sweep-line order) of this segment.
+    pub fn end(&self) -> Point {
+        match self.inner {
+            SegmentInner::Line { p1, .. } => p1,
+            SegmentInner::Cubic { p3, .. } => p3,
+        }
     }
 
     /// Compatibility with `kurbo`'s cubics.
-    pub fn to_kurbo(&self) -> kurbo::CubicBez {
-        kurbo::CubicBez {
-            p0: self.p0.to_kurbo(),
-            p1: self.p1.to_kurbo(),
-            p2: self.p2.to_kurbo(),
-            p3: self.p3.to_kurbo(),
+    pub fn to_kurbo_cubic(&self) -> kurbo::CubicBez {
+        match self.inner {
+            SegmentInner::Line { p0, p1 } => {
+                let p0 = p0.to_kurbo();
+                let p3 = p1.to_kurbo();
+                let p1 = p0 + (1. / 3.) * (p3 - p0);
+                let p2 = p0 + (2. / 3.) * (p3 - p0);
+                kurbo::CubicBez { p0, p1, p2, p3 }
+            }
+            SegmentInner::Cubic { p0, p1, p2, p3 } => kurbo::CubicBez {
+                p0: p0.to_kurbo(),
+                p1: p1.to_kurbo(),
+                p2: p2.to_kurbo(),
+                p3: p3.to_kurbo(),
+            },
         }
     }
 
     /// TODO: maybe From instead?
-    pub fn from_kurbo(c: kurbo::CubicBez) -> Self {
-        Self::new(
+    pub fn from_kurbo_cubic(c: kurbo::CubicBez) -> Self {
+        Self::monotonic_cubic(
             Point::from_kurbo(c.p0),
             Point::from_kurbo(c.p1),
             Point::from_kurbo(c.p2),
@@ -280,14 +312,25 @@ impl Segment {
         )
     }
 
+    /// Is this segment just a straight line?
+    pub fn is_line(&self) -> bool {
+        matches!(self.inner, SegmentInner::Line { .. })
+    }
+
     /// A crude lower bound on our minimum horizontal position.
     pub fn min_x(&self) -> f64 {
-        self.p0.x.min(self.p1.x).min(self.p2.x).min(self.p3.x)
+        match self.inner {
+            SegmentInner::Line { p0, p1 } => p0.x.min(p1.x),
+            SegmentInner::Cubic { p0, p1, p2, p3 } => p0.x.min(p1.x).min(p2.x).min(p3.x),
+        }
     }
 
     /// A crude upper bound on our maximum horizontal position.
     pub fn max_x(&self) -> f64 {
-        self.p0.x.max(self.p1.x).max(self.p2.x).max(self.p3.x)
+        match self.inner {
+            SegmentInner::Line { p0, p1 } => p0.x.max(p1.x),
+            SegmentInner::Cubic { p0, p1, p2, p3 } => p0.x.max(p1.x).max(p2.x).max(p3.x),
+        }
     }
 
     /// Our `x` coordinate at the given `y` coordinate.
@@ -299,26 +342,41 @@ impl Segment {
     /// Panics if `y` is outside the `y` range of this segment.
     pub fn at_y(&self, y: f64) -> f64 {
         debug_assert!(
-            (self.p0.y..=self.p3.y).contains(&y),
+            (self.start().y..=self.end().y).contains(&y),
             "segment {self:?}, y={y:?}"
         );
 
-        if self.is_horizontal() {
-            self.p1.x
-        } else {
-            solve_x_for_y(self.to_kurbo(), y)
+        match self.inner {
+            SegmentInner::Line { p0, p1 } => {
+                if self.is_horizontal() {
+                    p1.x
+                } else {
+                    let t = (y - p0.y) / (p1.y - p0.y);
+                    p0.x + t * (p1.x - p0.x)
+                }
+            }
+            SegmentInner::Cubic { .. } => solve_x_for_y(self.to_kurbo_cubic(), y),
         }
     }
 
     fn local_bbox(&self, y: f64, eps: f64) -> kurbo::Rect {
-        let start_y = (y - eps).max(self.p0.y);
-        let end_y = (y + eps).min(self.p3.y);
+        let start_y = (y - eps).max(self.start().y);
+        let end_y = (y + eps).min(self.end().y);
 
-        let c = self.to_kurbo();
-        let t_min = solve_t_for_y(c, start_y);
-        let t_max = solve_t_for_y(c, end_y);
+        match self.inner {
+            SegmentInner::Line { .. } => {
+                let start_x = self.at_y(start_y);
+                let end_x = self.at_y(end_y);
+                kurbo::Rect::from_points((start_x, start_y), (end_x, end_y))
+            }
+            SegmentInner::Cubic { .. } => {
+                let c = self.to_kurbo_cubic();
+                let t_min = solve_t_for_y(c, start_y);
+                let t_max = solve_t_for_y(c, end_y);
 
-        c.subsegment(t_min..t_max).bounding_box()
+                c.subsegment(t_min..t_max).bounding_box()
+            }
+        }
     }
 
     /// Returns a lower bound on the `x` coordinate near `y`.
@@ -341,7 +399,16 @@ impl Segment {
 
     /// Returns true if this segment is exactly horizontal.
     pub fn is_horizontal(&self) -> bool {
-        self.p0.y == self.p3.y
+        match self.inner {
+            SegmentInner::Line { p0, p1 } => p0.y == p1.y,
+            SegmentInner::Cubic { p0, p3, .. } => {
+                debug_assert_ne!(
+                    p0.y, p3.y,
+                    "horizontal segments should be represented by lines"
+                );
+                false
+            }
+        }
     }
 }
 

@@ -849,8 +849,8 @@ impl<W: WindingNumber> Topology<W> {
                 if y0 != y1 {
                     let s1 = self.orig_seg[idx];
                     let s2 = self.orig_seg[cc_nbr];
-                    let s1 = y_subsegment(self.segments[s1].to_kurbo(), y0, y1);
-                    let s2 = y_subsegment(self.segments[s2].to_kurbo(), y0, y1);
+                    let s1 = y_subsegment(self.segments[s1].to_kurbo_cubic(), y0, y1);
+                    let s2 = y_subsegment(self.segments[s2].to_kurbo_cubic(), y0, y1);
                     if (s1.p0 - s2.p0).hypot() > self.eps
                         || (s1.p1 - s2.p1).hypot() > self.eps
                         || (s1.p2 - s2.p2).hypot() > self.eps
@@ -1088,7 +1088,7 @@ impl<W: WindingNumber> Topology<W> {
             f64::NEG_INFINITY,
         );
         for seg in self.segments.segments() {
-            rect = rect.union(seg.to_kurbo().bounding_box());
+            rect = rect.union(seg.to_kurbo_cubic().bounding_box());
         }
         rect
     }
@@ -1547,16 +1547,16 @@ impl ScanLineOrder {
                 if let Some(east_idx) = east_idx {
                     let seg = &segs[orig_seg[idx]];
                     let east_seg = &segs[orig_seg[east_idx]];
-                    assert!(y >= seg.p0.y && y >= east_seg.p0.y);
-                    assert!(y < seg.p3.y && y < east_seg.p3.y);
+                    assert!(y >= seg.start().y && y >= east_seg.start().y);
+                    assert!(y < seg.end().y && y < east_seg.end().y);
                 }
             }
             for &(y, west_idx) in &self.west_map.inner[idx] {
                 if let Some(west_idx) = west_idx {
                     let seg = &segs[orig_seg[idx]];
                     let west_seg = &segs[orig_seg[west_idx]];
-                    assert!(y >= seg.p0.y && y >= west_seg.p0.y);
-                    assert!(y < seg.p3.y && y < west_seg.p3.y);
+                    assert!(y >= seg.start().y && y >= west_seg.start().y);
+                    assert!(y < seg.end().y && y < west_seg.end().y);
                 }
             }
         }

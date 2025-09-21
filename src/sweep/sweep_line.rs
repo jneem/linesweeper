@@ -414,15 +414,15 @@ impl<'segs> Sweeper<'segs> {
         // checking `is_exit`, because this method can get called before exits
         // get processed. (TODO: do we actually need to store exit and enter
         // as separate states? Can't we just always look at the position?)
-        if seg.p3.y == y {
+        if seg.end().y == y {
             return;
         }
-        let mut height_bound = seg.p3.y;
+        let mut height_bound = seg.end().y;
 
         for j in (start_idx + 1)..self.line.segs.len() {
             let other_idx = self.line.seg(j);
             let other = &self.segments[other_idx];
-            if other.p3.y == y {
+            if other.end().y == y {
                 continue;
             }
 
@@ -432,7 +432,7 @@ impl<'segs> Sweeper<'segs> {
             if seg.max_x() + 2.0 * self.eps < other.min_x() {
                 break;
             }
-            height_bound = height_bound.min(other.p3.y);
+            height_bound = height_bound.min(other.end().y);
 
             // TODO: there's a choice to be made here: do we distinguish in the
             // event queue between actual intersections and near-touches? For
@@ -471,22 +471,22 @@ impl<'segs> Sweeper<'segs> {
         let y = self.y;
 
         let seg = &self.segments[seg_idx];
-        if seg.p3.y == y {
+        if seg.end().y == y {
             return;
         }
-        let mut height_bound = seg.p3.y;
+        let mut height_bound = seg.end().y;
 
         for j in (0..start_idx).rev() {
             let other_idx = self.line.seg(j);
             let other = &self.segments[other_idx];
-            if other.p3.y == y {
+            if other.end().y == y {
                 continue;
             }
 
             if seg.min_x() - 2.0 * self.eps > other.max_x() {
                 break;
             }
-            height_bound = height_bound.min(other.p3.y);
+            height_bound = height_bound.min(other.end().y);
 
             let cmp = self.compare_segments(other_idx, seg_idx);
             if let Some(touch) = cmp.next_touch_after(y) {
@@ -548,8 +548,8 @@ impl<'segs> Sweeper<'segs> {
             self.segments.contour_next(seg_idx)
         };
         if let Some(contour_prev) = contour_prev {
-            if self.segments[contour_prev].p0.y < self.y {
-                debug_assert_eq!(self.segments[contour_prev].p3, new_seg.p0);
+            if self.segments[contour_prev].start().y < self.y {
+                debug_assert_eq!(self.segments[contour_prev].end(), new_seg.start());
                 if pos < self.line.segs.len() && self.line.segs[pos].seg == contour_prev {
                     self.handle_contour_continuation(seg_idx, new_seg, pos);
                     return;
@@ -779,7 +779,7 @@ impl<'segs> Sweeper<'segs> {
             let seg_idx = seg_entry.seg;
             let seg = &self.segments[seg_idx];
             assert!(
-                (&seg.p0.y..=&seg.p3.y).contains(&&self.y),
+                (&seg.start().y..=&seg.end().y).contains(&&self.y),
                 "segment {seg:?} out of range at y={:?}",
                 self.y
             );
@@ -867,7 +867,7 @@ impl<'segs> Sweeper<'segs> {
                             .line
                             .segs
                             .range(i..=j)
-                            .any(|seg_entry| self.segments[seg_entry.seg].p3.y <= y_int);
+                            .any(|seg_entry| self.segments[seg_entry.seg].end().y <= y_int);
 
                         let has_intersection_witness = self.events.intersection.iter().any(|ev| {
                             let is_between = is_between(ev.left) && is_between(ev.right);
@@ -894,7 +894,7 @@ impl<'segs> Sweeper<'segs> {
 
     fn compute_horizontal_changed_intervals(&mut self) {
         self.horizontals
-            .sort_by_key(|seg_idx| CheapOrderedFloat::from(self.segments[*seg_idx].p0.x));
+            .sort_by_key(|seg_idx| CheapOrderedFloat::from(self.segments[*seg_idx].start().x));
         let mut last_end = f64::NEG_INFINITY;
 
         for (idx, &seg_idx) in self.horizontals.iter().enumerate() {
@@ -905,7 +905,7 @@ impl<'segs> Sweeper<'segs> {
             let start_idx = self.line.segs.partition_point(|other_entry| {
                 let other_seg = &self.segments[other_entry.seg];
 
-                other_seg.upper(self.y, self.eps) + self.eps <= seg.p0.x
+                other_seg.upper(self.y, self.eps) + self.eps <= seg.start().x
             });
 
             let mut end_idx = start_idx;
@@ -913,7 +913,7 @@ impl<'segs> Sweeper<'segs> {
                 let other_entry = &mut self.line.segs[j];
                 let other_seg = &self.segments[other_entry.seg];
 
-                if other_seg.lower(self.y, self.eps) - self.eps <= seg.p3.x {
+                if other_seg.lower(self.y, self.eps) - self.eps <= seg.end().x {
                     // Ensure that every segment in the changed interval has `old_idx` set;
                     // see also `compute_changed_intervals`.
                     self.line.segs[j].set_old_idx_if_unset(j);
@@ -925,7 +925,7 @@ impl<'segs> Sweeper<'segs> {
 
             // If this horizontal interval overlaps with the previous one, extend
             // the changed interval instead of pushing a new one.
-            if seg.p0.x <= last_end {
+            if seg.start().x <= last_end {
                 // unwrap: since our segments are finite, we can only get in this
                 // branch if we already passed through the main loop and added something
                 // to changed_intervals
@@ -941,7 +941,7 @@ impl<'segs> Sweeper<'segs> {
                 self.changed_intervals.push(changed);
             }
 
-            last_end = last_end.max(seg.p3.x);
+            last_end = last_end.max(seg.end().x);
         }
     }
 
@@ -973,9 +973,9 @@ impl<'segs> Sweeper<'segs> {
             // method.
             let seg = &self.segments[seg_entry.seg];
             let p = if seg_entry.enter {
-                kurbo::Point::new(seg.p0.x, seg.p0.y)
+                kurbo::Point::new(seg.start().x, seg.start().y)
             } else {
-                kurbo::Point::new(seg.p3.x, seg.p3.y)
+                kurbo::Point::new(seg.end().x, seg.end().y)
             };
             let mut start_idx = j;
             let mut end_idx = j;
@@ -983,7 +983,7 @@ impl<'segs> Sweeper<'segs> {
                 let other_entry = &mut self.line.segs[i];
                 let other_seg = &self.segments[other_entry.seg];
 
-                let other_seg = other_seg.to_kurbo();
+                let other_seg = other_seg.to_kurbo_cubic();
                 let nearest = other_seg.nearest(p, self.eps / 2.0);
 
                 if nearest.distance_sq <= 4.0 * self.eps * self.eps
@@ -1001,7 +1001,7 @@ impl<'segs> Sweeper<'segs> {
                 let other_entry = &mut self.line.segs[k];
                 let other_seg = &self.segments[other_entry.seg];
 
-                let other_seg = other_seg.to_kurbo();
+                let other_seg = other_seg.to_kurbo_cubic();
                 let nearest = other_seg.nearest(p, self.eps / 2.0);
 
                 if nearest.distance_sq <= 4.0 * self.eps * self.eps
@@ -1158,12 +1158,12 @@ impl SegmentOrder {
             // position and then we'll insert a horizontal segment joining
             // them), but if the input is just a collection of segments then it
             // can mess up the endpoints.
-            if segments[segi].p3.y == y {
+            if segments[segi].end().y == y {
                 continue;
             }
             for j in (i + 1)..self.segs.len() {
                 let segj = self.seg(j);
-                if segments[segj].p3.y == y {
+                if segments[segj].end().y == y {
                     continue;
                 }
 
@@ -1186,7 +1186,7 @@ impl SegmentOrder {
         comparer: &mut ComparisonCache,
     ) -> usize {
         let seg = &segments[seg_idx];
-        let seg_x = seg.p0.x;
+        let seg_x = seg.start().x;
 
         // Fast path: we first do a binary search just with the horizontal bounding intervals.
         // `pos` is an index where we're to the left of that segment's right-most point, and
@@ -1571,11 +1571,11 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             let preferred_x = if entry.exit {
                 // The best possible position is the true segment-ending position.
                 // (This could change if we want to be more sophisticated at joining contours.)
-                segments[entry.old_seg()].p3.x
+                segments[entry.old_seg()].end().x
             } else if entry.enter {
                 // The best possible position is the true segment-starting position.
                 // (This could change if we want to be more sophisticated at joining contours.)
-                segments[entry.seg].p0.x
+                segments[entry.seg].start().x
             } else {
                 segments[entry.seg].at_y(self.state.y)
             };
@@ -1643,10 +1643,10 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
         for ev in &mut *events {
             let seg = &segments[ev.seg_idx];
             if !ev.connected_above {
-                ev.x0 = seg.p0.x;
+                ev.x0 = seg.start().x;
             }
             if !ev.connected_below {
-                ev.x1 = seg.p3.x;
+                ev.x1 = seg.end().x;
             }
         }
 
@@ -1654,9 +1654,9 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             for &seg_idx in &self.state.horizontals[range.clone()] {
                 let seg = &self.state.segments[seg_idx];
                 events.push(OutputEvent {
-                    x0: seg.p0.x,
+                    x0: seg.start().x,
                     connected_above: false,
-                    x1: seg.p3.x,
+                    x1: seg.end().x,
                     connected_below: false,
                     seg_idx,
                     sweep_idx: None,

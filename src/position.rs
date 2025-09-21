@@ -34,6 +34,12 @@ fn ordered_curves_all_close(
     endpoints: &HalfOutputSegVec<kurbo::Point>,
     accuracy: f64,
 ) {
+    if order.iter().all(|&s| segs[s].is_line()) {
+        // If everything is a line, since our endpoints are already in the right order
+        // the segments between them are also guaranteed to be in the right order.
+        return;
+    }
+
     if order.len() == 2 {
         let s0 = order[0];
         let s1 = order[1];
@@ -67,16 +73,16 @@ fn ordered_curves_all_close(
     // Ensure everything in `out` goes up to `y0`. Anything that doesn't go up to `y0` is
     // an output where we can just copy from the input.
     for (&seg_idx, &out_idx) in order.iter().zip(output_order) {
-        let out_bez = &mut out[out_idx].0;
+        let (out_bez, out_copied_idx) = &mut out[out_idx];
         if bez_end_y(out_bez) < y0 {
-            let c = next_subsegment(
-                &segs[seg_idx],
-                out_bez,
-                y0,
-                endpoints[out_idx.second_half()],
-            );
-            out[out_idx].1 = Some(out[out_idx].0.elements().len() - 1);
-            out[out_idx].0.curve_to(c.p1, c.p2, c.p3);
+            *out_copied_idx = Some(out_bez.elements().len() - 1);
+            let endpoint = endpoints[out_idx.second_half()];
+            if segs[seg_idx].is_line() {
+                out_bez.line_to(endpoint)
+            } else {
+                let c = next_subsegment(&segs[seg_idx], out_bez, y0, endpoint);
+                out_bez.curve_to(c.p1, c.p2, c.p3);
+            }
         }
     }
 
@@ -151,7 +157,7 @@ fn approximate(
     'retry: loop {
         let y_mid = (y0 + y1) / 2.0;
         for seg_idx in order {
-            let cubic = segs[*seg_idx].to_kurbo();
+            let cubic = segs[*seg_idx].to_kurbo_cubic();
             let mut cubic = y_subsegment(cubic, y0, y1);
             cubic.p0.y -= y_mid;
             cubic.p1.y -= y_mid;
@@ -211,7 +217,7 @@ fn bez_end_y(path: &BezPath) -> f64 {
 
 fn next_subsegment(seg: &Segment, out: &BezPath, y1: f64, endpoint: kurbo::Point) -> CubicBez {
     let p0 = bez_end(out);
-    let mut c = y_subsegment(seg.to_kurbo(), p0.y, y1);
+    let mut c = y_subsegment(seg.to_kurbo_cubic(), p0.y, y1);
     c.p0 = p0;
     if endpoint.y == y1 {
         c.p3 = endpoint;
@@ -344,18 +350,17 @@ pub(crate) fn compute_positions(
     }
 
     for out_idx in out.indices() {
-        let y0 = bez_end_y(&out[out_idx].0);
-        let end_point = endpoints[out_idx.second_half()];
-        if y0 != end_point.y {
-            debug_assert!(y0 < end_point.y);
-            let c = next_subsegment(
-                &segs[orig_seg_map[out_idx]],
-                &out[out_idx].0,
-                end_point.y,
-                end_point,
-            );
-            out[out_idx].1 = Some(out[out_idx].0.elements().len() - 1);
-            out[out_idx].0.curve_to(c.p1, c.p2, c.p3);
+        let (out_bez, out_copied_idx) = &mut out[out_idx];
+        let endpoint = endpoints[out_idx.second_half()];
+        if bez_end_y(out_bez) < endpoint.y {
+            let seg_idx = orig_seg_map[out_idx];
+            *out_copied_idx = Some(out_bez.elements().len() - 1);
+            if segs[seg_idx].is_line() {
+                out_bez.line_to(endpoint)
+            } else {
+                let c = next_subsegment(&segs[seg_idx], out_bez, endpoint.y, endpoint);
+                out_bez.curve_to(c.p1, c.p2, c.p3);
+            }
         } else {
             // The quadratic approximations don't respect the fixed endpoints, so tidy them
             // up. Since both the quadratic approximations and the endpoints satisfy
