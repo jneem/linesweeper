@@ -312,6 +312,11 @@ impl Segment {
         )
     }
 
+    /// Is this segment just a straight line?
+    pub fn is_line(&self) -> bool {
+        matches!(self.inner, SegmentInner::Line { .. })
+    }
+
     /// A crude lower bound on our minimum horizontal position.
     pub fn min_x(&self) -> f64 {
         match self.inner {

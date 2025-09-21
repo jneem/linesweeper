@@ -749,13 +749,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
           x: -2.0,
           y: -2.0,
         )),
-        CurveTo(Point(
-          x: -2.0,
-          y: -0.6666666666666667,
-        ), Point(
-          x: -2.0,
-          y: 0.6666666666666667,
-        ), Point(
+        LineTo(Point(
           x: -2.0,
           y: 2.0,
         )),
@@ -763,13 +757,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
           x: 2.0,
           y: 2.0,
         )),
-        CurveTo(Point(
-          x: 2.0,
-          y: 0.6666666666666667,
-        ), Point(
-          x: 2.0,
-          y: -0.6666666666666667,
-        ), Point(
+        LineTo(Point(
           x: 2.0,
           y: -2.0,
         )),
@@ -788,13 +776,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
           x: -4.0,
           y: -1.0,
         )),
-        CurveTo(Point(
-          x: -4.0,
-          y: -0.33333333333333337,
-        ), Point(
-          x: -4.0,
-          y: 0.33333333333333337,
-        ), Point(
+        LineTo(Point(
           x: -4.0,
           y: 1.0,
         )),
@@ -802,13 +784,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
           x: -3.0,
           y: 1.0,
         )),
-        CurveTo(Point(
-          x: -3.0,
-          y: 0.33333333333333337,
-        ), Point(
-          x: -3.0,
-          y: -0.33333333333333337,
-        ), Point(
+        LineTo(Point(
           x: -3.0,
           y: -1.0,
         )),
@@ -827,13 +803,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
           x: 3.0,
           y: -1.0,
         )),
-        CurveTo(Point(
-          x: 3.0,
-          y: -0.8333333333333334,
-        ), Point(
-          x: 3.0,
-          y: -0.6666666666666667,
-        ), Point(
+        LineTo(Point(
           x: 3.0,
           y: -0.5,
         )),
@@ -841,13 +811,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
           x: 4.0,
           y: -0.5,
         )),
-        CurveTo(Point(
-          x: 4.0,
-          y: -0.6666666666666667,
-        ), Point(
-          x: 4.0,
-          y: -0.8333333333333334,
-        ), Point(
+        LineTo(Point(
           x: 4.0,
           y: -1.0,
         )),
@@ -866,13 +830,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
           x: 3.0,
           y: 0.5,
         )),
-        CurveTo(Point(
-          x: 3.0,
-          y: 0.6666666666666666,
-        ), Point(
-          x: 3.0,
-          y: 0.8333333333333333,
-        ), Point(
+        LineTo(Point(
           x: 3.0,
           y: 1.0,
         )),
@@ -880,13 +838,7 @@ expression: "(&top, contours, top.build_scan_line_orders())"
           x: 4.0,
           y: 1.0,
         )),
-        CurveTo(Point(
-          x: 4.0,
-          y: 0.8333333333333333,
-        ), Point(
-          x: 4.0,
-          y: 0.6666666666666666,
-        ), Point(
+        LineTo(Point(
           x: 4.0,
           y: 0.5,
         )),
