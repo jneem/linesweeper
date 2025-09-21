@@ -247,8 +247,14 @@ impl Segment {
     /// Create a new cubic segment that must be increasing in `y`.
     pub fn monotonic_cubic(p0: Point, p1: Point, p2: Point, p3: Point) -> Self {
         debug_assert!(monotonic_cubic(&p0, &p1, &p2, &p3));
-        Self {
-            inner: SegmentInner::Cubic { p0, p1, p2, p3 },
+        if p3.y == p0.y {
+            // Ensure that horizontal segments are just represented by straight lines.
+            // TODO: maybe we should do something about degenerate S-shaped curves?
+            Self::straight(p0, p3)
+        } else {
+            Self {
+                inner: SegmentInner::Cubic { p0, p1, p2, p3 },
+            }
         }
     }
 
@@ -335,11 +341,16 @@ impl Segment {
             "segment {self:?}, y={y:?}"
         );
 
-        if self.is_horizontal() {
-            self.end().x
-        } else {
-            // TODO: special-case lines
-            solve_x_for_y(self.to_kurbo_cubic(), y)
+        match self.inner {
+            SegmentInner::Line { p0, p1 } => {
+                if self.is_horizontal() {
+                    p1.x
+                } else {
+                    let t = (y - p0.y) / (p1.y - p0.y);
+                    p0.x + t * (p1.x - p0.x)
+                }
+            }
+            SegmentInner::Cubic { .. } => solve_x_for_y(self.to_kurbo_cubic(), y),
         }
     }
 
@@ -347,12 +358,20 @@ impl Segment {
         let start_y = (y - eps).max(self.start().y);
         let end_y = (y + eps).min(self.end().y);
 
-        // TODO: special-case lines
-        let c = self.to_kurbo_cubic();
-        let t_min = solve_t_for_y(c, start_y);
-        let t_max = solve_t_for_y(c, end_y);
+        match self.inner {
+            SegmentInner::Line { .. } => {
+                let start_x = self.at_y(start_y);
+                let end_x = self.at_y(end_y);
+                kurbo::Rect::from_points((start_x, start_y), (end_x, end_y))
+            }
+            SegmentInner::Cubic { .. } => {
+                let c = self.to_kurbo_cubic();
+                let t_min = solve_t_for_y(c, start_y);
+                let t_max = solve_t_for_y(c, end_y);
 
-        c.subsegment(t_min..t_max).bounding_box()
+                c.subsegment(t_min..t_max).bounding_box()
+            }
+        }
     }
 
     /// Returns a lower bound on the `x` coordinate near `y`.
@@ -375,7 +394,16 @@ impl Segment {
 
     /// Returns true if this segment is exactly horizontal.
     pub fn is_horizontal(&self) -> bool {
-        self.start().y == self.end().y
+        match self.inner {
+            SegmentInner::Line { p0, p1 } => p0.y == p1.y,
+            SegmentInner::Cubic { p0, p3, .. } => {
+                debug_assert_ne!(
+                    p0.y, p3.y,
+                    "horizontal segments should be represented by lines"
+                );
+                false
+            }
+        }
     }
 }
 
