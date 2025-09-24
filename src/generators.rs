@@ -134,7 +134,7 @@ pub fn star(n: usize) -> (BezPath, BezPath) {
             bent.line_to(p3);
             bent.curve_to(
                 mul(p3, 2. / 3.),
-                mul(p1.midpoint(p2), 1. / 3.),
+                mul(p2.midpoint(p3), 1. / 3.),
                 neg_zero_ish,
             );
             bent.curve_to(mul(p0.midpoint(p1), 1. / 3.), mul(p0, 2. / 3.), p0);
