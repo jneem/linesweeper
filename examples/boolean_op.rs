@@ -27,6 +27,7 @@ enum Example {
     Checkerboard,
     SlantedCheckerboard,
     Slanties,
+    Star,
 }
 
 #[derive(Parser)]
@@ -92,6 +93,7 @@ fn get_contours(input: &Input) -> anyhow::Result<(BezPath, BezPath)> {
                 Ok(contours_to_bezs(generators::slanted_checkerboard(10)))
             }
             Example::Slanties => Ok(contours_to_bezs(generators::slanties(10))),
+            Example::Star => Ok(generators::star(20)),
         },
         (None, None, Some(chars)) => {
             let ws = std::env::var("CARGO_MANIFEST_DIR").unwrap();

@@ -1,5 +1,9 @@
 //! Utilities for generating examples, benchmarks, and test cases.
 
+use std::f64::consts::PI;
+
+use kurbo::{Affine, BezPath};
+
 use crate::Point;
 
 type Contours = Vec<Vec<Point>>;
@@ -94,4 +98,50 @@ pub fn slanties(n: usize) -> (Contours, Contours) {
     }
 
     (even, odd)
+}
+
+/// A bunch of things that all intersect at the origin, some tangentially.
+pub fn star(n: usize) -> (BezPath, BezPath) {
+    fn mul(p: kurbo::Point, f: f64) -> kurbo::Point {
+        (p.x * f, p.y * f).into()
+    }
+
+    let angle_increment = PI / (n as f64 * 2.0);
+    let mut angle = 0.0;
+
+    let mut straight = BezPath::new();
+    let mut bent = BezPath::new();
+    let p = kurbo::Point::new(1.0, 0.0);
+    for i in 0..n {
+        let p0 = Affine::rotate(angle) * p;
+        let p1 = Affine::rotate(angle + angle_increment) * p;
+        let p2 = Affine::rotate(angle + angle_increment + PI) * p;
+        let p3 = Affine::rotate(angle + PI) * p;
+
+        if i.is_multiple_of(2) {
+            straight.move_to(p0);
+            straight.line_to(p1);
+            straight.line_to(p2);
+            straight.line_to(p3);
+            straight.close_path();
+        } else {
+            let zero_ish = mul(p0, 1e-12);
+            let neg_zero_ish = mul(p0, -1e-12);
+            bent.move_to(p0);
+            bent.line_to(p1);
+            bent.curve_to(mul(p1, 2. / 3.), mul(p0.midpoint(p1), 1. / 3.), zero_ish);
+            bent.curve_to(mul(p2.midpoint(p3), 1. / 3.), mul(p2, 2. / 3.), p2);
+            bent.line_to(p3);
+            bent.curve_to(
+                mul(p3, 2. / 3.),
+                mul(p1.midpoint(p2), 1. / 3.),
+                neg_zero_ish,
+            );
+            bent.curve_to(mul(p0.midpoint(p1), 1. / 3.), mul(p0, 2. / 3.), p0);
+        }
+
+        angle += 2.0 * angle_increment;
+    }
+
+    (straight, bent)
 }
