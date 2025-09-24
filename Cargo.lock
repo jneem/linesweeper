@@ -457,6 +457,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5692dd7b5a1978a5aeb0ce83b7655c58ca8efdcb79d21036ea249da95afec2c6"
 
 [[package]]
+name = "euclid"
+version = "0.22.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad9cdb4b747e485a12abb0e6566612956c7a1bafa3bdb8d682c5b6d403589e48"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -530,6 +539,12 @@ dependencies = [
  "libc",
  "wasi",
 ]
+
+[[package]]
+name = "glam"
+version = "0.29.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8babf46d4c1c9d92deac9f7be466f76dfc4482b6452fc5024b5e8daf6ffeb3ee"
 
 [[package]]
 name = "glob"
@@ -807,6 +822,7 @@ dependencies = [
  "assert_matches",
  "clap",
  "criterion",
+ "glam",
  "glob",
  "i_overlay",
  "insta",
@@ -814,6 +830,7 @@ dependencies = [
  "kurbo",
  "libtest-mimic",
  "linesweeper_util",
+ "path-bool",
  "poly-cool",
  "proptest",
  "serde",
@@ -869,6 +886,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
+name = "lyon_geom"
+version = "1.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e16770d760c7848b0c1c2d209101e408207a65168109509f8483837a36cf2e7"
+dependencies = [
+ "arrayvec",
+ "euclid",
+ "num-traits",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -922,6 +950,20 @@ dependencies = [
  "rgb",
  "rustc-hash",
  "zopfli",
+]
+
+[[package]]
+name = "path-bool"
+version = "0.1.0"
+source = "git+https://github.com/GraphiteEditor/Graphite#d15f63f4fd29bc52f1e957895c0927b706ef662a"
+dependencies = [
+ "glam",
+ "lyon_geom",
+ "regex",
+ "roots",
+ "rustc-hash",
+ "slotmap",
+ "smallvec",
 ]
 
 [[package]]
@@ -1167,6 +1209,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "roots"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "082f11ffa03bbef6c2c6ea6bea1acafaade2fd9050ae0234ab44a2153742b058"
+
+[[package]]
 name = "roxmltree"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1291,6 +1339,15 @@ checksum = "bbe6666ab11018ab91ff7b03f1a3b9fdbecfb610848436fefa5ce50343d3d913"
 dependencies = [
  "bytemuck",
  "read-fonts",
+]
+
+[[package]]
+name = "slotmap"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbff4acf519f630b3a3ddcfaea6c06b42174d9a44bc70c620e9ed1649d58b82a"
+dependencies = [
+ "version_check",
 ]
 
 [[package]]
@@ -1458,6 +1515,12 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "version_check"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "wait-timeout"

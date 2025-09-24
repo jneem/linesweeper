@@ -27,6 +27,7 @@ enum Example {
     Checkerboard,
     SlantedCheckerboard,
     Slanties,
+    Star,
 }
 
 #[derive(Parser)]
@@ -39,6 +40,9 @@ struct Cli {
 
     #[arg(long)]
     non_zero: bool,
+
+    #[arg(long)]
+    path_bool: bool,
 
     #[arg(long)]
     epsilon: Option<f64>,
@@ -92,6 +96,7 @@ fn get_contours(input: &Input) -> anyhow::Result<(BezPath, BezPath)> {
                 Ok(contours_to_bezs(generators::slanted_checkerboard(10)))
             }
             Example::Slanties => Ok(contours_to_bezs(generators::slanties(10))),
+            Example::Star => Ok(generators::star(20)),
         },
         (None, None, Some(chars)) => {
             let ws = std::env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -138,7 +143,7 @@ pub fn main() -> anyhow::Result<()> {
     );
 
     // Draw the original document.
-    for c in [shape_a, shape_b] {
+    for c in [&shape_a, &shape_b] {
         let mut data = svg::node::element::path::Data::new();
         for el in c {
             let p = |point: kurbo::Point| (point.x, point.y);
@@ -162,51 +167,19 @@ pub fn main() -> anyhow::Result<()> {
         document = document.add(path);
     }
 
-    document = add_op(
-        document,
-        Op::Union,
-        args.non_zero,
-        &top,
-        one_width,
-        0.0,
-        stroke_width,
-    );
-    document = add_op(
-        document,
-        Op::Intersection,
-        args.non_zero,
-        &top,
-        one_width * 2.0,
-        0.0,
-        stroke_width,
-    );
-    document = add_op(
-        document,
-        Op::Xor,
-        args.non_zero,
-        &top,
-        0.0,
-        one_height,
-        stroke_width,
-    );
-    document = add_op(
-        document,
-        Op::Difference,
-        args.non_zero,
-        &top,
-        one_width,
-        one_height,
-        stroke_width,
-    );
-    document = add_op(
-        document,
-        Op::ReverseDifference,
-        args.non_zero,
-        &top,
-        one_width * 2.0,
-        one_height,
-        stroke_width,
-    );
+    let add_one = |doc, op, x_off, y_off| {
+        if args.path_bool {
+            add_path_bool_op(doc, op, &shape_a, &shape_b, x_off, y_off, stroke_width)
+        } else {
+            add_op(doc, op, args.non_zero, &top, x_off, y_off, stroke_width)
+        }
+    };
+
+    document = add_one(document, Op::Union, one_width, 0.0);
+    document = add_one(document, Op::Intersection, one_width * 2.0, 0.0);
+    document = add_one(document, Op::Xor, 0.0, one_height);
+    document = add_one(document, Op::Difference, one_width, one_height);
+    document = add_one(document, Op::ReverseDifference, one_width * 2.0, one_height);
 
     svg::save(&args.output, &document)?;
 
@@ -270,6 +243,92 @@ fn add_op(
             }
             data = data.close();
         }
+        let path = svg::node::element::Path::new()
+            .set("d", data)
+            .set("stroke", "black")
+            .set("stroke-width", stroke_width)
+            .set("stroke-linecap", "round")
+            .set("stroke-linejoin", "round")
+            .set("fill", colors[color_idx]);
+        doc = doc.add(path);
+        color_idx = (color_idx + 1) % colors.len();
+    }
+    doc
+}
+
+fn bezpath_to_path_bool(p: &BezPath) -> Vec<path_bool::PathSegment> {
+    let mut ret = Vec::new();
+    for seg in p.segments() {
+        let dv = |p: kurbo::Point| glam::DVec2::from((p.x, p.y));
+        let seg = match seg {
+            kurbo::PathSeg::Line(line) => path_bool::PathSegment::Line(dv(line.p0), dv(line.p1)),
+            kurbo::PathSeg::Quad(q) => {
+                path_bool::PathSegment::Quadratic(dv(q.p0), dv(q.p1), dv(q.p2))
+            }
+            kurbo::PathSeg::Cubic(c) => {
+                path_bool::PathSegment::Cubic(dv(c.p0), dv(c.p1), dv(c.p2), dv(c.p3))
+            }
+        };
+        ret.push(seg);
+    }
+    ret
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_path_bool_op(
+    mut doc: Document,
+    op: Op,
+    shape_a: &BezPath,
+    shape_b: &BezPath,
+    x_off: f64,
+    y_off: f64,
+    stroke_width: f64,
+) -> Document {
+    let mut shape_a = bezpath_to_path_bool(shape_a);
+    let mut shape_b = bezpath_to_path_bool(shape_b);
+    let fill = path_bool::FillRule::EvenOdd;
+    let op = match op {
+        Op::Union => path_bool::PathBooleanOperation::Union,
+        Op::Intersection => path_bool::PathBooleanOperation::Intersection,
+        Op::Xor => path_bool::PathBooleanOperation::Exclusion,
+        Op::Difference => path_bool::PathBooleanOperation::Difference,
+        Op::ReverseDifference => {
+            std::mem::swap(&mut shape_a, &mut shape_b);
+            path_bool::PathBooleanOperation::Difference
+        }
+    };
+    let result = path_bool::path_boolean(&shape_a, fill, &shape_b, fill, op).unwrap();
+
+    let colors = [
+        "#005F73", "#0A9396", "#94D2BD", "#E9D8A6", "#EE9B00", "#CA6702", "#BB3E03", "#AE2012",
+        "#9B2226",
+    ];
+
+    let mut color_idx = 0;
+    for path in result {
+        let mut data = svg::node::element::path::Data::new();
+
+        if path.is_empty() {
+            continue;
+        }
+        let start = path[0].start();
+        data = data.move_to((start.x + x_off, start.y + y_off));
+        for seg in path {
+            data = match seg {
+                path_bool::PathSegment::Line(_, p) => data.line_to((p.x + x_off, p.y + y_off)),
+                path_bool::PathSegment::Quadratic(_, p0, p1) => data.quadratic_curve_to((
+                    (p0.x + x_off, p0.y + y_off),
+                    (p1.x + x_off, p1.y + y_off),
+                )),
+                path_bool::PathSegment::Cubic(_, p0, p1, p2) => data.cubic_curve_to((
+                    (p0.x + x_off, p0.y + y_off),
+                    (p1.x + x_off, p1.y + y_off),
+                    (p2.x + x_off, p2.y + y_off),
+                )),
+                path_bool::PathSegment::Arc(..) => unimplemented!(),
+            };
+        }
+        data = data.close();
         let path = svg::node::element::Path::new()
             .set("d", data)
             .set("stroke", "black")
