@@ -1525,7 +1525,6 @@ impl<'segs> SweepLine<'_, '_, 'segs> {
             .clone();
         self.next_changed_interval += 1;
 
-        debug_assert!(!range.segs.is_empty());
         if range.segs.len() == 1 && range.horizontals.is_none() {
             return self.next_range_single_seg(bufs, segments, range.segs.start);
         }
