@@ -146,6 +146,7 @@ pub fn binary_op(
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_ron_snapshot;
     use kurbo::BezPath;
 
     use super::*;
@@ -195,5 +196,38 @@ mod tests {
             // It used to be 77, though...
             assert!(path_length <= 16);
         }
+    }
+
+    #[test]
+    fn test_empty_horizontals() {
+        let square = kurbo::Rect::from_origin_size((0.0, 0.0), (10.0, 10.0)).to_path(0.0);
+        let line_and_back = {
+            let mut path = kurbo::Line::new((-1.0, 0.0), (1.0, 0.0)).to_path(0.0);
+            path.close_path();
+            path
+        };
+        let line_and_back_2 = {
+            let mut path = kurbo::Line::new((2.0, 1.0), (12.0, 1.0)).to_path(0.0);
+            path.close_path();
+            path
+        };
+
+        Topology::from_path(&line_and_back, 1e-3).unwrap();
+        Topology::from_path(&line_and_back_2, 1e-3).unwrap();
+        Topology::<i32>::from_paths([(&line_and_back, ()), (&line_and_back_2, ())], 1e-3).unwrap();
+        Topology::<i32>::from_paths(
+            [(&line_and_back, ()), (&line_and_back_2, ()), (&square, ())],
+            1e-3,
+        )
+        .unwrap();
+
+        let output = binary_op(
+            &square,
+            &line_and_back_2,
+            FillRule::EvenOdd,
+            BinaryOp::Difference,
+        )
+        .unwrap();
+        assert_ron_snapshot!(output);
     }
 }
