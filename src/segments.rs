@@ -312,25 +312,44 @@ impl Segments {
         while let Some(subpath) = subpaths.next() {
             let old_len = self.segs.len();
             for seg in kurbo::segments(subpath) {
-                // TODO: could have a fast path for line segments
-                let cubic = to_cubic(seg);
-                let cubics = monotonic_pieces(cubic);
-                for c in cubics {
-                    let (p0, p1, p2, p3, orient) = if (c.p0.y, c.p0.x) <= (c.p3.y, c.p3.x) {
-                        (c.p0, c.p1, c.p2, c.p3, true)
-                    } else {
-                        (c.p3, c.p2, c.p1, c.p0, false)
-                    };
-                    self.segs.push(Segment::monotonic_cubic(
-                        p0.into(),
-                        p1.into(),
-                        p2.into(),
-                        p3.into(),
-                    ));
-                    self.orientation.push(orient);
-                    self.contour_prev
-                        .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
-                    self.contour_next.push(Some(SegIdx(self.segs.len())));
+                match seg {
+                    kurbo::PathSeg::Line(ell) => {
+                        let p0: Point = ell.p0.into();
+                        let p1: Point = ell.p1.into();
+                        let (p0, p1, orient) = if p0 <= p1 {
+                            (p0, p1, true)
+                        } else {
+                            (p1, p0, false)
+                        };
+                        if p0 != p1 {
+                            self.segs.push(Segment::straight(p0, p1));
+                            self.orientation.push(orient);
+                            self.contour_prev
+                                .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
+                            self.contour_next.push(Some(SegIdx(self.segs.len())));
+                        }
+                    }
+                    _ => {
+                        let cubic = to_cubic(seg);
+                        let cubics = monotonic_pieces(cubic);
+                        for c in cubics {
+                            let (p0, p1, p2, p3, orient) = if (c.p0.y, c.p0.x) <= (c.p3.y, c.p3.x) {
+                                (c.p0, c.p1, c.p2, c.p3, true)
+                            } else {
+                                (c.p3, c.p2, c.p1, c.p0, false)
+                            };
+                            self.segs.push(Segment::monotonic_cubic(
+                                p0.into(),
+                                p1.into(),
+                                p2.into(),
+                                p3.into(),
+                            ));
+                            self.orientation.push(orient);
+                            self.contour_prev
+                                .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
+                            self.contour_next.push(Some(SegIdx(self.segs.len())));
+                        }
+                    }
                 }
             }
             if old_len < self.segs.len() {
