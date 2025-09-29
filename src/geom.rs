@@ -158,7 +158,7 @@ fn monotonic_cubic(p0: &Point, p1: &Point, p2: &Point, p3: &Point) -> bool {
     }
 
     // The extremum of the quadratic is at t = (q0 - q1) / (q0 - q1 + q2 - q1),
-    // so consider the four possibilities for the signs of q0 - q2 and q2 - q1.
+    // so consider the four possibilities for the signs of q0 - q1 and q2 - q1.
     // If they're both negative, then so is the coefficient of t^2 and so there's
     // no minimum between the endpoints. If one is negative and the other positive,
     // then the extremum is either less than zero or bigger than one, and so again
@@ -171,6 +171,55 @@ fn monotonic_cubic(p0: &Point, p1: &Point, p2: &Point, p3: &Point) -> bool {
     // (q2 q0 - q1^2) / (q0 - q1 + q2 - q1). We've already checked that the
     // denominator is positive.
     q2 * q0 >= q1 * q1
+}
+
+fn monotonic_kurbo_cubic(c: CubicBez) -> bool {
+    monotonic_cubic(&c.p0.into(), &c.p1.into(), &c.p2.into(), &c.p3.into())
+}
+
+// Imagine that `cub` is basically a monotonic cubic, in that we didn't find any
+// roots of its derivative. For numerical reasons, this may not quite agree with
+// [`monotonic_cubic`], so perturb the control points if necessary to satisfy
+// `monotonic_cubic`.
+fn force_monotonic(mut cub: CubicBez) -> Option<CubicBez> {
+    if cub.p0.y < cub.p3.y {
+        cub.p1.y = cub.p0.y.max(cub.p1.y);
+        cub.p2.y = cub.p3.y.min(cub.p2.y);
+
+        if !monotonic_kurbo_cubic(cub) {
+            // We've fixed up the tangents and we're still not monotonic.
+            // This could happen if (for example) p1.y, p2.y, and p3.y are all
+            // very close, in which case there could be non-monotonicity but
+            // root-finding failed to find the critical point.
+            //
+            // We fix this case by just forcing the control points'
+            // y-coordinates to be in order. It should only be a small perturbation
+            cub.p1.y = cub.p1.y.min(cub.p3.y);
+            cub.p2.y = cub.p2.y.max(cub.p1.y);
+        }
+        Some(cub)
+    } else if cub.p3.y < cub.p0.y {
+        cub.p1.y = cub.p0.y.min(cub.p1.y);
+        cub.p2.y = cub.p3.y.max(cub.p2.y);
+
+        if !monotonic_kurbo_cubic(kurbo::Affine::scale_non_uniform(1.0, -1.0) * cub) {
+            // Similar to above, but for decreasing y.
+            cub.p2.y = cub.p2.y.min(cub.p0.y);
+            cub.p1.y = cub.p1.y.max(cub.p2.y);
+        }
+        Some(cub)
+    } else if cub.p0 != cub.p3 {
+        // It's a horizontal segment (or very close to one). Replace it with
+        // a true horizontal segment.
+        Some(CubicBez {
+            p0: cub.p0,
+            p1: cub.p0 + (cub.p3 - cub.p0) * (1.0 / 3.0),
+            p2: cub.p0 + (cub.p3 - cub.p0) * (2.0 / 3.0),
+            p3: cub.p3,
+        })
+    } else {
+        None
+    }
 }
 
 pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
@@ -206,38 +255,17 @@ pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
     // TODO: better handling for roots that are very close to 0.0 or 1.0
     for r in roots {
         if r > 0.0 && r < 1.0 {
-            let mut piece_before = cub.subsegment(last_r..r);
-            // Thanks to numerical errors, we could end up with tangents that
-            // are just barely pointing in the wrong direction. Fix them up.
-            if piece_before.p0.y < piece_before.p3.y {
-                piece_before.p1.y = piece_before.p0.y.max(piece_before.p1.y);
-                piece_before.p2.y = piece_before.p3.y.min(piece_before.p2.y);
-                ret.push(piece_before);
-            } else if piece_before.p3.y < piece_before.p0.y {
-                piece_before.p1.y = piece_before.p0.y.min(piece_before.p1.y);
-                piece_before.p2.y = piece_before.p3.y.max(piece_before.p2.y);
-                ret.push(piece_before);
-            } else if piece_before.p0 != piece_before.p3 {
-                ret.push(piece_before);
+            let piece_before = cub.subsegment(last_r..r);
+            if let Some(c) = force_monotonic(piece_before) {
+                ret.push(c)
             }
             last_r = r;
         }
     }
 
-    // TODO: c/p
-    let mut piece_before = cub.subsegment(last_r..1.0);
-    // Thanks to numerical errors, we could end up with tangents that
-    // are just barely pointing in the wrong direction. Fix them up.
-    if piece_before.p0.y < piece_before.p3.y {
-        piece_before.p1.y = piece_before.p0.y.max(piece_before.p1.y);
-        piece_before.p2.y = piece_before.p3.y.min(piece_before.p2.y);
-        ret.push(piece_before);
-    } else if piece_before.p3.y < piece_before.p0.y {
-        piece_before.p1.y = piece_before.p0.y.min(piece_before.p1.y);
-        piece_before.p2.y = piece_before.p3.y.max(piece_before.p2.y);
-        ret.push(piece_before);
-    } else if piece_before.p0 != piece_before.p3 {
-        ret.push(piece_before);
+    let piece_before = cub.subsegment(last_r..1.0);
+    if let Some(c) = force_monotonic(piece_before) {
+        ret.push(c)
     }
 
     ret
