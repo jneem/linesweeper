@@ -135,42 +135,33 @@ impl std::fmt::Debug for Segment {
     }
 }
 
-// Checks whether the cubic Bezier with these control points is monotonic increasing
-// in y.
+// Imagine that `cub` is basically a monotonic cubic, in that we didn't find any
+// roots of its derivative. It could still have some starting and ending
+// tangents that aren't quite right, so fix them up if necessary.
 //
-// This is subject to some numerical error, and doesn't guarantee that the error is
-// one-sided.
-fn monotonic_cubic(p0: &Point, p1: &Point, p2: &Point, p3: &Point) -> bool {
-    // The tangent curve has control points 3(p1 - p0), 3(p2 - p1), and 3(p3 - p2),
-    // but we only care about the y coordinate and the 3s don't affect the sign.
-    //
-    // Note that these are control points, not the usual coefficients of the quadratic.
-    // In particular, we want to know whether (1-t)^2 q0 + 2 t (1 - t) q1 + t^2 q2
-    // goes negative on [0, 1].
-    let q0 = p1.y - p0.y;
-    let q1 = p2.y - p1.y;
-    let q2 = p3.y - p2.y;
-
-    // If q0 or q2 is negative, the quadratic is negative at one of the
-    // endpoints.
-    if q0 < 0.0 || q2 < 0.0 {
-        return false;
+// For numerical reasons, the output of this may not actually be strictly
+// monotonic. But it should be close.
+fn force_monotonic(mut cub: CubicBez) -> Option<CubicBez> {
+    if cub.p0.y < cub.p3.y {
+        cub.p1.y = cub.p0.y.max(cub.p1.y);
+        cub.p2.y = cub.p3.y.min(cub.p2.y);
+        Some(cub)
+    } else if cub.p3.y < cub.p0.y {
+        cub.p1.y = cub.p0.y.min(cub.p1.y);
+        cub.p2.y = cub.p3.y.max(cub.p2.y);
+        Some(cub)
+    } else if cub.p0 != cub.p3 {
+        // It's a horizontal segment (or very close to one). Replace it with
+        // a true horizontal segment.
+        Some(CubicBez {
+            p0: cub.p0,
+            p1: cub.p0 + (cub.p3 - cub.p0) * (1.0 / 3.0),
+            p2: cub.p0 + (cub.p3 - cub.p0) * (2.0 / 3.0),
+            p3: cub.p3,
+        })
+    } else {
+        None
     }
-
-    // The extremum of the quadratic is at t = (q0 - q1) / (q0 - q1 + q2 - q1),
-    // so consider the four possibilities for the signs of q0 - q2 and q2 - q1.
-    // If they're both negative, then so is the coefficient of t^2 and so there's
-    // no minimum between the endpoints. If one is negative and the other positive,
-    // then the extremum is either less than zero or bigger than one, and so again
-    // there's no extremum between the endpoints.
-    if q0 <= q1 || q2 <= q1 {
-        return true;
-    }
-
-    // There's a minimum between 0 and 1, and its value turns out to be
-    // (q2 q0 - q1^2) / (q0 - q1 + q2 - q1). We've already checked that the
-    // denominator is positive.
-    q2 * q0 >= q1 * q1
 }
 
 pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
@@ -206,38 +197,17 @@ pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
     // TODO: better handling for roots that are very close to 0.0 or 1.0
     for r in roots {
         if r > 0.0 && r < 1.0 {
-            let mut piece_before = cub.subsegment(last_r..r);
-            // Thanks to numerical errors, we could end up with tangents that
-            // are just barely pointing in the wrong direction. Fix them up.
-            if piece_before.p0.y < piece_before.p3.y {
-                piece_before.p1.y = piece_before.p0.y.max(piece_before.p1.y);
-                piece_before.p2.y = piece_before.p3.y.min(piece_before.p2.y);
-                ret.push(piece_before);
-            } else if piece_before.p3.y < piece_before.p0.y {
-                piece_before.p1.y = piece_before.p0.y.min(piece_before.p1.y);
-                piece_before.p2.y = piece_before.p3.y.max(piece_before.p2.y);
-                ret.push(piece_before);
-            } else if piece_before.p0 != piece_before.p3 {
-                ret.push(piece_before);
+            let piece_before = cub.subsegment(last_r..r);
+            if let Some(c) = force_monotonic(piece_before) {
+                ret.push(c)
             }
             last_r = r;
         }
     }
 
-    // TODO: c/p
-    let mut piece_before = cub.subsegment(last_r..1.0);
-    // Thanks to numerical errors, we could end up with tangents that
-    // are just barely pointing in the wrong direction. Fix them up.
-    if piece_before.p0.y < piece_before.p3.y {
-        piece_before.p1.y = piece_before.p0.y.max(piece_before.p1.y);
-        piece_before.p2.y = piece_before.p3.y.min(piece_before.p2.y);
-        ret.push(piece_before);
-    } else if piece_before.p3.y < piece_before.p0.y {
-        piece_before.p1.y = piece_before.p0.y.min(piece_before.p1.y);
-        piece_before.p2.y = piece_before.p3.y.max(piece_before.p2.y);
-        ret.push(piece_before);
-    } else if piece_before.p0 != piece_before.p3 {
-        ret.push(piece_before);
+    let piece_before = cub.subsegment(last_r..1.0);
+    if let Some(c) = force_monotonic(piece_before) {
+        ret.push(c)
     }
 
     ret
@@ -246,7 +216,6 @@ pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
 impl Segment {
     /// Create a new cubic segment that must be increasing in `y`.
     pub fn monotonic_cubic(p0: Point, p1: Point, p2: Point, p3: Point) -> Self {
-        debug_assert!(monotonic_cubic(&p0, &p1, &p2, &p3));
         if p3.y == p0.y {
             // Ensure that horizontal segments are just represented by straight lines.
             // TODO: maybe we should do something about degenerate S-shaped curves?
