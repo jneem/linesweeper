@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use kurbo::{
     common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, QuadBez, Shape, Vec2,
 };
-use poly_cool::Cubic;
+use polycool::Cubic;
 
 mod split_quad;
 pub(crate) mod transverse;
