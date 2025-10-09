@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "linesweeper"
-version = "0.0.4"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -831,7 +831,7 @@ dependencies = [
  "libtest-mimic",
  "linesweeper_util",
  "path-bool",
- "poly-cool",
+ "polycool",
  "proptest",
  "serde",
  "skrifa",
@@ -1014,10 +1014,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "poly-cool"
-version = "0.3.2"
+name = "polycool"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8370a553db72b99cd797d84e98f4f3a43bc7b57a3d9f0c9f095cbb24683694c1"
+checksum = "70e7383348ab3cd2b26ec9454d2571b7c750f697cd615b4d9f79f505e699dacc"
 dependencies = [
  "arrayvec",
 ]
