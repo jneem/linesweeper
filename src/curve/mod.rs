@@ -349,7 +349,7 @@ pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
     let c0 = c.p0.y - y;
     let cubic = Cubic::new([c0, c1, c2, c3]);
 
-    let eps = 1e-12 * cubic.magnitude().max(1.0);
+    let eps = 1e-12 * cubic.max_abs_coefficient().max(1.0);
     let roots = cubic.roots_between(0.0, 1.0, eps);
     if !roots.is_empty() {
         return roots[0];
@@ -1221,8 +1221,8 @@ pub mod arbtests {
         // This was determined empirically: 1e-10 fails fuzz tests.
         let accuracy = 1e-9;
         let max_coeff = cubic_from_bez_x(c)
-            .magnitude()
-            .max(cubic_from_bez_y(c).magnitude());
+            .max_abs_coefficient()
+            .max(cubic_from_bez_y(c).max_abs_coefficient());
         let threshold = accuracy * max_coeff.max(1.0);
 
         let y = crate::arbitrary::float_in_range(c.p0.y, c.p3.y, u)?;
