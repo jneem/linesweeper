@@ -1326,8 +1326,8 @@ impl<W: WindingNumber> Topology<W> {
             let p = |point: Point| (point.x, point.y);
             let p0 = p(*self.point(seg.first_half()));
             let p1 = p(*self.point(seg.second_half()));
-            bbox = bbox.union_pt(p0.into());
-            bbox = bbox.union_pt(p1.into());
+            bbox = bbox.union_pt(p0);
+            bbox = bbox.union_pt(p1);
             data = data.move_to(p0);
             data = data.line_to(p1);
             let color = tag_color(self.tag[self.orig_seg[seg]]);
