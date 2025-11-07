@@ -2,7 +2,10 @@
 //!
 //! This algorithm is documented in `docs/sweep.typ`.
 
-use std::{cell::RefCell, ops::DerefMut};
+use std::cell::RefCell;
+
+#[cfg(feature = "slow-asserts")]
+use std::ops::DerefMut;
 
 use kurbo::{ParamCurve as _, ParamCurveNearest};
 
@@ -18,7 +21,7 @@ use crate::{
 use super::{OutputEvent, SweepLineRange, SweepLineRangeBuffers};
 
 #[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) struct SegmentOrderEntry {
     pub(crate) seg: SegIdx,
     /// True if this segment is about to leave the sweep-line.
@@ -101,6 +104,17 @@ pub(crate) struct SegmentOrderEntry {
     old_seg: Option<SegIdx>,
 }
 
+impl std::fmt::Debug for SegmentOrderEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO: maybe a verbose mode to show all the state?
+        if let Some(old_seg) = self.old_seg {
+            write!(f, "{old_seg:?}->{:?}", self.seg)
+        } else {
+            write!(f, "{:?}", self.seg)
+        }
+    }
+}
+
 impl SegmentOrderEntry {
     fn new(seg: SegIdx, segments: &Segments, eps: f64) -> Self {
         let x0 = segments[seg].min_x();
@@ -145,16 +159,14 @@ impl SegmentOrderEntry {
 }
 
 #[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Default)]
 pub(crate) struct SegmentOrder {
     pub(crate) segs: TreeVec<SegmentOrderEntry, 128>,
 }
 
-impl Default for SegmentOrder {
-    fn default() -> Self {
-        Self {
-            segs: TreeVec::new(),
-        }
+impl std::fmt::Debug for SegmentOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.segs.iter()).finish()
     }
 }
 
@@ -614,15 +626,7 @@ impl<'segs> Sweeper<'segs> {
     /// Marks a segment as needing to exit, but doesn't actually remove it
     /// from the sweep-line. See `SegmentOrderEntry::exit` for an explanation.
     fn handle_exit(&mut self, seg_idx: SegIdx) {
-        let pos = self
-            .line
-            .position(
-                seg_idx,
-                self.segments,
-                self.comparisons.borrow_mut().deref_mut(),
-                self.y,
-            )
-            .unwrap();
+        let pos = self.line.position(seg_idx).unwrap();
 
         if self.line.segs[pos].old_seg == Some(seg_idx) {
             return;
@@ -637,24 +641,8 @@ impl<'segs> Sweeper<'segs> {
     }
 
     fn handle_intersection(&mut self, left: SegIdx, right: SegIdx) {
-        let left_idx = self
-            .line
-            .position(
-                left,
-                self.segments,
-                self.comparisons.borrow_mut().deref_mut(),
-                self.y,
-            )
-            .unwrap();
-        let right_idx = self
-            .line
-            .position(
-                right,
-                self.segments,
-                self.comparisons.borrow_mut().deref_mut(),
-                self.y,
-            )
-            .unwrap();
+        let left_idx = self.line.position(left).unwrap();
+        let right_idx = self.line.position(right).unwrap();
         if left_idx < right_idx {
             // We're going to put `left_seg` after `right_seg` in the
             // sweep line, and while doing so we need to "push" along
@@ -723,6 +711,12 @@ impl<'segs> Sweeper<'segs> {
             // Currently, this leads to over-division for intersections (not touches)
             // that were already handled.
             self.segs_needing_positions.extend(right_idx..=left_idx);
+
+            // We haven't changed the order of any segments, but the "touch" event
+            // we just processed might have been a witness for the crossing invariant.
+            // So we need to scan.
+            self.intersection_scan_right(right_idx);
+            self.intersection_scan_left(left_idx);
         }
     }
 
@@ -809,24 +803,8 @@ impl<'segs> Sweeper<'segs> {
                 .take_while(|ev| ev.y == self.y)
                 .any(|ev| ev.left == order.0 && ev.right == order.1);
 
-            let left_idx = self
-                .line
-                .position(
-                    order.0,
-                    self.segments,
-                    self.comparisons.borrow_mut().deref_mut(),
-                    self.y,
-                )
-                .unwrap();
-            let right_idx = self
-                .line
-                .position(
-                    order.1,
-                    self.segments,
-                    self.comparisons.borrow_mut().deref_mut(),
-                    self.y,
-                )
-                .unwrap();
+            let left_idx = self.line.position(order.0).unwrap();
+            let right_idx = self.line.position(order.1).unwrap();
             let has_blocking_segment = self.blocking_segment(left_idx, right_idx).is_some();
             if !has_matching_event && !has_blocking_segment {
                 dbg!(&self.line);
@@ -855,12 +833,7 @@ impl<'segs> Sweeper<'segs> {
                         // Find an event between i and j.
                         let is_between = |idx: SegIdx| -> bool {
                             self.line
-                                .position(
-                                    idx,
-                                    self.segments,
-                                    self.comparisons.borrow_mut().deref_mut(),
-                                    self.y,
-                                )
+                                .position(idx)
                                 .is_some_and(|pos| i <= pos && pos <= j)
                         };
                         let has_exit_witness = self
@@ -1257,46 +1230,10 @@ impl SegmentOrder {
     //
     // Returns an index pointing to a `SegmentOrderEntry` for which
     // `seg_idx` is either the `seg` or the `old_seg`.
-    fn position(
-        &self,
-        seg_idx: SegIdx,
-        segments: &Segments,
-        comparer: &mut ComparisonCache,
-        y: f64,
-    ) -> Option<usize> {
-        if self.segs.len() <= 32 {
-            return self
-                .segs
-                .iter()
-                .position(|x| x.seg == seg_idx || x.old_seg == Some(seg_idx));
-        }
-
-        // start_idx points to a segment that might be close to our segment (or
-        // could even be our segment). But the segment at `start_idx - 1` is
-        // definitely to our right.
-        let start_idx = self.segs.partition_point(|entry| {
-            comparer
-                .compare_segments(segments, entry.seg, seg_idx)
-                .order_at(y)
-                == Order::Left
-        });
-
-        // end_idx points to something that's definitely after us.
-        let end_idx = self.segs.partition_point(|entry| {
-            comparer
-                .compare_segments(segments, entry.seg, seg_idx)
-                .order_at(y)
-                != Order::Right
-        });
-
-        if end_idx <= start_idx {
-            return None;
-        }
-
+    fn position(&self, seg_idx: SegIdx) -> Option<usize> {
         self.segs
-            .range(start_idx..)
+            .iter()
             .position(|x| x.seg == seg_idx || x.old_seg == Some(seg_idx))
-            .map(|i| i + start_idx)
     }
 }
 
