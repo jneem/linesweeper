@@ -839,16 +839,27 @@ impl<W: WindingNumber> Topology<W> {
             if self.deleted[idx] {
                 continue;
             }
-            let cc_nbr = self.point_neighbors[idx.first_half()].clockwise;
-            if self.point_idx[idx.second_half()] == self.point_idx[cc_nbr.other_half()] {
+            let cw_nbr = self.point_neighbors[idx.first_half()].clockwise;
+            if self.point_idx[idx.second_half()] == self.point_idx[cw_nbr.other_half()] {
                 // We've found two segments with the same starting and ending points, but
                 // that doesn't mean they're coincident!
                 // TODO: we could use the comparison cache here, if we could keep it around somewhere.
                 let y0 = self.point(idx.first_half()).y;
                 let y1 = self.point(idx.second_half()).y;
+
+                // Because the closeness comparison below isn't transitive, we need to be careful
+                // to only merge sweep-line neighbors. As an example for what can go wrong, suppose
+                // we have 4 segments with the same starting and ending points. Let's say that
+                // their sweep-line order is a, b, c, d, and suppose that a and d are close but
+                // b and c aren't. Then merging a and d would be bad -- even if they're clockwise
+                // neighbors by going around the way that avoids b and c -- because it would mess up
+                // the winding numbers of b and c.
+                if y0 != y1 && self.scan_west[idx] != Some(cw_nbr.idx) {
+                    continue;
+                }
                 if y0 != y1 {
                     let s1 = self.orig_seg[idx];
-                    let s2 = self.orig_seg[cc_nbr];
+                    let s2 = self.orig_seg[cw_nbr];
                     let s1 = y_subsegment(self.segments[s1].to_kurbo_cubic(), y0, y1);
                     let s2 = y_subsegment(self.segments[s2].to_kurbo_cubic(), y0, y1);
                     if (s1.p0 - s2.p0).hypot() > self.eps
@@ -862,12 +873,12 @@ impl<W: WindingNumber> Topology<W> {
 
                 // All output segments are in sweep line order, so if they're
                 // coincident then they'd better both be first halves.
-                debug_assert!(cc_nbr.first_half);
+                debug_assert!(cw_nbr.first_half);
                 self.delete(idx);
-                self.winding[cc_nbr.idx].counter_clockwise = self.winding[idx].counter_clockwise;
+                self.winding[cw_nbr.idx].counter_clockwise = self.winding[idx].counter_clockwise;
 
-                if self.winding[cc_nbr.idx].is_trivial() {
-                    self.delete(cc_nbr.idx);
+                if self.winding[cw_nbr.idx].is_trivial() {
+                    self.delete(cw_nbr.idx);
                 }
             }
         }
@@ -1209,6 +1220,7 @@ impl<W: WindingNumber> Topology<W> {
                     if self.winding(half).clockwise != self.winding(cw_nbr).counter_clockwise {
                         #[cfg(feature = "debug-svg")]
                         {
+                            dbg!(self);
                             let svg = self.dump_svg(|_| "black".to_owned());
                             svg::save("out.svg", &svg).unwrap();
                         }
@@ -1319,15 +1331,25 @@ impl<W: WindingNumber> Topology<W> {
             f64::NEG_INFINITY,
         );
         let mut document = svg::Document::new();
-        let stroke_width = 1.0;
-        let point_radius = 1.5;
+        let p = |point: Point| (point.x, point.y);
+
         for seg in self.segment_indices() {
-            let mut data = svg::node::element::path::Data::new();
-            let p = |point: Point| (point.x, point.y);
             let p0 = p(*self.point(seg.first_half()));
             let p1 = p(*self.point(seg.second_half()));
             bbox = bbox.union_pt(p0);
             bbox = bbox.union_pt(p1);
+        }
+
+        bbox = bbox.inset(2.0);
+        let bbox_size = bbox.width().max(bbox.height());
+        let stroke_width = 1.0 * bbox_size / 1024.0;
+        let point_radius = 1.5 * bbox_size / 1024.0;
+        let font_size = 8.0 * bbox_size / 1024.0;
+
+        for seg in self.segment_indices() {
+            let mut data = svg::node::element::path::Data::new();
+            let p0 = p(*self.point(seg.first_half()));
+            let p1 = p(*self.point(seg.second_half()));
             data = data.move_to(p0);
             data = data.line_to(p1);
             let color = tag_color(self.tag[self.orig_seg[seg]]);
@@ -1344,7 +1366,7 @@ impl<W: WindingNumber> Topology<W> {
             document = document.add(path);
 
             let text = svg::node::element::Text::new(format!("{seg:?}",))
-                .set("font-size", 8.0)
+                .set("font-size", font_size)
                 .set("text-anchor", "middle")
                 .set("x", (p0.0 + p1.0) / 2.0)
                 .set("y", (p0.1 + p1.1) / 2.0);
@@ -1363,7 +1385,6 @@ impl<W: WindingNumber> Topology<W> {
             document = document.add(c);
         }
 
-        bbox = bbox.inset(2.0);
         document = document.set(
             "viewBox",
             (bbox.min_x(), bbox.min_y(), bbox.width(), bbox.height()),
