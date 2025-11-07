@@ -2,7 +2,10 @@
 //!
 //! This algorithm is documented in `docs/sweep.typ`.
 
-use std::{cell::RefCell, ops::DerefMut};
+use std::cell::RefCell;
+
+#[cfg(feature = "slow-asserts")]
+use std::ops::DerefMut;
 
 use kurbo::{ParamCurve as _, ParamCurveNearest};
 
