@@ -7,8 +7,6 @@ use std::cell::RefCell;
 #[cfg(feature = "slow-asserts")]
 use std::ops::DerefMut;
 
-use kurbo::{ParamCurve as _, ParamCurveNearest};
-
 use crate::{
     curve::{self, CurveOrder, Order},
     geom::Segment,
@@ -956,12 +954,7 @@ impl<'segs> Sweeper<'segs> {
                 let other_entry = &mut self.line.segs[i];
                 let other_seg = &self.segments[other_entry.seg];
 
-                let other_seg = other_seg.to_kurbo_cubic();
-                let nearest = other_seg.nearest(p, self.eps / 2.0);
-
-                if nearest.distance_sq <= 4.0 * self.eps * self.eps
-                    || other_seg.eval(nearest.t).x > p.x
-                {
+                if other_seg.upper(self.y, self.eps) + self.eps >= p.x {
                     // Ensure that every segment in the changed interval has `old_idx` set;
                     // see also `compute_changed_intervals`.
                     self.line.segs[i].set_old_idx_if_unset(i);
@@ -974,12 +967,7 @@ impl<'segs> Sweeper<'segs> {
                 let other_entry = &mut self.line.segs[k];
                 let other_seg = &self.segments[other_entry.seg];
 
-                let other_seg = other_seg.to_kurbo_cubic();
-                let nearest = other_seg.nearest(p, self.eps / 2.0);
-
-                if nearest.distance_sq <= 4.0 * self.eps * self.eps
-                    || other_seg.eval(nearest.t).x < p.x
-                {
+                if other_seg.lower(self.y, self.eps) - self.eps <= p.x {
                     // Ensure that every segment in the changed interval has `old_idx` set;
                     // see also `compute_changed_intervals`.
                     self.line.segs[k].set_old_idx_if_unset(k);
