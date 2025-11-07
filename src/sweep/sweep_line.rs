@@ -18,7 +18,7 @@ use crate::{
 use super::{OutputEvent, SweepLineRange, SweepLineRangeBuffers};
 
 #[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) struct SegmentOrderEntry {
     pub(crate) seg: SegIdx,
     /// True if this segment is about to leave the sweep-line.
@@ -101,6 +101,17 @@ pub(crate) struct SegmentOrderEntry {
     old_seg: Option<SegIdx>,
 }
 
+impl std::fmt::Debug for SegmentOrderEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO: maybe a verbose mode to show all the state?
+        if let Some(old_seg) = self.old_seg {
+            write!(f, "{old_seg:?}->{:?}", self.seg)
+        } else {
+            write!(f, "{:?}", self.seg)
+        }
+    }
+}
+
 impl SegmentOrderEntry {
     fn new(seg: SegIdx, segments: &Segments, eps: f64) -> Self {
         let x0 = segments[seg].min_x();
@@ -145,16 +156,14 @@ impl SegmentOrderEntry {
 }
 
 #[cfg_attr(test, derive(serde::Serialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Default)]
 pub(crate) struct SegmentOrder {
     pub(crate) segs: TreeVec<SegmentOrderEntry, 128>,
 }
 
-impl Default for SegmentOrder {
-    fn default() -> Self {
-        Self {
-            segs: TreeVec::new(),
-        }
+impl std::fmt::Debug for SegmentOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.segs.iter()).finish()
     }
 }
 
@@ -699,6 +708,12 @@ impl<'segs> Sweeper<'segs> {
             // Currently, this leads to over-division for intersections (not touches)
             // that were already handled.
             self.segs_needing_positions.extend(right_idx..=left_idx);
+
+            // We haven't changed the order of any segments, but the "touch" event
+            // we just processed might have been a witness for the crossing invariant.
+            // So we need to scan.
+            self.intersection_scan_right(right_idx);
+            self.intersection_scan_left(left_idx);
         }
     }
 
