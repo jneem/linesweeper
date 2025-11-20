@@ -1686,9 +1686,52 @@ impl Default for Contour {
     }
 }
 
-/// A collection of [`Contour`]s.
+/// A collection of [`Contour`]s, representing a set.
 ///
 /// Can be indexed with a [`ContourIdx`].
+///
+/// A `Contour` represents a set as a hierarchical collection of closed paths, where
+/// each path has the set on its left (in a Y-down coordinate system). A very simple
+/// set is represented as just a single closed path:
+///
+/// ```text
+///   ╭───<───╮
+///   │xxxxxxx│
+///   │xxxxxxx│
+///   ╰───>───╯
+/// ```
+///
+/// (The `x`s represent the interior of the set, and the arrows show the orientation
+/// of the curve.)
+///
+/// Two disjoint sets are represented as two unrelated closed paths:
+///
+/// ```text
+///   ╭───<───╮
+///   │xxxxxxx│
+///   │xxxxxxx│  ╭───<───╮
+///   ╰───>───╯  │xxxxxxx│
+///              │xxxxxxx│
+///              ╰───>───╯
+/// ```
+///
+/// The hierarchical structure appears when you have sets with holes: a set with a single
+/// hole is represented as a contour (the outer boundary) with a child contour (the inner
+/// boundary). Notice how the curves are oriented to that the set is always on the left.
+///
+/// ```text
+///   ╭───<──────╮
+///   │xxxxxxxxxx│
+///   │xxx╭>─╮xxx│
+///   │xxx│  │xxx│
+///   │xxx╰─<╯xxx│
+///   │xxxxxxxxxx│
+///   ╰──────>───╯
+/// ```
+///
+/// A set can have multiple holes (and so a contour can have multiple children),
+/// and those holes can contain more parts of the set. So in general, the
+/// collection of contours forms a forest.
 #[cfg_attr(test, derive(serde::Serialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Contours {
@@ -1728,7 +1771,11 @@ impl Contours {
         ret
     }
 
-    /// Iterates over all of the contours.
+    /// Iterates over all of the contours, ignoring the hierarchical structure.
+    ///
+    /// For example, if you're creating an SVG path out of all these contours then
+    /// you don't need the hierarchical structure: the SVG renderer can figure that
+    /// out by itself.
     pub fn contours(&self) -> impl Iterator<Item = &Contour> + '_ {
         self.contours.iter()
     }
