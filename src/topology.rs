@@ -1732,6 +1732,12 @@ impl Default for Contour {
 /// A set can have multiple holes (and so a contour can have multiple children),
 /// and those holes can contain more parts of the set. So in general, the
 /// collection of contours forms a forest.
+///
+/// Because of the way we organize the contour directions, the set described by
+/// our contours has a winding number of 1 and its complement has a winding
+/// number of 0. In particular, if you gather up all the contours and put them
+/// in an SVG, it won't make a difference whether you fill them with a non-zero
+/// or an even-odd fill rule.
 #[cfg_attr(test, derive(serde::Serialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Contours {
