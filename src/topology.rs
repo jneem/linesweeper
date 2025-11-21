@@ -1717,7 +1717,7 @@ impl Default for Contour {
 ///
 /// The hierarchical structure appears when you have sets with holes: a set with a single
 /// hole is represented as a contour (the outer boundary) with a child contour (the inner
-/// boundary). Notice how the curves are oriented to that the set is always on the left.
+/// boundary). Notice how the curves are oriented so that the set is always on the left.
 ///
 /// ```text
 ///   ╭───<──────╮
