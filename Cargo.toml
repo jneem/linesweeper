@@ -50,6 +50,7 @@ skrifa.workspace = true
 svg = { version = "0.18", default-features = false }
 tiny-skia = "0.11.4"
 usvg = { version = "0.44.0", default-features = false }
+resvg = { version = "0.44.0", default-features = false }
 serde_yaml = "0.9.34"
 
 [profile.dev.package."*"]
