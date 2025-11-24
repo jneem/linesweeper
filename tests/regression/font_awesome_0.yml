@@ -2,7 +2,6 @@ svg_path_1: M128 160L128 128L64 128L64 512L128 512L128 352L224 352L224 512L288 5
 svg_path_2: M610.1 576.1L576.2 610L30.2 64.1L64.2 30.2L610.1 576.1z
 fill_rule: NonZero
 op: Difference
-assert:
-  - !Snapshot:
-    width: 640
-    height: 640
+assert: !Snapshot
+  width: 640
+  height: 640
