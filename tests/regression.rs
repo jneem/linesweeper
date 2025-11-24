@@ -5,6 +5,7 @@ use linesweeper::topology::Contours;
 use std::path::{Path, PathBuf};
 use serde::{Serialize, Deserialize};
 use tiny_skia::{Pixmap, Transform};
+use kompari::image;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum FillRule {
@@ -93,7 +94,7 @@ fn generate_regression_test(path: PathBuf) -> Result<(), Failed> {
     )
     .unwrap();
 
-    if let Assertion::Snapshot {width: width, height: height} = case.assert.unwrap_or(Assertion::NoPanic) {
+    if let Assertion::Snapshot {width, height} = case.assert.unwrap_or(Assertion::NoPanic) {
         assert_regression_snapshot(&path, &contours, width, height)?;
     }
 
@@ -119,7 +120,12 @@ fn assert_regression_snapshot(path: &PathBuf, contours: &Contours, width: u16, h
 
     if snapshot_path.exists() {
         let png_data = actual_pixmap.encode_png().unwrap();
-        let actual_snapshot = kompari::MinImage::decode_from_png(&png_data).unwrap();
+        let actual_image = image::load_from_memory(&png_data).unwrap().into_rgba8();
+        let actual_snapshot = kompari::Image::from_raw(
+            actual_image.width(),
+            actual_image.height(),
+            actual_image.into_raw()
+        ).unwrap();
         let expected_snapshot = kompari::load_image(&snapshot_path)?;
 
         return match kompari::compare_images(&expected_snapshot, &actual_snapshot) {
