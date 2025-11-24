@@ -1,16 +1,16 @@
+use kompari::image;
 use kurbo::BezPath;
 use libtest_mimic::{Arguments, Failed, Trial};
 use linesweeper::binary_op;
 use linesweeper::topology::Contours;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use serde::{Serialize, Deserialize};
 use tiny_skia::{Pixmap, Transform};
-use kompari::image;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum FillRule {
-   EvenOdd,
-   NonZero,
+    EvenOdd,
+    NonZero,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -23,8 +23,8 @@ enum BinaryOp {
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Assertion {
-   NoPanic,
-   Snapshot {width: u16, height: u16}
+    NoPanic,
+    Snapshot { width: u16, height: u16 },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,10 +33,10 @@ struct RegressionCaseDeclaration {
     svg_path_2: String,
     fill_rule: FillRule,
     op: BinaryOp,
-    assert: Option<Assertion>
+    assert: Option<Assertion>,
 }
 
-impl RegressionCaseDeclaration  {
+impl RegressionCaseDeclaration {
     fn linesweeper_fill_rule(&self) -> linesweeper::FillRule {
         match self.fill_rule {
             FillRule::EvenOdd => linesweeper::FillRule::EvenOdd,
@@ -90,18 +90,23 @@ fn generate_regression_test(path: PathBuf) -> Result<(), Failed> {
         &p0,
         &p1,
         case.linesweeper_fill_rule(),
-        case.linesweeper_binary_op()
+        case.linesweeper_binary_op(),
     )
     .unwrap();
 
-    if let Assertion::Snapshot {width, height} = case.assert.unwrap_or(Assertion::NoPanic) {
+    if let Assertion::Snapshot { width, height } = case.assert.unwrap_or(Assertion::NoPanic) {
         assert_regression_snapshot(&path, &contours, width, height)?;
     }
 
     Ok(())
 }
 
-fn assert_regression_snapshot(path: &PathBuf, contours: &Contours, width: u16, height: u16) -> Result<(), Failed> {
+fn assert_regression_snapshot(
+    path: &PathBuf,
+    contours: &Contours,
+    width: u16,
+    height: u16,
+) -> Result<(), Failed> {
     let mut bezpath = BezPath::new();
 
     for contour in contours.contours() {
@@ -124,8 +129,9 @@ fn assert_regression_snapshot(path: &PathBuf, contours: &Contours, width: u16, h
         let actual_snapshot = kompari::Image::from_raw(
             actual_image.width(),
             actual_image.height(),
-            actual_image.into_raw()
-        ).unwrap();
+            actual_image.into_raw(),
+        )
+        .unwrap();
         let expected_snapshot = kompari::load_image(&snapshot_path)?;
 
         return match kompari::compare_images(&expected_snapshot, &actual_snapshot) {
@@ -141,11 +147,13 @@ fn assert_regression_snapshot(path: &PathBuf, contours: &Contours, width: u16, h
 
 fn to_pixmap_from_svg_path(svg_path: &str, width: u16, height: u16) -> Result<Pixmap, Failed> {
     let opt = usvg::Options::default();
-    let svg_str = format!(r#"
+    let svg_str = format!(
+        r#"
     <svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">
       <path d="{svg_path}"/>
     </svg>
-    "#);
+    "#
+    );
     let usvg_tree = usvg::Tree::from_str(&svg_str, &opt).unwrap();
     let width = usvg_tree.size().width().floor() as u32;
     let height = usvg_tree.size().height().floor() as u32;
