@@ -117,7 +117,7 @@ fn assert_regression_snapshot(
 
     let actual_pixmap = to_pixmap_from_svg_path(&svg_path_data, width, height)?;
 
-    let case_name = path.file_prefix().unwrap().to_str().unwrap();
+    let case_name = path.file_stem().unwrap().to_str().unwrap();
     let snapshot_rel_name = format!("regression/{case_name}");
     let snapshot_rel_path = Path::new(&snapshot_rel_name);
 
