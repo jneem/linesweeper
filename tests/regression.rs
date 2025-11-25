@@ -102,7 +102,7 @@ fn generate_regression_test(path: PathBuf) -> Result<(), Failed> {
 }
 
 fn assert_regression_snapshot(
-    path: &PathBuf,
+    path: &Path,
     contours: &Contours,
     width: u16,
     height: u16,
@@ -134,10 +134,10 @@ fn assert_regression_snapshot(
         .unwrap();
         let expected_snapshot = kompari::load_image(&snapshot_path)?;
 
-        return match kompari::compare_images(&expected_snapshot, &actual_snapshot) {
+        match kompari::compare_images(&expected_snapshot, &actual_snapshot) {
             kompari::ImageDifference::None => Ok(()),
             _ => Err("image comparison failed".into()),
-        };
+        }
     } else {
         std::fs::create_dir_all(snapshot_path.parent().unwrap()).unwrap();
         actual_pixmap.save_png(&snapshot_path).unwrap();
