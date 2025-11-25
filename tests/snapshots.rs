@@ -77,14 +77,6 @@ fn output_path_for(input_path: &Path) -> PathBuf {
     ws
 }
 
-fn saved_snapshot_path_for(input_path: &Path) -> PathBuf {
-    let mut ws: PathBuf = std::env::var_os("CARGO_MANIFEST_DIR").unwrap().into();
-    ws.push("tests/snapshots/snapshots");
-    ws.push(input_path);
-    ws.set_extension("png");
-    ws
-}
-
 fn skia_path(elts: impl IntoIterator<Item = kurbo::PathEl>) -> tiny_skia::Path {
     let mut pb = tiny_skia::PathBuilder::new();
     for elt in elts {
@@ -377,7 +369,7 @@ fn generate_sweep_snapshot(path: PathBuf) -> Result<(), Failed> {
     pixmap.save_png(&out_path).unwrap();
 
     let new_image = kompari::load_image(&out_path)?;
-    let snapshot = kompari::load_image(&saved_snapshot_path_for(base_path))?;
+    let snapshot = kompari::load_image(&linesweeper_util::saved_snapshot_path_for(base_path))?;
     match kompari::compare_images(&snapshot, &new_image) {
         kompari::ImageDifference::None => Ok(()),
         _ => Err("image comparison failed".into()),
@@ -454,7 +446,7 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
     pixmap.save_png(&out_path).unwrap();
 
     let new_image = kompari::load_image(&out_path)?;
-    let snapshot = kompari::load_image(&saved_snapshot_path_for(base_path))?;
+    let snapshot = kompari::load_image(&linesweeper_util::saved_snapshot_path_for(base_path))?;
     match kompari::compare_images(&snapshot, &new_image) {
         kompari::ImageDifference::None => Ok(()),
         _ => Err("image comparison failed".into()),

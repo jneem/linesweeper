@@ -4,6 +4,7 @@ use skrifa::{
     outline::{pen::PathElement, DrawSettings},
     OutlineGlyph,
 };
+use std::path::{Path, PathBuf};
 
 // TODO: this function also decomposes all the bezier paths so that
 // there are no internal `MoveTo`s. We needed that at some point, but I think
@@ -123,4 +124,12 @@ pub fn outline_to_bezpath(outline: OutlineGlyph) -> BezPath {
             .into_iter()
             .map(skrifa_to_kurbo)
             .collect::<BezPath>()
+}
+
+pub fn saved_snapshot_path_for(input_path: &Path) -> PathBuf {
+    let mut ws: PathBuf = std::env::var_os("CARGO_MANIFEST_DIR").unwrap().into();
+    ws.push("tests/snapshots/snapshots");
+    ws.push(input_path);
+    ws.set_extension("png");
+    ws
 }
