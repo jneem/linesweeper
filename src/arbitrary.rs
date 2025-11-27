@@ -72,10 +72,11 @@ pub fn monotonic_bezier(u: &mut Unstructured<'_>) -> Result<CubicBez, arbitrary:
     let ret = CubicBez::new(p0, p1, p2, p3);
     Ok(geom::monotonic_pieces(ret)
         .into_iter()
-        .find(|c| c.p0.y < c.p3.y)
+        .find(|c| c.piece.p0.y < c.piece.p3.y)
         // unwrap: we started with p0 having smaller y, so there must be
         // a monotonic component that's increasing in y.
-        .unwrap())
+        .unwrap()
+        .piece)
 }
 
 /// Generate an arbitrary cubic Bezier, guaranteed to be monotonically increasing in y.
@@ -104,6 +105,7 @@ pub fn another_monotonic_bezier(
     Ok(geom::monotonic_pieces(ret)
         .into_iter()
         .next()
+        .map(|c| c.piece)
         .unwrap_or(ret))
 }
 

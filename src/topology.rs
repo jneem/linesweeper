@@ -11,6 +11,7 @@ use crate::{
     curve::{y_subsegment, Order},
     geom::Point,
     order::ComparisonCache,
+    position::PositionedOutputSeg,
     segments::{NonClosedPath, SegIdx, SegVec, Segments},
     sweep::{
         SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
@@ -910,7 +911,7 @@ impl<W: WindingNumber> Topology<W> {
     fn segs_to_path(
         &self,
         segs: &[HalfOutputSegIdx],
-        positions: &OutputSegVec<(BezPath, Option<usize>)>,
+        positions: &OutputSegVec<PositionedOutputSeg>,
     ) -> BezPath {
         let mut ret = BezPath::default();
         ret.move_to(self.point(segs[0].other_half()).to_kurbo());
@@ -920,9 +921,9 @@ impl<W: WindingNumber> Topology<W> {
                 // skip(1) leaves off the initial MoveTo, which is unnecessary
                 // because this path starts where the last one ended.
                 // TODO: avoid the allocation in reverse_subpaths
-                ret.extend(path.0.reverse_subpaths().iter().skip(1));
+                ret.extend(path.path.reverse_subpaths().iter().skip(1));
             } else {
-                ret.extend(path.0.iter().skip(1));
+                ret.extend(path.path.iter().skip(1));
             }
         }
 
@@ -1186,7 +1187,7 @@ impl<W: WindingNumber> Topology<W> {
     ///
     /// TODO: We should allow passing in an "inside" callback and then only do
     /// positioning for the segments that are on the boundary.
-    pub fn compute_positions(&self) -> OutputSegVec<(BezPath, Option<usize>)> {
+    pub fn compute_positions(&self) -> OutputSegVec<PositionedOutputSeg> {
         // TODO: reuse the cache from the sweep-line
         let mut cmp = ComparisonCache::new(self.eps, self.eps / 2.0);
         let mut endpoints = HalfOutputSegVec::with_size(self.orig_seg.len());

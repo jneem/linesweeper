@@ -415,7 +415,8 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
         ..Default::default()
     };
     for out_idx in top.segment_indices() {
-        let (path, far_idx) = &out_paths[out_idx];
+        let path = &out_paths[out_idx].path;
+        let far_idx = &out_paths[out_idx].copied_idx;
         for (idx, seg) in path.segments().enumerate() {
             let skia_seg = skia_kurbo_seg(seg);
 
