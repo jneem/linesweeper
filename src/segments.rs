@@ -45,7 +45,11 @@ pub struct Segments {
     /// y-critical points because the main algorithm requires monotonic segments.
     /// Keeping track of where the splits happened allows us to potentially merge
     /// things back at the end.
-    split_from_predecessor: SegVec<(f64, f64)>,
+    pub(crate) split_from_predecessor: SegVec<(f64, f64)>,
+    /// The original input segments, for reconstructing/merging. (TODO: this
+    /// representation is wasteful, since we only need it for segments that
+    /// got split.)
+    pub(crate) input_segs: SegVec<kurbo::PathSeg>,
 
     /// All the entrance heights, of segments, ordered by height.
     /// This includes horizontal segments.
@@ -252,6 +256,8 @@ impl Segments {
             self.segs.push(Segment::straight(*a, *b));
             self.orientation.push(orient);
             self.split_from_predecessor.push((0.0, 1.0));
+            self.input_segs
+                .push(kurbo::PathSeg::Line((p.to_kurbo(), q.to_kurbo()).into()));
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
             self.contour_next.push(Some(SegIdx(self.segs.len())));
@@ -332,6 +338,7 @@ impl Segments {
                             self.segs.push(Segment::straight(p0, p1));
                             self.orientation.push(orient);
                             self.split_from_predecessor.push((0.0, 1.0));
+                            self.input_segs.push(seg);
                             self.contour_prev
                                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
                             self.contour_next.push(Some(SegIdx(self.segs.len())));
@@ -356,6 +363,7 @@ impl Segments {
                             self.orientation.push(orient);
                             self.split_from_predecessor
                                 .push((monotonic.start_t, monotonic.end_t));
+                            self.input_segs.push(seg);
                             self.contour_prev
                                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
                             self.contour_next.push(Some(SegIdx(self.segs.len())));
@@ -401,6 +409,8 @@ impl Segments {
             self.segs.push(Segment::straight(*a, *b));
             self.orientation.push(orient);
             self.split_from_predecessor.push((0.0, 1.0));
+            self.input_segs
+                .push(kurbo::PathSeg::Line((p.to_kurbo(), q.to_kurbo()).into()));
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
             self.contour_next.push(Some(SegIdx(self.segs.len())));
