@@ -40,6 +40,15 @@ pub struct Segments {
     /// For each segment, stores true if the sweep-line order (small y to big y)
     /// is the same as the orientation in its original contour.
     orientation: SegVec<bool>,
+    /// For each segment, stores its parameter range in the original input
+    /// segment (which may have been split into monotonic sub-segments). Keeping
+    /// track of where the splits happened allows us to potentially merge things
+    /// back at the end.
+    pub(crate) split_from_predecessor: SegVec<(f64, f64)>,
+    /// The original input segments, for reconstructing/merging. (TODO: this
+    /// representation is wasteful, since we only need it for segments that
+    /// got split.)
+    pub(crate) input_segs: SegVec<kurbo::PathSeg>,
 
     /// All the entrance heights, of segments, ordered by height.
     /// This includes horizontal segments.
@@ -245,6 +254,9 @@ impl Segments {
             let (a, b, orient) = if p < q { (p, q, true) } else { (q, p, false) };
             self.segs.push(Segment::straight(*a, *b));
             self.orientation.push(orient);
+            self.split_from_predecessor.push((0.0, 1.0));
+            self.input_segs
+                .push(kurbo::PathSeg::Line((p.to_kurbo(), q.to_kurbo()).into()));
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
             self.contour_next.push(Some(SegIdx(self.segs.len())));
@@ -324,6 +336,8 @@ impl Segments {
                         if p0 != p1 {
                             self.segs.push(Segment::straight(p0, p1));
                             self.orientation.push(orient);
+                            self.split_from_predecessor.push((0.0, 1.0));
+                            self.input_segs.push(seg);
                             self.contour_prev
                                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
                             self.contour_next.push(Some(SegIdx(self.segs.len())));
@@ -332,7 +346,8 @@ impl Segments {
                     _ => {
                         let cubic = to_cubic(seg);
                         let cubics = monotonic_pieces(cubic);
-                        for c in cubics {
+                        for monotonic in cubics {
+                            let c = monotonic.piece;
                             let (p0, p1, p2, p3, orient) = if (c.p0.y, c.p0.x) <= (c.p3.y, c.p3.x) {
                                 (c.p0, c.p1, c.p2, c.p3, true)
                             } else {
@@ -345,6 +360,9 @@ impl Segments {
                                 p3.into(),
                             ));
                             self.orientation.push(orient);
+                            self.split_from_predecessor
+                                .push((monotonic.start_t, monotonic.end_t));
+                            self.input_segs.push(seg);
                             self.contour_prev
                                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
                             self.contour_next.push(Some(SegIdx(self.segs.len())));
@@ -389,6 +407,9 @@ impl Segments {
             let (a, b, orient) = if p < q { (p, q, true) } else { (q, p, false) };
             self.segs.push(Segment::straight(*a, *b));
             self.orientation.push(orient);
+            self.split_from_predecessor.push((0.0, 1.0));
+            self.input_segs
+                .push(kurbo::PathSeg::Line((p.to_kurbo(), q.to_kurbo()).into()));
             self.contour_prev
                 .push(Some(SegIdx(self.segs.len().saturating_sub(2))));
             self.contour_next.push(Some(SegIdx(self.segs.len())));

@@ -334,7 +334,10 @@ fn cubic_from_bez_y(c: CubicBez) -> Cubic {
 
 /// Find the parameter `t` at which `c` crosses height `y`.
 pub fn solve_t_for_y(c: CubicBez, y: f64) -> f64 {
-    debug_assert!(c.p0.y <= y && y <= c.p3.y && c.p0.y < c.p3.y);
+    debug_assert!(
+        c.p0.y <= y && y <= c.p3.y && c.p0.y < c.p3.y,
+        "invalid y ({y}) for curve ({c:?})"
+    );
 
     if y == c.p0.y {
         return 0.0;

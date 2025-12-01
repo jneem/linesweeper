@@ -5,12 +5,13 @@
 
 use std::collections::VecDeque;
 
-use kurbo::{BezPath, Rect, Shape};
+use kurbo::{BezPath, ParamCurve, Rect, Shape};
 
 use crate::{
-    curve::{y_subsegment, Order},
+    curve::{solve_t_for_y, y_subsegment, Order},
     geom::Point,
     order::ComparisonCache,
+    position::PositionedOutputSeg,
     segments::{NonClosedPath, SegIdx, SegVec, Segments},
     sweep::{
         SegmentsConnectedAtX, SweepLineBuffers, SweepLineRange, SweepLineRangeBuffers, Sweeper,
@@ -907,27 +908,214 @@ impl<W: WindingNumber> Topology<W> {
 
     /// The segments in `segs` form a closed path, and each one is the ending half
     /// of its segment.
+    ///
+    /// This basically does two things:
+    ///   - puts the segments in the correct orientation
+    ///   - merges (if possible) segments that were divided because of the
+    ///     monotonicity constraints.
     fn segs_to_path(
         &self,
         segs: &[HalfOutputSegIdx],
-        positions: &OutputSegVec<(BezPath, Option<usize>)>,
+        positions: &OutputSegVec<PositionedOutputSeg>,
     ) -> BezPath {
         let mut ret = BezPath::default();
-        ret.move_to(self.point(segs[0].other_half()).to_kurbo());
-        for seg in segs {
+        let mut unfinished: Option<f64> = None;
+
+        // Find a segment that can't be merged into the previous one.
+        let start_idx = segs
+            .iter()
+            .position(|s| self.can_merge(s.other_half(), positions).is_none())
+            .unwrap();
+        ret.move_to(self.point(segs[start_idx].other_half()).to_kurbo());
+        for seg in segs[start_idx..].iter().chain(&segs[..start_idx]) {
             let path = &positions[seg.idx];
-            if seg.is_first_half() {
-                // skip(1) leaves off the initial MoveTo, which is unnecessary
-                // because this path starts where the last one ended.
-                // TODO: avoid the allocation in reverse_subpaths
-                ret.extend(path.0.reverse_subpaths().iter().skip(1));
+
+            // TODO: avoid the allocation in reverse_subpaths
+            let rev_path;
+            let oriented_path = if seg.is_first_half() {
+                rev_path = path.path.reverse_subpaths();
+                &rev_path
             } else {
-                ret.extend(path.0.iter().skip(1));
+                &path.path
+            };
+            // skip(1) leaves off the initial MoveTo, which is unnecessary
+            // because this path starts where the last one ended.
+            let mut elems = oriented_path.iter().skip(1);
+            if let (Some(our_t), Some(unfinished_t)) =
+                (self.can_merge(seg.other_half(), positions), unfinished)
+            {
+                // Reconstruct part of the input curve
+                let input = self.segments.input_segs[self.orig_seg[seg.idx]];
+                let sub_input = if our_t > unfinished_t {
+                    input.subsegment(unfinished_t..our_t)
+                } else {
+                    input
+                        .reverse()
+                        .subsegment((1.0 - unfinished_t)..(1.0 - our_t))
+                };
+                // Maybe we should "fix up" the endpoints of `sub_input` to agree with
+                // what was in `positions`? It shouldn't matter too much, though: they
+                // should be close anyway, and any errors won't cause gaps in the path
+                // because we skip the MoveTo.
+                //
+                // unwrap: if unfinished had something, the path must have been non-empty.
+                *ret.elements_mut().last_mut().unwrap() = sub_input.as_path_el();
+                // Skip the first element in this output segment, because we merged it
+                // to the previous output segment.
+                elems.next();
+
+                // If we could merge the beginning of this output segment *and*
+                // the end, it could be part of a longer merge. Therefore, we
+                // don't update `unfinished`.
+                if self.can_merge(*seg, positions).is_none() {
+                    unfinished = None;
+                }
+            } else if let Some(t) = self.can_merge(*seg, positions) {
+                unfinished = Some(t);
+            } else {
+                unfinished = None;
             }
+            ret.extend(elems);
         }
 
         ret.close_path();
         ret
+    }
+
+    /// Is this intersection point a simple one, where at most two output segments meet?
+    fn is_simple_point(&self, idx: HalfOutputSegIdx) -> bool {
+        self.point_neighbors[idx].clockwise == self.point_neighbors[idx].counter_clockwise
+    }
+
+    /// Checks whether this output segment can merge with its neighbor.
+    ///
+    /// Imagine you have a single input segment that looks like this:
+    ///
+    /// ```text
+    ///                  /
+    ///     /-x-\       /
+    ///    /     \     /
+    ///   /       \-x-/
+    ///  /           
+    /// ```
+    ///
+    /// `Segments` will turn it into three monotonic pieces (by splitting it at
+    /// the marked `x`s), but when generating output we try to put the pieces
+    /// back together into a single segment. We can't always do this, for example
+    /// if there is an intersection with something else:
+    ///
+    /// ```text
+    ///       |
+    ///     /-x-\
+    ///    /  |  \
+    ///   /   |   \
+    /// ```
+    ///
+    /// or a near-intersection that causes some segment to get perturbed.
+    ///
+    /// This function returns `Some` for a half-output-segment that can be
+    /// merged to its neighbor. The value in the `Some` is in the parameter
+    /// space of the original input segment, and it says how far that merge
+    /// can go. In pictures, suppose that the curved segment goes from `t=0`
+    /// at the left to `t=1` at the right.
+    ///
+    /// ```text
+    ///   1 -> <- 2
+    ///     /-x-\
+    ///    /     \
+    ///   /       \
+    /// ```
+    ///
+    /// The `1 -> <- 2` in the diagram assigns names to the two
+    /// half-output-segments that meet at the `x`. If you call this function
+    /// with for half-output-segment `1`, it will return `Some(0.0)`, because
+    /// the output segment ending at `1` can be merged from input parameter
+    /// `0.0` all the way to the `x`. If you call this function with
+    /// half-output-segment `1`, it will return `Some(1.0)`.
+    ///
+    /// ```text
+    ///   1 -> <- 2
+    ///     /-x-\  /
+    ///    /     \/
+    ///   /      /\
+    /// ```
+    ///
+    /// Now imagine that there is some other intersection preventing
+    /// the entire half-output-segment `2` from merging. In this case,
+    /// this function will return something like `Some(0.8)`, because the
+    /// output segment ending at `2` can be merged with its neighbor
+    /// ending at `1`, but not all the way to `1.0`.
+    fn can_merge(
+        &self,
+        seg: HalfOutputSegIdx,
+        positions: &OutputSegVec<PositionedOutputSeg>,
+    ) -> Option<f64> {
+        let pos = &positions[seg.idx];
+        let orig_idx = self.orig_seg[seg.idx];
+
+        // We're currently using y positions on the output segment to figure out
+        if self.segments[orig_idx].is_horizontal() {
+            return None;
+        }
+
+        let extremal_seg_is_copied = if seg.is_first_half() {
+            pos.copied_idx == Some(0)
+        } else {
+            // "- 2" because copied_idx counts segments, not elements
+            pos.copied_idx == Some(pos.path.elements().len() - 2)
+        };
+
+        // Is the curve from `seg` to `seg.other_half()` oriented the same way
+        // as the input segment? There are two possible changes of orientation:
+        // the segment might have had its orientation switched from the input
+        // segment, and our current contour direction might not agree with the
+        // output segment's orientation.
+        let has_orig_orientation =
+            seg.is_first_half() == self.segments.positively_oriented(orig_idx);
+
+        let start_y = self.point(seg).y;
+        let end_y = self.point(seg.other_half()).y;
+        let split_from_pred = self.segments.split_from_predecessor[orig_idx];
+        let can_merge = if has_orig_orientation {
+            let seg_in_input_t = split_from_pred.0;
+            if (seg_in_input_t > 0.0)
+                    && extremal_seg_is_copied
+                    // Is this out seg the "first" one of the input seg?
+                    && start_y == self.segments.oriented_start(orig_idx).y
+            {
+                let t = solve_t_for_y(self.segments[orig_idx].to_kurbo_cubic(), end_y);
+                Some(self.input_seg_t(seg.idx, t))
+            } else {
+                None
+            }
+        } else {
+            let seg_in_input_t = split_from_pred.1;
+            if seg_in_input_t < 1.0
+                && extremal_seg_is_copied
+                && start_y == self.segments.oriented_end(orig_idx).y
+            {
+                let t = solve_t_for_y(self.segments[orig_idx].to_kurbo_cubic(), end_y);
+                Some(self.input_seg_t(seg.idx, t))
+            } else {
+                None
+            }
+        };
+        if self.is_simple_point(seg) {
+            can_merge
+        } else {
+            None
+        }
+    }
+
+    fn input_seg_t(&self, out_seg: OutputSegIdx, t: f64) -> f64 {
+        let orig_idx = self.orig_seg[out_seg];
+        let split_from_pred = self.segments.split_from_predecessor[orig_idx];
+        let ret = if self.segments.positively_oriented(orig_idx) {
+            split_from_pred.0 + t * (split_from_pred.1 - split_from_pred.0)
+        } else {
+            split_from_pred.1 - t * (split_from_pred.1 - split_from_pred.0)
+        };
+        ret.clamp(0.0, 1.0)
     }
 
     /// Returns the contours of some set defined by this topology.
@@ -1186,7 +1374,7 @@ impl<W: WindingNumber> Topology<W> {
     ///
     /// TODO: We should allow passing in an "inside" callback and then only do
     /// positioning for the segments that are on the boundary.
-    pub fn compute_positions(&self) -> OutputSegVec<(BezPath, Option<usize>)> {
+    pub fn compute_positions(&self) -> OutputSegVec<PositionedOutputSeg> {
         // TODO: reuse the cache from the sweep-line
         let mut cmp = ComparisonCache::new(self.eps, self.eps / 2.0);
         let mut endpoints = HalfOutputSegVec::with_size(self.orig_seg.len());
@@ -1797,6 +1985,7 @@ impl std::ops::Index<ContourIdx> for Contours {
 
 #[cfg(test)]
 mod tests {
+    use kurbo::BezPath;
     use proptest::prelude::*;
 
     use crate::{
@@ -1983,6 +2172,39 @@ mod tests {
         let top = Topology::from_polylines_binary(outer, inners, eps);
         let contours = top.contours(|w| (w.shape_a + w.shape_b) % 2 != 0);
 
+        insta::assert_ron_snapshot!((top, contours));
+    }
+
+    #[test]
+    fn merge_monotonic_segs() {
+        let mut bez = BezPath::default();
+        bez.move_to((-1., 0.));
+        // An "N-shaped" curve, so it divides into 3 monotonic pieces.
+        bez.curve_to((-1., -1.), (1., 1.), (1., 0.));
+        // Finish off the shape in a way that doesn't cause any intersections.
+        bez.line_to((2., 4.));
+        bez.line_to((-2., 4.));
+        bez.close_path();
+
+        let top = Topology::from_path(&bez, 1e-6).unwrap();
+        let contours = top.contours(|w| w != 0);
+
+        insta::assert_ron_snapshot!((top, contours));
+    }
+
+    #[test]
+    fn merge_monotonic_segs_with_cut() {
+        let mut bez = BezPath::default();
+        bez.move_to((-1., 0.));
+        // An "N-shaped" curve, so it divides into 3 monotonic pieces.
+        bez.curve_to((-1., -1.), (1., 1.), (1., 0.));
+        // Finish off the shape in a way that cuts through the middle.
+        bez.close_path();
+
+        let top = Topology::from_path(&bez, 1e-6).unwrap();
+        let contours = top.contours(|w| w != 0);
+
+        dbg!(&top.segments.split_from_predecessor);
         insta::assert_ron_snapshot!((top, contours));
     }
 

@@ -164,7 +164,14 @@ fn force_monotonic(mut cub: CubicBez) -> Option<CubicBez> {
     }
 }
 
-pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
+/// A y-monotonic piece of a cubic Bezier.
+pub(crate) struct MonotonicPiece {
+    pub start_t: f64,
+    pub end_t: f64,
+    pub piece: CubicBez,
+}
+
+pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<MonotonicPiece, 3> {
     let mut ret = ArrayVec::new();
     let q0 = cub.p1.y - cub.p0.y;
     let q1 = cub.p2.y - cub.p1.y;
@@ -199,7 +206,11 @@ pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
         if r > 0.0 && r < 1.0 {
             let piece_before = cub.subsegment(last_r..r);
             if let Some(c) = force_monotonic(piece_before) {
-                ret.push(c)
+                ret.push(MonotonicPiece {
+                    piece: c,
+                    start_t: last_r,
+                    end_t: r,
+                });
             }
             last_r = r;
         }
@@ -207,7 +218,11 @@ pub(crate) fn monotonic_pieces(cub: CubicBez) -> ArrayVec<CubicBez, 3> {
 
     let piece_before = cub.subsegment(last_r..1.0);
     if let Some(c) = force_monotonic(piece_before) {
-        ret.push(c)
+        ret.push(MonotonicPiece {
+            piece: c,
+            start_t: last_r,
+            end_t: 1.0,
+        });
     }
 
     ret

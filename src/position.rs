@@ -28,7 +28,7 @@ fn ordered_curves_all_close(
     segs: &Segments,
     order: &[SegIdx],
     output_order: &[OutputSegIdx],
-    out: &mut OutputSegVec<(BezPath, Option<usize>)>,
+    out: &mut OutputSegVec<PositionedOutputSeg>,
     mut y0: f64,
     y1: f64,
     endpoints: &HalfOutputSegVec<kurbo::Point>,
@@ -46,14 +46,14 @@ fn ordered_curves_all_close(
         let o0 = output_order[0];
         let o1 = output_order[1];
 
-        let p0 = bez_end(&out[o0].0);
-        let p1 = bez_end(&out[o1].0);
+        let p0 = bez_end(&out[o0].path);
+        let p1 = bez_end(&out[o1].path);
         let q0 = endpoints[o0.second_half()];
         let q1 = endpoints[o1.second_half()];
 
         if p0.y == y0 && p1.y == y0 {
-            let c0 = next_subsegment(&segs[s0], &out[o0].0, y1, q0);
-            let c1 = next_subsegment(&segs[s1], &out[o1].0, y1, q1);
+            let c0 = next_subsegment(&segs[s0], &out[o0].path, y1, q0);
+            let c1 = next_subsegment(&segs[s1], &out[o1].path, y1, q1);
 
             if transversal_after(c0, c1, y1) {
                 return;
@@ -61,8 +61,8 @@ fn ordered_curves_all_close(
         }
 
         if q0.y == y1 && q1.y == y1 {
-            let c0 = next_subsegment(&segs[s0], &out[o0].0, y1, q0);
-            let c1 = next_subsegment(&segs[s1], &out[o1].0, y1, q1);
+            let c0 = next_subsegment(&segs[s0], &out[o0].path, y1, q0);
+            let c1 = next_subsegment(&segs[s1], &out[o1].path, y1, q1);
 
             if transversal_before(c0, c1, y0) {
                 return;
@@ -73,15 +73,15 @@ fn ordered_curves_all_close(
     // Ensure everything in `out` goes up to `y0`. Anything that doesn't go up to `y0` is
     // an output where we can just copy from the input.
     for (&seg_idx, &out_idx) in order.iter().zip(output_order) {
-        let (out_bez, out_copied_idx) = &mut out[out_idx];
-        if bez_end_y(out_bez) < y0 {
-            *out_copied_idx = Some(out_bez.elements().len() - 1);
+        let out = &mut out[out_idx];
+        if bez_end_y(&out.path) < y0 {
+            out.copied_idx = Some(out.path.elements().len() - 1);
             let endpoint = endpoints[out_idx.second_half()];
             if segs[seg_idx].is_line() {
-                out_bez.line_to(endpoint)
+                out.path.line_to(endpoint)
             } else {
-                let c = next_subsegment(&segs[seg_idx], out_bez, y0, endpoint);
-                out_bez.curve_to(c.p1, c.p2, c.p3);
+                let c = next_subsegment(&segs[seg_idx], &out.path, y0, endpoint);
+                out.path.curve_to(c.p1, c.p2, c.p3);
             }
         }
     }
@@ -110,7 +110,7 @@ fn ordered_curves_all_close(
             x1_max_so_far = x1_max_so_far.max(x1);
 
             out[*out_idx]
-                .0
+                .path
                 .quad_to((x_mid_max_so_far, y_mid), (x1_max_so_far, next_y0));
         }
         approxes.clear();
@@ -225,17 +225,28 @@ fn next_subsegment(seg: &Segment, out: &BezPath, y1: f64, endpoint: kurbo::Point
     c
 }
 
+/// A positioned output segment, possibly perturbed from the original.
+///
+/// We perturb output segments in order to strictly enforce ordering.
+/// A single segment might be expanded into a longer path.
+#[derive(Default)]
+pub struct PositionedOutputSeg {
+    /// The path, which is guaranteed to start and end at the same points as the
+    /// output segment did.
+    pub path: BezPath,
+    /// Sometimes (often, even) a large part of the output segment didn't need
+    /// to be perturbed. Our sweep-line invariants guarantee that unperturbed
+    /// part can only be a single contiguous interval: this stores the index
+    /// of the unperturbed part within `path.segments()`.
+    pub copied_idx: Option<usize>,
+}
+
 /// Compute positions for all of the output segments.
 ///
 /// The orders between the output segments is specified by `order`. The endpoints
 /// should have been already computed (in a way that satisfies the order), and
 /// are provided in `endpoints`. For each output segment, we return a Bézier
 /// path.
-///
-/// The `usize` return value tells which segment (if any) in the returned
-/// path was the one that was "far" from any other paths. This is really
-/// only interesting for diagnosis/visualization so the API should probably
-/// be refined somehow to make it optional. (TODO)
 pub(crate) fn compute_positions(
     segs: &Segments,
     orig_seg_map: &OutputSegVec<SegIdx>,
@@ -243,8 +254,8 @@ pub(crate) fn compute_positions(
     endpoints: &HalfOutputSegVec<kurbo::Point>,
     scan_order: &ScanLineOrder,
     accuracy: f64,
-) -> OutputSegVec<(BezPath, Option<usize>)> {
-    let mut out = OutputSegVec::<(BezPath, Option<usize>)>::with_size(orig_seg_map.len());
+) -> OutputSegVec<PositionedOutputSeg> {
+    let mut out = OutputSegVec::<PositionedOutputSeg>::with_size(orig_seg_map.len());
     // We try to build `out` lazily, by avoiding copying input segments to outputs segments
     // until they're needed (by copying in one go, we avoid excess subdivisions). That means
     // we need to separately keep track of how far down we've looked at each output. If
@@ -255,12 +266,12 @@ pub(crate) fn compute_positions(
         let p = endpoints[idx.first_half()];
         let q = endpoints[idx.second_half()];
         if p.y == q.y {
-            out[idx].0.move_to(p);
-            out[idx].0.line_to(q);
-            out[idx].1 = Some(0);
+            out[idx].path.move_to(p);
+            out[idx].path.line_to(q);
+            out[idx].copied_idx = Some(0);
             continue;
         }
-        out[idx].0.move_to(p);
+        out[idx].path.move_to(p);
         queue.push(HeapEntry { y: p.y.into(), idx });
     }
 
@@ -320,8 +331,8 @@ pub(crate) fn compute_positions(
             // we'll hold off on the copying because it might allow us to avoid further
             // subdivision.
             if y0 == y1 {
-                out[idx].1 = Some(out[idx].0.elements().len() - 1);
-                out[idx].0.line_to(endpoints[idx.second_half()]);
+                out[idx].copied_idx = Some(out[idx].path.elements().len() - 1);
+                out[idx].path.line_to(endpoints[idx.second_half()]);
             }
         } else {
             let orig_neighbors = neighbors
@@ -350,22 +361,22 @@ pub(crate) fn compute_positions(
     }
 
     for out_idx in out.indices() {
-        let (out_bez, out_copied_idx) = &mut out[out_idx];
+        let out = &mut out[out_idx];
         let endpoint = endpoints[out_idx.second_half()];
-        if bez_end_y(out_bez) < endpoint.y {
+        if bez_end_y(&out.path) < endpoint.y {
             let seg_idx = orig_seg_map[out_idx];
-            *out_copied_idx = Some(out_bez.elements().len() - 1);
+            out.copied_idx = Some(out.path.elements().len() - 1);
             if segs[seg_idx].is_line() {
-                out_bez.line_to(endpoint)
+                out.path.line_to(endpoint)
             } else {
-                let c = next_subsegment(&segs[seg_idx], out_bez, endpoint.y, endpoint);
-                out_bez.curve_to(c.p1, c.p2, c.p3);
+                let c = next_subsegment(&segs[seg_idx], &out.path, endpoint.y, endpoint);
+                out.path.curve_to(c.p1, c.p2, c.p3);
             }
         } else {
             // The quadratic approximations don't respect the fixed endpoints, so tidy them
             // up. Since both the quadratic approximations and the endpoints satisfy
             // the ordering, this doesn't mess up the ordering.
-            match out[out_idx].0.elements_mut().last_mut().unwrap() {
+            match out.path.elements_mut().last_mut().unwrap() {
                 kurbo::PathEl::MoveTo(p)
                 | kurbo::PathEl::LineTo(p)
                 | kurbo::PathEl::QuadTo(_, p)
