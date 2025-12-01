@@ -228,7 +228,7 @@ fn next_subsegment(seg: &Segment, out: &BezPath, y1: f64, endpoint: kurbo::Point
 /// A positioned output segment, possibly perturbed from the original.
 ///
 /// We perturb output segments in order to strictly enforce ordering.
-/// A single segment might be expaneded into a longer path.
+/// A single segment might be expanded into a longer path.
 #[derive(Default)]
 pub struct PositionedOutputSeg {
     /// The path, which is guaranteed to start and end at the same points as the
