@@ -40,11 +40,10 @@ pub struct Segments {
     /// For each segment, stores true if the sweep-line order (small y to big y)
     /// is the same as the orientation in its original contour.
     orientation: SegVec<bool>,
-    /// For each segment, stores true if it came from the same input segment as its
-    /// predecessor (w.r.t. the original orientation). We split input segments at
-    /// y-critical points because the main algorithm requires monotonic segments.
-    /// Keeping track of where the splits happened allows us to potentially merge
-    /// things back at the end.
+    /// For each segment, stores its parameter range in the original input
+    /// segment (which may have been split into monotonic sub-segments). Keeping
+    /// track of where the splits happened allows us to potentially merge things
+    /// back at the end.
     pub(crate) split_from_predecessor: SegVec<(f64, f64)>,
     /// The original input segments, for reconstructing/merging. (TODO: this
     /// representation is wasteful, since we only need it for segments that
