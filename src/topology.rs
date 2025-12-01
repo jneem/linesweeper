@@ -908,6 +908,11 @@ impl<W: WindingNumber> Topology<W> {
 
     /// The segments in `segs` form a closed path, and each one is the ending half
     /// of its segment.
+    ///
+    /// This basically does two things:
+    ///   - puts the segments in the correct orientation
+    ///   - merges (if possible) segments that were divided because of the
+    ///     monotonicity constraints.
     fn segs_to_path(
         &self,
         segs: &[HalfOutputSegIdx],
@@ -977,12 +982,69 @@ impl<W: WindingNumber> Topology<W> {
         ret
     }
 
-    // Is this intersection point a simple one, where at most two output segments meet?
+    /// Is this intersection point a simple one, where at most two output segments meet?
     fn is_simple_point(&self, idx: HalfOutputSegIdx) -> bool {
-        let nbr = self.point_neighbors[idx].clockwise;
-        self.point_neighbors[nbr].clockwise == idx
+        self.point_neighbors[idx].clockwise == self.point_neighbors[idx].counter_clockwise
     }
 
+    /// Checks whether this output segment can merge with its neighbor.
+    ///
+    /// Imagine you have a single input segment that looks like this:
+    ///
+    /// ```text
+    ///                  /
+    ///     /-x-\       /
+    ///    /     \     /
+    ///   /       \-x-/
+    ///  /           
+    /// ```
+    ///
+    /// `Segments` will turn it into three monotonic pieces (by splitting it at
+    /// the marked `x`s), but when generating output we try to put the pieces
+    /// back together into a single segment. We can't always do this, for example
+    /// if there is an intersection with something else:
+    ///
+    /// ```text
+    ///       |
+    ///     /-x-\
+    ///    /  |  \
+    ///   /   |   \
+    /// ```
+    ///
+    /// or a near-intersection that causes some segment to get perturbed.
+    ///
+    /// This function returns `Some` for a half-output-segment that can be
+    /// merged to its neighbor. The value in the `Some` is in the parameter
+    /// space of the original input segment, and it says how far that merge
+    /// can go. In pictures, suppose that the curved segment goes from `t=0`
+    /// at the left to `t=1` at the right.
+    ///
+    /// ```text
+    ///   1 -> <- 2
+    ///     /-x-\
+    ///    /     \
+    ///   /       \
+    /// ```
+    ///
+    /// The `1 -> <- 2` in the diagram assigns names to the two
+    /// half-output-segments that meet at the `x`. If you call this function
+    /// with for half-output-segment `1`, it will return `Some(0.0)`, because
+    /// the output segment ending at `1` can be merged from input parameter
+    /// `0.0` all the way to the `x`. If you call this function with
+    /// half-output-segment `1`, it will return `Some(1.0)`.
+    ///
+    /// ```text
+    ///   1 -> <- 2
+    ///     /-x-\  /
+    ///    /     \/
+    ///   /      /\
+    /// ```
+    ///
+    /// Now imagine that there is some other intersection preventing
+    /// the entire half-output-segment `2` from merging. In this case,
+    /// this function will return something like `Some(0.8)`, because the
+    /// output segment ending at `2` can be merged with its neighbor
+    /// ending at `1`, but not all the way to `1.0`.
     fn can_merge(
         &self,
         seg: HalfOutputSegIdx,

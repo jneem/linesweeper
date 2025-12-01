@@ -225,10 +225,19 @@ fn next_subsegment(seg: &Segment, out: &BezPath, y1: f64, endpoint: kurbo::Point
     c
 }
 
-// TODO: docme
+/// A positioned output segment, possibly perturbed from the original.
+///
+/// We perturb output segments in order to strictly enforce ordering.
+/// A single segment might be expaneded into a longer path.
 #[derive(Default)]
 pub struct PositionedOutputSeg {
+    /// The path, which is guaranteed to start and end at the same points as the
+    /// output segment did.
     pub path: BezPath,
+    /// Sometimes (often, even) a large part of the output segment didn't need
+    /// to be perturbed. Our sweep-line invariants guarantee that unperturbed
+    /// part can only be a single contiguous interval: this stores the index
+    /// of the unperturbed part within `path.segments()`.
     pub copied_idx: Option<usize>,
 }
 
@@ -238,12 +247,6 @@ pub struct PositionedOutputSeg {
 /// should have been already computed (in a way that satisfies the order), and
 /// are provided in `endpoints`. For each output segment, we return a Bézier
 /// path.
-///
-/// FIXME: update doc
-/// The `usize` return value tells which segment (if any) in the returned
-/// path was the one that was "far" from any other paths. This is really
-/// only interesting for diagnosis/visualization so the API should probably
-/// be refined somehow to make it optional. (TODO)
 pub(crate) fn compute_positions(
     segs: &Segments,
     orig_seg_map: &OutputSegVec<SegIdx>,
