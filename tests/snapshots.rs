@@ -15,6 +15,7 @@ fn main() {
     let args = Arguments::from_args();
     let mut tests = sweep_snapshot_diffs();
     tests.extend(position_snapshot_diffs());
+    tests.extend(output_snapshot_diffs());
 
     libtest_mimic::run(&args, tests).exit();
 }
@@ -59,6 +60,20 @@ fn position_snapshot_diffs() -> Vec<Trial> {
             let p = p.unwrap();
             let name = input_path_base(&p).display().to_string();
             Trial::test(name, || generate_position_snapshot(p))
+        })
+        .collect()
+}
+
+fn output_snapshot_diffs() -> Vec<Trial> {
+    let ws = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let paths = glob::glob(&format!("{ws}/tests/snapshots/inputs/output/**/*.svg")).unwrap();
+
+    paths
+        .into_iter()
+        .map(|p| {
+            let p = p.unwrap();
+            let name = input_path_base(&p).display().to_string();
+            Trial::test(name, || generate_output_snapshot(p))
         })
         .collect()
 }
@@ -427,6 +442,81 @@ fn generate_position_snapshot(path: PathBuf) -> Result<(), Failed> {
             };
 
             pixmap.stroke_path(&skia_seg, &color(c), &stroke, pad_transform, None);
+
+            let p0 = seg.start();
+            let p0 = tiny_skia::PathBuilder::from_circle(p0.x as f32, p0.y as f32, 2.0).unwrap();
+            let p1 = seg.end();
+            let p1 = tiny_skia::PathBuilder::from_circle(p1.x as f32, p1.y as f32, 2.0).unwrap();
+            let black = color(tiny_skia::Color::BLACK);
+            pixmap.fill_path(
+                &p0,
+                &black,
+                tiny_skia::FillRule::Winding,
+                pad_transform,
+                None,
+            );
+            pixmap.fill_path(
+                &p1,
+                &black,
+                tiny_skia::FillRule::Winding,
+                pad_transform,
+                None,
+            );
+        }
+    }
+    let base_path = input_path_base(&path);
+    let out_path = output_path_for(base_path);
+    std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
+    pixmap.save_png(&out_path).unwrap();
+
+    let new_image = kompari::load_image(&out_path)?;
+    let snapshot = kompari::load_image(&saved_snapshot_path_for(base_path))?;
+    match kompari::compare_images(&snapshot, &new_image) {
+        kompari::ImageDifference::None => Ok(()),
+        _ => Err("image comparison failed".into()),
+    }
+}
+
+fn generate_output_snapshot(path: PathBuf) -> Result<(), Failed> {
+    let input = std::fs::read_to_string(&path).unwrap();
+    let tree = usvg::Tree::from_str(&input, &usvg::Options::default()).unwrap();
+    let bezs = linesweeper_util::svg_to_bezpaths(&tree);
+    let bbox = linesweeper_util::bezier_bounding_box(bezs.iter());
+    let bez: BezPath = bezs
+        .into_iter()
+        .flat_map(|p| Affine::translate(-bbox.origin().to_vec2()) * p)
+        .collect();
+
+    let eps = 1.0;
+    let top = Topology::from_path(&bez, eps).unwrap();
+    let contours = top.contours(|w| w % 2 == 0);
+
+    let pad = 2.0 * eps;
+    let bbox = top.bounding_box();
+    let mut pixmap = Pixmap::new(
+        (bbox.width() + 2.0 * pad).ceil() as u32,
+        (bbox.height() + 2.0 * pad).ceil() as u32,
+    )
+    .unwrap();
+    let pad_transform = tiny_skia::Transform::from_translate(
+        (pad - bbox.min_x()) as f32,
+        (pad - bbox.min_y()) as f32,
+    );
+
+    let stroke = tiny_skia::Stroke {
+        width: 1.0,
+        ..Default::default()
+    };
+    for contour in contours.contours() {
+        for seg in contour.path.segments() {
+            let skia_seg = skia_kurbo_seg(seg);
+            pixmap.stroke_path(
+                &skia_seg,
+                &color(path_color(0)),
+                &stroke,
+                pad_transform,
+                None,
+            );
 
             let p0 = seg.start();
             let p0 = tiny_skia::PathBuilder::from_circle(p0.x as f32, p0.y as f32, 2.0).unwrap();

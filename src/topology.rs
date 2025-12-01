@@ -973,7 +973,6 @@ impl<W: WindingNumber> Topology<W> {
             ret.extend(elems);
         }
 
-        // FIXME: handle the case that the first segment can be merged to the last
         ret.close_path();
         ret
     }
@@ -1004,11 +1003,11 @@ impl<W: WindingNumber> Topology<W> {
             pos.copied_idx == Some(pos.path.elements().len() - 2)
         };
 
-        // Is the curve from `seg` to `seg.other_half()` oriented the same
-        // way as the input segment? There are two possible changes of orientation:
-        // the output segment and the input segment could have different
-        // orientations, and our current contour direction might not agree
-        // with the output segment's orientation.
+        // Is the curve from `seg` to `seg.other_half()` oriented the same way
+        // as the input segment? There are two possible changes of orientation:
+        // the segment might have had its orientation switched from the input
+        // segment, and our current contour direction might not agree with the
+        // output segment's orientation.
         let has_orig_orientation =
             seg.is_first_half() == self.segments.positively_oriented(orig_idx);
 
@@ -1039,7 +1038,7 @@ impl<W: WindingNumber> Topology<W> {
                 None
             }
         };
-        if self.is_simple_point(seg.other_half()) {
+        if self.is_simple_point(seg) {
             can_merge
         } else {
             None
@@ -2123,6 +2122,21 @@ mod tests {
         // Finish off the shape in a way that doesn't cause any intersections.
         bez.line_to((2., 4.));
         bez.line_to((-2., 4.));
+        bez.close_path();
+
+        let top = Topology::from_path(&bez, 1e-6).unwrap();
+        let contours = top.contours(|w| w != 0);
+
+        insta::assert_ron_snapshot!((top, contours));
+    }
+
+    #[test]
+    fn merge_monotonic_segs_with_cut() {
+        let mut bez = BezPath::default();
+        bez.move_to((-1., 0.));
+        // An "N-shaped" curve, so it divides into 3 monotonic pieces.
+        bez.curve_to((-1., -1.), (1., 1.), (1., 0.));
+        // Finish off the shape in a way that cuts through the middle.
         bez.close_path();
 
         let top = Topology::from_path(&bez, 1e-6).unwrap();
