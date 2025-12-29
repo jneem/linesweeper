@@ -63,6 +63,10 @@ name = "synthetic"
 harness = false
 required-features = ["generators"]
 
+[[bench]]
+name = "painted_dreams"
+harness = false
+
 [[example]]
 name = "boolean_op"
 required-features = ["generators"]
