@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use kurbo::BezPath;
 
-use linesweeper::{binary_op, BinaryOp, FillRule};
+use linesweeper::{binary_op_with_eps, BinaryOp, FillRule};
 
 fn painted_dreams(c: &mut Criterion) {
     let path_a = BezPath::from_svg("M0,340C161.737914,383.575765 107.564182,490.730587 273,476 C419,463 481.741198,514.692273 481.333333,768 C481.333333,768 -0,768 -0,768 C-0,768 0,340 0,340 Z").unwrap();
@@ -10,7 +10,7 @@ fn painted_dreams(c: &mut Criterion) {
 	).unwrap();
 
     c.bench_function("painted dreams", |b| {
-        b.iter(|| binary_op(&path_a, &path_b, FillRule::EvenOdd, BinaryOp::Union))
+        b.iter(|| binary_op_with_eps(&path_a, &path_b, FillRule::EvenOdd, BinaryOp::Union, 1e-5))
     });
 }
 

@@ -1,6 +1,4 @@
 //! Curve comparison utilities.
-use std::ops::RemAssign;
-
 use arrayvec::ArrayVec;
 use kurbo::{
     common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, Point, QuadBez, Shape, Vec2,
@@ -859,27 +857,13 @@ impl EstParab {
         }
     }
 
+    #[cfg(test)]
     fn eval(&self, y: f64) -> f64 {
         self.c0 + self.c1 * y + self.c2 * y * y
     }
 
     fn max_param(&self) -> f64 {
         self.c0.abs().max(self.c1.abs()).max(self.c2.abs())
-    }
-
-    fn bounds(&self, y0: f64, y1: f64) -> (f64, f64) {
-        let extremum = -0.5 * self.c1 / self.c2;
-        let x0 = self.eval(y0);
-        let x1 = self.eval(y1);
-
-        let mut min = x0.min(x1);
-        let mut max = x0.max(x1);
-        if y0 < extremum && extremum < y1 {
-            let x = self.eval(extremum);
-            min = min.min(x);
-            max = max.max(x);
-        }
-        (min + self.dmin, max + self.dmax)
     }
 }
 
@@ -1269,8 +1253,6 @@ pub mod arbtests {
 
 #[cfg(test)]
 mod test {
-    use crate::Segment;
-
     use super::*;
 
     #[test]
