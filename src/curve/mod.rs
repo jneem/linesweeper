@@ -1,7 +1,7 @@
 //! Curve comparison utilities.
 use arrayvec::ArrayVec;
 use kurbo::{
-    common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, QuadBez, Shape, Vec2,
+    common::solve_cubic, Affine, CubicBez, Line, ParamCurve, PathSeg, Point, QuadBez, Shape, Vec2,
 };
 use polycool::Cubic;
 
@@ -967,6 +967,17 @@ fn with_rotation(
     true
 }
 
+fn l_infty_distance(p0: Point, p1: Point) -> f64 {
+    (p0.x - p1.x).abs().max((p0.y - p1.y).abs())
+}
+
+fn max_distance(c0: CubicBez, c1: CubicBez) -> f64 {
+    l_infty_distance(c0.p0, c1.p0)
+        .max(l_infty_distance(c0.p1, c1.p1))
+        .max(l_infty_distance(c0.p2, c1.p2))
+        .max(l_infty_distance(c0.p3, c1.p3))
+}
+
 fn intersect_cubics_rec(
     orig_c0: CubicBez,
     orig_c1: CubicBez,
@@ -982,6 +993,10 @@ fn intersect_cubics_rec(
     // dbg!(c0, orig_c0);
     // dbg!(c1, orig_c1);
 
+    if max_distance(c0, c1) <= tolerance {
+        out.push(y1, Order::Ish);
+        return;
+    }
     if y1 - y0 < accuracy {
         // For very short intervals there's some numerical instability in constructing the
         // approximating quadratics, so we just do a coarser comparison based on bounding
@@ -1238,8 +1253,6 @@ pub mod arbtests {
 
 #[cfg(test)]
 mod test {
-    use crate::Segment;
-
     use super::*;
 
     #[test]
@@ -1431,56 +1444,26 @@ mod test {
         );
     }
 
+    // This test recurses a bit too deeply. The two curves are quite close,
+    // and near the end they're just a bit more than eps apart.
     #[test]
-    fn graphite_example() {
-        // Fiddling with graphite turned up this example, in which c0 and c1 compare "ish",
-        // c1 compares left of c2, and c0 compares right of c2. That's all fine: c1, c2, c0
-        // would be a valid sweep-line order.
-        //
-        // But suppose that we start with c0, c1 and then try to insert c2. Since it's to
-        // the right of c1 even with the bigger thresholds, we think it's ok to put to the
-        // right of c1, and then the bigger threshold comparison stops us from seeing c0
-        // when scanning to the left.
-        //
-        // I think the solution has to be to re-introduce the close_before and close_after
-        // stuff for y-slop.
+    fn painted_dreams_deep_recursion() {
         let eps = 1e-6;
         let tolerance = eps;
         let accuracy = eps / 2.0;
-        let y = -227.53699416;
         let c0 = CubicBez::new(
-            (-4.04445106, -227.53699448),
-            (-4.0443963, -227.53699414000002),
-            (-4.0443415400000005, -227.5369938),
-            (-4.04428678, -227.53699347),
+            (268.2700181987094, 465.9600610772311),
+            (261.5036543284458, 474.04917281766745),
+            (255.01588390924064, 481.16474559246694),
+            (248.76144328725377, 487.4191862144538),
         );
         let c1 = CubicBez::new(
-            (-4.04445106, -227.53699448),
-            (-4.04445141, -227.53699414000002),
-            (-4.04445176, -227.5369938),
-            (-4.0444521, -227.53699347),
+            (268.2700181987094, 465.9600610772311),
+            (261.508835610275, 474.04297901254995),
+            (255.02582000674386, 481.1538483487484),
+            (248.77581162941254, 487.404817872295),
         );
-        let c2 = CubicBez::new(
-            (-4.04442515, -227.53699416),
-            (-4.04443617, -227.53699411),
-            (-4.0444375500000005, -227.53699405),
-            (-4.04442929, -227.536994),
-        );
-        let cmp01 = intersect_cubics(c0, c1, tolerance, accuracy).with_y_slop(tolerance);
-        let cmp02 = intersect_cubics(c0, c2, tolerance, accuracy).with_y_slop(tolerance);
-        let cmp12 = intersect_cubics(c1, c2, tolerance, accuracy).with_y_slop(tolerance);
 
-        dbg!(&cmp01, &cmp12, &cmp02);
-        dbg!(solve_x_for_y(c0, y));
-        dbg!(solve_x_for_y(c1, y));
-        assert!(c2.p0.x >= dbg!(c1.p0.x.max(c1.p1.x).max(c1.p2.x).max(c1.p3.x)) + 2.0 * eps);
-
-        let c0_seg = Segment::from_kurbo_cubic(c0);
-        let c1_seg = Segment::from_kurbo_cubic(c1);
-        let c2_seg = Segment::from_kurbo_cubic(c2);
-
-        dbg!(c0_seg.lower(y, eps));
-        dbg!(c1_seg.lower(y, eps));
-        dbg!(c2_seg.lower(y, eps));
+        dbg!(intersect_cubics(c0, c1, tolerance, accuracy));
     }
 }

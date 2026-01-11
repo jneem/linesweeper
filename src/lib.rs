@@ -84,7 +84,12 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Computes a boolean operation between two sets, each of which is described as a collection of closed polylines.
+/// Computes a boolean operation between two sets, each of which is described as
+/// a collection of closed polylines.
+///
+/// This function calls [`binary_op_with_eps`] with an automatically-chosen
+/// accuracy parameter. The automatically-chosen accuracy is fairly
+/// conservative, so you may get better performance by choosing your own.
 pub fn binary_op(
     set_a: &kurbo::BezPath,
     set_b: &kurbo::BezPath,
@@ -110,7 +115,21 @@ pub fn binary_op(
     let eps = eps.max(1e-6);
 
     debug_assert!(eps.is_finite());
+    binary_op_with_eps(set_a, set_b, fill_rule, op, eps)
+}
 
+/// Computes a boolean operation between two sets, each of which is described as
+/// a collection of closed polylines.
+///
+/// The output paths will not exactly agree with the input paths in general.
+/// The accuracy parameter `eps` bounds how much they can differ.
+pub fn binary_op_with_eps(
+    set_a: &kurbo::BezPath,
+    set_b: &kurbo::BezPath,
+    fill_rule: FillRule,
+    op: BinaryOp,
+    eps: f64,
+) -> Result<topology::Contours, Error> {
     let top = Topology::from_paths_binary(set_a, set_b, eps)?;
     #[cfg(feature = "debug-svg")]
     {
