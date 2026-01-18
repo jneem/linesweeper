@@ -317,7 +317,7 @@ impl<'segs> Sweeper<'segs> {
         Sweeper {
             eps,
             line: SegmentOrder::default(),
-            y: events.next_y(segments).unwrap(),
+            y: events.next_y(segments).unwrap_or(f64::INFINITY),
             events,
             segments,
             segs_needing_positions: Vec::new(),
@@ -1930,6 +1930,14 @@ mod tests {
         )
         .unwrap();
         insta::assert_ron_snapshot!(snapshot_outputs(segs, 0.25));
+    }
+
+    #[test]
+    fn empty_sweep_line() {
+        let segs = Segments::default();
+        let mut sweep = Sweeper::new(&segs, 1.0);
+        let mut bufs = SweepLineBuffers::default();
+        assert!(sweep.next_line(&mut bufs).is_none());
     }
 
     proptest! {

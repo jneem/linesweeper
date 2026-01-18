@@ -256,4 +256,16 @@ mod tests {
         let path = BezPath::from_svg(path).unwrap();
         Topology::from_path(&path, 0.001).unwrap();
     }
+
+    #[test]
+    fn empty_paths() {
+        let contours = binary_op(
+            &BezPath::new(),
+            &BezPath::new(),
+            FillRule::EvenOdd,
+            BinaryOp::Xor,
+        )
+        .unwrap();
+        assert!(contours.contours().next().is_none());
+    }
 }
