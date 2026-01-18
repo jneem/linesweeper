@@ -85,7 +85,7 @@ pub fn main() -> anyhow::Result<()> {
 
         let text = svg::node::element::Text::new(format!(
             "{:?}",
-            top.winding(seg.first_half()).counter_clockwise
+            top.winding_counter_clockwise(seg.first_half())
         ))
         .set("font-size", text_size)
         .set("text-anchor", "start")
@@ -94,7 +94,7 @@ pub fn main() -> anyhow::Result<()> {
         document = document.add(text);
 
         let text =
-            svg::node::element::Text::new(format!("{:?}", top.winding(seg.first_half()).clockwise))
+            svg::node::element::Text::new(format!("{:?}", top.winding_clockwise(seg.first_half())))
                 .set("font-size", text_size)
                 .set("text-anchor", "end")
                 .set("x", (x0 + x1) / 2.0 - nx)

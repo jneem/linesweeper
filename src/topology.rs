@@ -27,7 +27,7 @@ use crate::{
 /// paths for which winding numbers aren't defined, etc.), our topologies use generic
 /// winding numbers: anything that implements this trait can be used.
 pub trait WindingNumber:
-    Copy + std::fmt::Debug + std::ops::Add<Output = Self> + std::ops::AddAssign + Default + Eq
+    Clone + std::fmt::Debug + std::ops::Add<Output = Self> + std::ops::AddAssign + Default + Eq
 {
     /// A tag for categorizing segments.
     ///
@@ -137,14 +137,6 @@ impl<W: WindingNumber> HalfSegmentWindingNumbers<W> {
     /// In this case, the segment is invisible to the topology of the sets.
     fn is_trivial(&self) -> bool {
         self.counter_clockwise == self.clockwise
-    }
-
-    /// Returns the winding numbers of our opposite half-segment.
-    fn flipped(self) -> Self {
-        Self {
-            counter_clockwise: self.clockwise,
-            clockwise: self.counter_clockwise,
-        }
     }
 }
 
@@ -693,7 +685,7 @@ impl<W: WindingNumber> Topology<W> {
     ) {
         let y = pos.line().y();
         let mut winding = scan_west
-            .map(|idx| self.winding[idx].counter_clockwise)
+            .map(|idx| self.winding[idx].counter_clockwise.clone())
             .unwrap_or_default();
 
         // A re-usable buffer for holding temporary lists of segment indices. We
@@ -729,12 +721,12 @@ impl<W: WindingNumber> Topology<W> {
             // Also, calculate their winding numbers and update `winding`.
             seg_buf.clear();
             for new_seg in connected_segs.connected_down() {
-                let prev_winding = winding;
+                let prev_winding = winding.clone();
                 let orientation = segments.positively_oriented(new_seg);
                 winding += W::single(self.tag[new_seg], orientation);
                 let windings = HalfSegmentWindingNumbers {
                     clockwise: prev_winding,
-                    counter_clockwise: winding,
+                    counter_clockwise: winding.clone(),
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, false, orientation);
                 self.scan_west[half_seg] = scan_west;
@@ -761,14 +753,14 @@ impl<W: WindingNumber> Topology<W> {
 
             // We don't want to update our "global" winding number state because that's supposed
             // to keep track of the winding number below the current sweep line.
-            let mut w = winding;
+            let mut w = winding.clone();
             seg_buf.clear();
             for (new_seg, same_orientation) in hsegs {
-                let prev_w = w;
+                let prev_w = w.clone();
                 let orientation = same_orientation == segments.positively_oriented(new_seg);
                 w += W::single(self.tag[new_seg], orientation);
                 let windings = HalfSegmentWindingNumbers {
-                    counter_clockwise: w,
+                    counter_clockwise: w.clone(),
                     clockwise: prev_w,
                 };
                 let half_seg = self.new_half_seg(new_seg, p, windings, true, orientation);
@@ -876,7 +868,8 @@ impl<W: WindingNumber> Topology<W> {
                 // coincident then they'd better both be first halves.
                 debug_assert!(cw_nbr.first_half);
                 self.delete(idx);
-                self.winding[cw_nbr.idx].counter_clockwise = self.winding[idx].counter_clockwise;
+                self.winding[cw_nbr.idx].counter_clockwise =
+                    self.winding[idx].counter_clockwise.clone();
 
                 if self.winding[cw_nbr.idx].is_trivial() {
                     self.delete(cw_nbr.idx);
@@ -892,12 +885,23 @@ impl<W: WindingNumber> Topology<W> {
             .filter(|i| !self.deleted[*i])
     }
 
-    /// Returns the winding numbers of an output half-segment.
-    pub fn winding(&self, idx: HalfOutputSegIdx) -> HalfSegmentWindingNumbers<W> {
+    /// Returns the winding numbers of the region on the clockwise side of an
+    /// output half-segment.
+    pub fn winding_clockwise(&self, idx: HalfOutputSegIdx) -> &W {
         if idx.first_half {
-            self.winding[idx.idx]
+            &self.winding[idx.idx].clockwise
         } else {
-            self.winding[idx.idx].flipped()
+            &self.winding[idx.idx].counter_clockwise
+        }
+    }
+
+    /// Returns the winding numbers of the region on the counter-clockwise side of an
+    /// output half-segment.
+    pub fn winding_counter_clockwise(&self, idx: HalfOutputSegIdx) -> &W {
+        if idx.first_half {
+            &self.winding[idx.idx].counter_clockwise
+        } else {
+            &self.winding[idx.idx].clockwise
         }
     }
 
@@ -1124,7 +1128,7 @@ impl<W: WindingNumber> Topology<W> {
     /// if a point with that winding number should be in the resulting set. For example,
     /// to compute a boolean "and" using the non-zero winding rule, `inside` should be
     /// `|w| w.shape_a != 0 && w.shape_b != 0`.
-    pub fn contours(&self, inside: impl Fn(W) -> bool) -> Contours {
+    pub fn contours(&self, inside: impl Fn(&W) -> bool) -> Contours {
         // We walk contours in sweep-line order of their smallest point. This mostly ensures
         // that we visit outer contours before we visit their children. However, when the inner
         // and outer contours share a point, we run into a problem. For example:
@@ -1148,7 +1152,7 @@ impl<W: WindingNumber> Topology<W> {
         let positions = self.compute_positions();
 
         let bdy = |idx: OutputSegIdx| -> bool {
-            inside(self.winding[idx].clockwise) != inside(self.winding[idx].counter_clockwise)
+            inside(&self.winding[idx].clockwise) != inside(&self.winding[idx].counter_clockwise)
         };
 
         let mut visited = vec![false; self.winding.inner.len()];
@@ -1180,7 +1184,7 @@ impl<W: WindingNumber> Topology<W> {
             if let Some(west) = west_seg {
                 if let Some(west_contour) = seg_contour[west.0] {
                     // Is the thing just to our left inside or outside the output set?
-                    let outside = !inside(self.winding(west.first_half()).counter_clockwise);
+                    let outside = !inside(self.winding_counter_clockwise(west.first_half()));
                     if outside == ret.contours[west_contour.0].outer {
                         // They're an outer contour, and there's exterior between us and them,
                         // or they're an inner contour and there's interior between us.
@@ -1201,7 +1205,7 @@ impl<W: WindingNumber> Topology<W> {
 
             // First, arrange the orientation so that the interior is on our
             // left as we walk.
-            let (start, mut next) = if inside(self.winding[idx].counter_clockwise) {
+            let (start, mut next) = if inside(&self.winding[idx].counter_clockwise) {
                 (idx.first_half(), idx.second_half())
             } else {
                 (idx.second_half(), idx.first_half())
@@ -1212,18 +1216,18 @@ impl<W: WindingNumber> Topology<W> {
             let mut segs = Vec::new();
             last_visit[self.point_idx[start]] = Some(0);
 
-            debug_assert!(inside(self.winding(start).counter_clockwise));
+            debug_assert!(inside(self.winding_counter_clockwise(start)));
             loop {
                 visited[next.idx.0] = true;
 
-                debug_assert!(inside(self.winding(next).clockwise));
-                debug_assert!(!inside(self.winding(next).counter_clockwise));
+                debug_assert!(inside(self.winding_clockwise(next)));
+                debug_assert!(!inside(self.winding_counter_clockwise(next)));
 
                 // Walk clockwise around the point until we find the next segment
                 // that's on the boundary.
                 let mut nbr = self.point_neighbors[next].clockwise;
-                debug_assert!(inside(self.winding(nbr).counter_clockwise));
-                while inside(self.winding(nbr).clockwise) {
+                debug_assert!(inside(self.winding_counter_clockwise(nbr)));
+                while inside(self.winding_clockwise(nbr)) {
                     nbr = self.point_neighbors[nbr].clockwise;
                 }
 
@@ -1405,7 +1409,7 @@ impl<W: WindingNumber> Topology<W> {
             if !self.deleted[out_idx] {
                 for half in [out_idx.first_half(), out_idx.second_half()] {
                     let cw_nbr = self.point_neighbors[half].clockwise;
-                    if self.winding(half).clockwise != self.winding(cw_nbr).counter_clockwise {
+                    if self.winding_clockwise(half) != self.winding_counter_clockwise(cw_nbr) {
                         #[cfg(feature = "debug-svg")]
                         {
                             dbg!(self);
@@ -2187,7 +2191,7 @@ mod tests {
         bez.close_path();
 
         let top = Topology::from_path(&bez, 1e-6).unwrap();
-        let contours = top.contours(|w| w != 0);
+        let contours = top.contours(|w| *w != 0);
 
         insta::assert_ron_snapshot!((top, contours));
     }
@@ -2202,7 +2206,7 @@ mod tests {
         bez.close_path();
 
         let top = Topology::from_path(&bez, 1e-6).unwrap();
-        let contours = top.contours(|w| w != 0);
+        let contours = top.contours(|w| *w != 0);
 
         dbg!(&top.segments.split_from_predecessor);
         insta::assert_ron_snapshot!((top, contours));
