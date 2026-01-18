@@ -146,7 +146,7 @@ pub fn binary_op_with_eps(
         .unwrap();
     }
 
-    let inside = |windings: BinaryWindingNumber| {
+    let inside = |windings: &BinaryWindingNumber| {
         let inside_one = |winding| match fill_rule {
             FillRule::EvenOdd => winding % 2 != 0,
             FillRule::NonZero => winding != 0,
