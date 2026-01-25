@@ -1,4 +1,8 @@
 # linesweeper: a robust sweep-line algorithm
+# linesweeper has moved to Radicle!
+
+The new repository ID is rad:z2jbcL8tV3Fqqqk1yPyGkDTjgaTfH. There is a
+[web interface available](https://app.radicle.xyz/nodes/iris.radicle.xyz/rad%3Az2jbcL8tV3Fqqqk1yPyGkDTjgaTfH).
 
 [![GitHub Actions CI status.](https://img.shields.io/github/actions/workflow/status/jneem/linesweeper/ci.yml?logo=github&label=CI)](https://github.com/jneem/linesweeper/actions)
 [![Latest published version.](https://img.shields.io/crates/v/linesweeper.svg)](https://crates.io/crates/linesweeper)
